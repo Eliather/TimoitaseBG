@@ -42,6 +42,33 @@ from app.core.workers import WorkerThread
 from app.ui.canvas_widget import CanvasWidget
 from app.ui.toolbar import ToolSidebar
 
+class CustomTopBar(QWidget):
+    def __init__(self, parent_window):
+        super().__init__()
+        self.parent_window = parent_window
+        self._is_tracking = False
+        self._start_pos = None
+
+    def mousePressEvent(self, event):
+        if event.button() == Qt.MouseButton.LeftButton:
+            self._is_tracking = True
+            self._start_pos = event.globalPosition().toPoint() - self.parent_window.pos()
+            event.accept()
+
+    def mouseMoveEvent(self, event):
+        if self._is_tracking:
+            self.parent_window.move(event.globalPosition().toPoint() - self._start_pos)
+            event.accept()
+
+    def mouseReleaseEvent(self, event):
+        if event.button() == Qt.MouseButton.LeftButton:
+            self._is_tracking = False
+            event.accept()
+
+    def mouseDoubleClickEvent(self, event):
+        if event.button() == Qt.MouseButton.LeftButton:
+            self.parent_window._toggle_maximize()
+            event.accept()
 
 class MainWindow(QMainWindow):
     """
@@ -53,6 +80,7 @@ class MainWindow(QMainWindow):
 
     def __init__(self):
         super().__init__()
+        self.setWindowFlags(Qt.WindowType.FramelessWindowHint | Qt.WindowType.Window)
         self.setWindowTitle(DEFAULT_WINDOW_TITLE)
         self.resize(1150, 750)
         self.setMinimumSize(WINDOW_MIN_WIDTH, WINDOW_MIN_HEIGHT)
@@ -76,6 +104,12 @@ class MainWindow(QMainWindow):
         
         # Cargar estilos nativos (Modo Oscuro)
         self._load_stylesheet()
+
+    def _toggle_maximize(self):
+        if self.isMaximized():
+            self.showNormal()
+        else:
+            self.showMaximized()
 
     def _load_stylesheet(self):
         self.is_dark_theme = getattr(self, "is_dark_theme", False)
@@ -147,11 +181,11 @@ class MainWindow(QMainWindow):
     # Barra Superior
     # -------------------------------------------------------------
     def _create_top_bar(self) -> QWidget:
-        top_bar = QWidget()
+        top_bar = CustomTopBar(self)
         top_bar.setObjectName("topBar")
         layout = QHBoxLayout(top_bar)
-        layout.setContentsMargins(18, 10, 18, 10)
-        layout.setSpacing(10)
+        layout.setContentsMargins(10, 8, 10, 8)
+        layout.setSpacing(8)
 
         # Título y Badge
         from app.config import DEFAULT_WINDOW_TITLE
@@ -175,15 +209,17 @@ class MainWindow(QMainWindow):
         layout.addSpacing(12)
 
         # Botón Abrir Imagen
-        self.btn_open = QPushButton("Abrir Imagen")
+        self.btn_open = QPushButton("Abrir")
         self.btn_open.setObjectName("actionButton")
+        self.btn_open.setFixedHeight(32)
         self.btn_open.setToolTip("Abrir imagen desde el explorador (Ctrl+O) o pegar con Ctrl+V")
         self.btn_open.clicked.connect(self.prompt_open_image)
         layout.addWidget(self.btn_open)
 
         # Botón Guardar Como
-        self.btn_save = QPushButton("Guardar...")
+        self.btn_save = QPushButton("Guardar")
         self.btn_save.setObjectName("actionButton")
+        self.btn_save.setFixedHeight(32)
         self.btn_save.setToolTip("Guardar imagen procesada en disco (Ctrl+S)")
         self.btn_save.clicked.connect(self.prompt_save_image)
         layout.addWidget(self.btn_save)
@@ -252,16 +288,40 @@ class MainWindow(QMainWindow):
         layout.addWidget(self._create_separator())
 
         # Botón Modo Comparar (Antes / Después con cortina)
-        self.btn_compare = QPushButton("⇆ Comparar")
+        self.btn_compare = QPushButton("Comparar")
         self.btn_compare.setObjectName("actionButton")
         self.btn_compare.setCheckable(True)
-        self.btn_compare.setFixedHeight(30)
+        self.btn_compare.setFixedHeight(32)
         self.btn_compare.setToolTip("Comparar antes/después con cortina interactiva")
         self.btn_compare.clicked.connect(self._on_toggle_compare)
         layout.addWidget(self.btn_compare)
 
-        return top_bar
+        layout.addSpacing(15)
 
+        # Botones de ventana (estilo macOS)
+        self.btn_min = QPushButton("")
+        self.btn_min.setObjectName("macMinBtn")
+        self.btn_min.setFixedSize(14, 14)
+        self.btn_min.setToolTip("Minimizar")
+        self.btn_min.clicked.connect(self.showMinimized)
+
+        self.btn_max = QPushButton("")
+        self.btn_max.setObjectName("macMaxBtn")
+        self.btn_max.setFixedSize(14, 14)
+        self.btn_max.setToolTip("Maximizar/Restaurar")
+        self.btn_max.clicked.connect(self._toggle_maximize)
+
+        self.btn_close = QPushButton("")
+        self.btn_close.setObjectName("macCloseBtn")
+        self.btn_close.setFixedSize(14, 14)
+        self.btn_close.setToolTip("Cerrar")
+        self.btn_close.clicked.connect(self.close)
+
+        layout.addWidget(self.btn_min)
+        layout.addWidget(self.btn_max)
+        layout.addWidget(self.btn_close)
+
+        return top_bar
     # -------------------------------------------------------------
     # Barra Inferior de Estado
     # -------------------------------------------------------------
@@ -290,16 +350,19 @@ class MainWindow(QMainWindow):
         self.progress_bar.setVisible(False)
         layout.addWidget(self.progress_bar)
 
-        # Dispositivo de aceleración (GPU/CPU)
-        is_gpu = "GPU" in self.device.upper()
-        gpu_icon = "⚡ " if is_gpu else "💻 "
-        device_text = f"{gpu_icon}{self.device}"
-        self.lbl_device = QLabel(device_text)
-        self.lbl_device.setObjectName("deviceBadgeGpu" if is_gpu else "deviceBadgeCpu")
-        self.lbl_device.setCursor(Qt.CursorShape.PointingHandCursor)
-        self.lbl_device.setToolTip("Haz clic para alternar entre aceleración GPU y modo CPU seguro")
-        self.lbl_device.mousePressEvent = lambda e: self._toggle_device_mode()
-        layout.addWidget(self.lbl_device)
+        # Botón de Donaciones Ko-fi
+        self.btn_kofi = QPushButton("☕ Apoyar a Eliather")
+        self.btn_kofi.setObjectName("kofiButton")
+        self.btn_kofi.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.btn_kofi.setToolTip("Cómprame un café en Ko-fi para apoyar el desarrollo")
+        import webbrowser
+        self.btn_kofi.clicked.connect(lambda: webbrowser.open("https://ko-fi.com/eliather"))
+        layout.addWidget(self.btn_kofi)
+
+        # Añadir grip de redimensionamiento en la esquina inferior derecha
+        from PySide6.QtWidgets import QSizeGrip
+        self.size_grip = QSizeGrip(self)
+        layout.addWidget(self.size_grip, 0, Qt.AlignmentFlag.AlignBottom | Qt.AlignmentFlag.AlignRight)
 
         return bar
 

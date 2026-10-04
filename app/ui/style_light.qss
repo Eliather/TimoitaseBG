@@ -56,7 +56,7 @@ QPushButton#actionButton {
     font-weight: bold;
     border: none;
     border-radius: 6px;
-    padding: 10px 20px;
+    padding: 6px 16px;
 }
 QPushButton#actionButton:hover {
     background-color: #FF3B6B;
@@ -199,4 +199,40 @@ QCheckBox::indicator:checked {
 }
 QCheckBox::indicator:hover {
     border: 1px solid #FF4F79;
+}
+
+/* --- WINDOW CONTROLS (Frameless macOS style) --- */
+#macMinBtn {
+    background-color: #FFBD2E;
+    border-radius: 7px;
+}
+#macMinBtn:hover {
+    background-color: #FFC950;
+}
+#macMaxBtn {
+    background-color: #28C940;
+    border-radius: 7px;
+}
+#macMaxBtn:hover {
+    background-color: #31DB4A;
+}
+#macCloseBtn {
+    background-color: #FF5F56;
+    border-radius: 7px;
+}
+#macCloseBtn:hover {
+    background-color: #FF746D;
+}
+
+/* --- KO-FI BUTTON --- */
+#kofiButton {
+    background-color: #FF5E5B;
+    color: white;
+    font-weight: bold;
+    border: none;
+    padding: 6px 14px;
+    border-radius: 6px;
+}
+#kofiButton:hover {
+    background-color: #FF7775;
 }

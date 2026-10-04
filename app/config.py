@@ -214,8 +214,8 @@ def get_inference_providers():
 APP_NAME = "TimoitaseBG"
 APP_VERSION = "1.0.0"
 APP_DEVELOPER = "Eliather"
-DEFAULT_WINDOW_TITLE = f"{APP_NAME} v{APP_VERSION} - by {APP_DEVELOPER}"
-WINDOW_MIN_WIDTH = 1000
+DEFAULT_WINDOW_TITLE = f"{APP_NAME} v{APP_VERSION}"
+WINDOW_MIN_WIDTH = 1200
 WINDOW_MIN_HEIGHT = 700
 
 # Parámetros del canvas y pincel
