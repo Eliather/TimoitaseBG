@@ -238,3 +238,14 @@ QCheckBox::indicator:hover {
 #kofiButton:hover {
     background-color: #FF7775;
 }
+
+/* --- FRAMELESS POPUP --- */
+#framelessPopupRoot {
+    background-color: #1A1A1A;
+    border-radius: 10px;
+    border: 1px solid #333333;
+}
+#popupTitle {
+    font-weight: bold;
+    color: #8E8E8E;
+}

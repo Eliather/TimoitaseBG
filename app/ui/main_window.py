@@ -70,6 +70,78 @@ class CustomTopBar(QWidget):
             self.parent_window._toggle_maximize()
             event.accept()
 
+class FramelessPopup(QDialog):
+    def __init__(self, parent, title, message):
+        super().__init__(parent)
+        self.setWindowFlags(Qt.WindowType.FramelessWindowHint | Qt.WindowType.Dialog)
+        self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground, True)
+        self.setModal(True)
+        self.resize(380, 160)
+        
+        self.root_widget = QWidget(self)
+        self.root_widget.setObjectName("framelessPopupRoot")
+        
+        main_layout = QVBoxLayout(self)
+        main_layout.setContentsMargins(0, 0, 0, 0)
+        main_layout.addWidget(self.root_widget)
+        
+        layout = QVBoxLayout(self.root_widget)
+        layout.setContentsMargins(15, 12, 15, 15)
+        
+        top_bar = QWidget()
+        top_layout = QHBoxLayout(top_bar)
+        top_layout.setContentsMargins(0, 0, 0, 0)
+        
+        title_lbl = QLabel(title)
+        title_lbl.setObjectName("popupTitle")
+        top_layout.addWidget(title_lbl)
+        
+        top_layout.addStretch()
+        
+        self.btn_close = QPushButton("")
+        self.btn_close.setObjectName("macCloseBtn")
+        self.btn_close.setFixedSize(14, 14)
+        self.btn_close.clicked.connect(self.close)
+        top_layout.addWidget(self.btn_close)
+        
+        layout.addWidget(top_bar)
+        layout.addSpacing(10)
+        
+        msg_lbl = QLabel(message)
+        msg_lbl.setWordWrap(True)
+        msg_lbl.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        layout.addWidget(msg_lbl)
+        
+        layout.addStretch()
+        
+        self.btn_ok = QPushButton("Aceptar")
+        self.btn_ok.setObjectName("actionButton")
+        self.btn_ok.setFixedSize(100, 32)
+        self.btn_ok.clicked.connect(self.close)
+        
+        btn_layout = QHBoxLayout()
+        btn_layout.addStretch()
+        btn_layout.addWidget(self.btn_ok)
+        btn_layout.addStretch()
+        
+        layout.addLayout(btn_layout)
+
+    def mousePressEvent(self, event):
+        if event.button() == Qt.MouseButton.LeftButton:
+            self._is_tracking = True
+            self._start_pos = event.globalPosition().toPoint() - self.pos()
+            event.accept()
+
+    def mouseMoveEvent(self, event):
+        if hasattr(self, '_is_tracking') and self._is_tracking:
+            self.move(event.globalPosition().toPoint() - self._start_pos)
+            event.accept()
+
+    def mouseReleaseEvent(self, event):
+        if event.button() == Qt.MouseButton.LeftButton:
+            self._is_tracking = False
+            event.accept()
+
 class MainWindow(QMainWindow):
     """
     Ventana principal de TimoitaseBG.
@@ -474,7 +546,7 @@ class MainWindow(QMainWindow):
     def prompt_save_image(self):
         """Guarda la imagen procesada en disco."""
         if not self.image_state.has_image:
-            QMessageBox.information(self, "Sin imagen", "No hay ninguna imagen activa para guardar.")
+            FramelessPopup(self, "Sin imagen", "No hay ninguna imagen activa para guardar.").exec()
             return
 
         default_name = "anime_processed.png"
@@ -514,9 +586,9 @@ class MainWindow(QMainWindow):
                 img.save(path)
 
             self.lbl_status.setText(f"Imagen guardada en: {Path(path).name}")
-            QMessageBox.information(self, "Guardado con éxito", f"La imagen se ha guardado correctamente en:\n{path}")
+            FramelessPopup(self, "Guardado con éxito", f"La imagen se ha guardado correctamente en:\n{path}").exec()
         except Exception as e:
-            QMessageBox.critical(self, "Error al guardar", f"No se pudo guardar la imagen:\n{e}")
+            FramelessPopup(self, "Error al guardar", f"No se pudo guardar la imagen:\n{e}").exec()
 
     # -------------------------------------------------------------
     # Acciones de Historial (Undo / Redo / Reset)
