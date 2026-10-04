@@ -40,6 +40,30 @@ TRANSLATIONS = {
         "popup_device_msg": "El procesamiento ahora se realizará en: {device}",
         "popup_lang_changed_title": "Idioma cambiado",
         "popup_lang_changed_msg": "Reinicia la aplicación para aplicar los cambios de idioma.",
+        
+        "brush_settings": "Ajustes del Pincel",
+        "lbl_size_thick": "Grosor:",
+        "lbl_opacity": "Opacidad:",
+        "header_batch": "Procesamiento por Lotes:",
+        "batch_desc": "Quita el fondo a múltiples imágenes automáticamente.",
+        "btn_batch_input": "📂 Seleccionar carpeta origen...",
+        "batch_no_folder": "No hay carpeta seleccionada",
+        "btn_batch_output": "📁 Seleccionar carpeta destino...",
+        "lbl_batch_model": "Modelo a usar:",
+        "chk_batch_clothing": "🛡️ Detector avanzado de ropa",
+        "btn_run_batch": "🚀 Iniciar Proceso en Lote",
+        "batch_input_path": "Origen: {path}",
+        "batch_output_path": "Destino: {path}",
+        
+        "model_isnet-anime": "IS-Net Anime (Óptimo para Anime, Manga e Ilustración)",
+        "model_u2net_human_seg": "U2-Net Human (Detector de Personas y Ropa — Especial Playeras Blancas)",
+        "model_birefnet-general": "BiRefNet (Alta Definición General y Bordes Complejos)",
+        "model_inspyrenet": "InSPyReNet Swin-B (Fotografía y Retratos Reales — Anti-aliasing Subpíxel)",
+        
+        "scale_x2": "Escalar 2x",
+        "scale_x4": "Escalar 4x (Máxima resolución)",
+        "scale_enhance_only": "Solo nitidez (Sin cambiar tamaño)",
+
         "btn_ok": "Aceptar",
         
         "canvas_drop_title": "Arrastra una imagen aquí",
@@ -135,6 +159,30 @@ TRANSLATIONS = {
         "popup_device_msg": "Processing will now be performed on: {device}",
         "popup_lang_changed_title": "Language changed",
         "popup_lang_changed_msg": "Please restart the application to apply language changes.",
+        
+        "brush_settings": "Brush Settings",
+        "lbl_size_thick": "Thickness:",
+        "lbl_opacity": "Opacity:",
+        "header_batch": "Batch Processing:",
+        "batch_desc": "Remove background from multiple images automatically.",
+        "btn_batch_input": "📂 Select source folder...",
+        "batch_no_folder": "No folder selected",
+        "btn_batch_output": "📁 Select destination folder...",
+        "lbl_batch_model": "Model to use:",
+        "chk_batch_clothing": "🛡️ Advanced clothing detector",
+        "btn_run_batch": "🚀 Start Batch Process",
+        "batch_input_path": "Source: {path}",
+        "batch_output_path": "Destination: {path}",
+        
+        "model_isnet-anime": "IS-Net Anime (Optimal for Anime, Manga and Illustration)",
+        "model_u2net_human_seg": "U2-Net Human (Person & Clothing Detector — White Shirts)",
+        "model_birefnet-general": "BiRefNet (General High Definition and Complex Edges)",
+        "model_inspyrenet": "InSPyReNet Swin-B (Real Photography & Portraits — Subpixel Anti-aliasing)",
+        
+        "scale_x2": "Upscale 2x",
+        "scale_x4": "Upscale 4x (Maximum resolution)",
+        "scale_enhance_only": "Sharpen only (No resize)",
+
         "btn_ok": "OK",
         
         "canvas_drop_title": "Drag an image here",
@@ -230,6 +278,30 @@ TRANSLATIONS = {
         "popup_device_msg": "Обработка на: {device}",
         "popup_lang_changed_title": "Язык изменен",
         "popup_lang_changed_msg": "Перезапустите приложение.",
+        
+        "brush_settings": "Настройки кисти",
+        "lbl_size_thick": "Толщина:",
+        "lbl_opacity": "Непрозрачность:",
+        "header_batch": "Пакетная обработка:",
+        "batch_desc": "Автоматическое удаление фона с нескольких изображений.",
+        "btn_batch_input": "📂 Выбрать исходную папку...",
+        "batch_no_folder": "Папка не выбрана",
+        "btn_batch_output": "📁 Выбрать папку назначения...",
+        "lbl_batch_model": "Модель:",
+        "chk_batch_clothing": "🛡️ Детектор одежды",
+        "btn_run_batch": "🚀 Начать пакетную обработку",
+        "batch_input_path": "Источник: {path}",
+        "batch_output_path": "Назначение: {path}",
+        
+        "model_isnet-anime": "IS-Net Anime (Для аниме и иллюстраций)",
+        "model_u2net_human_seg": "U2-Net Human (Для людей и белой одежды)",
+        "model_birefnet-general": "BiRefNet (Высокая детализация сложных краев)",
+        "model_inspyrenet": "InSPyReNet Swin-B (Для фото и портретов)",
+        
+        "scale_x2": "Увеличить 2x",
+        "scale_x4": "Увеличить 4x (Макс. разрешение)",
+        "scale_enhance_only": "Только резкость (Без изменения размера)",
+
         "btn_ok": "ОК",
         
         "canvas_drop_title": "Перетащите изображение сюда",
@@ -325,6 +397,30 @@ TRANSLATIONS = {
         "popup_device_msg": "处理设备：{device}",
         "popup_lang_changed_title": "语言已更改",
         "popup_lang_changed_msg": "请重新启动应用程序。",
+        
+        "brush_settings": "画笔设置",
+        "lbl_size_thick": "粗细：",
+        "lbl_opacity": "不透明度：",
+        "header_batch": "批量处理：",
+        "batch_desc": "自动从多张图像中去除背景。",
+        "btn_batch_input": "📂 选择源文件夹...",
+        "batch_no_folder": "未选择文件夹",
+        "btn_batch_output": "📁 选择目标文件夹...",
+        "lbl_batch_model": "使用的模型：",
+        "chk_batch_clothing": "🛡️ 高级衣物检测器",
+        "btn_run_batch": "🚀 开始批量处理",
+        "batch_input_path": "源：{path}",
+        "batch_output_path": "目标：{path}",
+        
+        "model_isnet-anime": "IS-Net Anime（适合动漫和插画）",
+        "model_u2net_human_seg": "U2-Net Human（人物与衣物检测，保护白色衣服）",
+        "model_birefnet-general": "BiRefNet（通用高清和复杂边缘）",
+        "model_inspyrenet": "InSPyReNet Swin-B（真实摄影和肖像）",
+        
+        "scale_x2": "放大 2x",
+        "scale_x4": "放大 4x（最大分辨率）",
+        "scale_enhance_only": "仅锐化（不改变大小）",
+
         "btn_ok": "确定",
         
         "canvas_drop_title": "将图像拖至此处",

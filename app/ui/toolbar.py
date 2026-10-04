@@ -578,7 +578,7 @@ class ToolSidebar(QWidget):
         self.combo_bg_model = QComboBox()
         self.combo_bg_model.setFixedHeight(38)
         for model_id, model_label in BG_REMOVER_MODELS:
-            self.combo_bg_model.addItem(model_label, model_id)
+            self.combo_bg_model.addItem(tr(f"model_{model_id}"), model_id)
         self.combo_bg_model.setCurrentIndex(0)
         layout.addWidget(self.combo_bg_model)
 
@@ -731,7 +731,7 @@ class ToolSidebar(QWidget):
         self.combo_restore_scale = QComboBox()
         self.combo_restore_scale.setFixedHeight(38)
         for scale_id, scale_label in RESTORE_SCALES:
-            self.combo_restore_scale.addItem(scale_label, scale_id)
+            self.combo_restore_scale.addItem(tr(f"scale_{scale_id}"), scale_id)
         self.combo_restore_scale.setCurrentIndex(0)
         layout.addWidget(self.combo_restore_scale)
 
@@ -799,14 +799,14 @@ class ToolSidebar(QWidget):
         layout.addLayout(mode_row)
 
         # Control de tamaño del pincel
-        brush_ctrl_box = QGroupBox("Ajustes del Pincel")
+        brush_ctrl_box = QGroupBox(tr("brush_settings"))
         b_layout = QVBoxLayout(brush_ctrl_box)
         b_layout.setContentsMargins(12, 14, 12, 10)
         b_layout.setSpacing(10)
 
         # Fila de tamaño
         slider_row = QHBoxLayout()
-        size_lbl = QLabel("Grosor:")
+        size_lbl = QLabel(tr("lbl_size_thick"))
         size_lbl.setFixedWidth(50)
         self.slider_brush_size = QSlider(Qt.Orientation.Horizontal)
         self.slider_brush_size.setRange(MIN_BRUSH_SIZE, MAX_BRUSH_SIZE)
@@ -825,7 +825,7 @@ class ToolSidebar(QWidget):
 
         # Fila de suavizado (Smoothness)
         smooth_row = QHBoxLayout()
-        smooth_lbl = QLabel("Suavizar:")
+        smooth_lbl = QLabel(tr("lbl_smoothness"))
         smooth_lbl.setFixedWidth(50)
         self.slider_brush_smooth = QSlider(Qt.Orientation.Horizontal)
         self.slider_brush_smooth.setRange(0, 100)
@@ -844,7 +844,7 @@ class ToolSidebar(QWidget):
         
         # Opacidad
         op_row = QHBoxLayout()
-        lbl_op = QLabel("Opacidad:")
+        lbl_op = QLabel(tr("lbl_opacity"))
         lbl_op.setFixedWidth(60)
         op_row.addWidget(lbl_op)
         self.slider_brush_opacity = QSlider(Qt.Orientation.Horizontal)
@@ -860,7 +860,7 @@ class ToolSidebar(QWidget):
         
         # Dureza
         hd_row = QHBoxLayout()
-        lbl_hd = QLabel("Dureza:")
+        lbl_hd = QLabel(tr("lbl_hardness"))
         lbl_hd.setFixedWidth(60)
         hd_row.addWidget(lbl_hd)
         self.slider_brush_hardness = QSlider(Qt.Orientation.Horizontal)
@@ -898,29 +898,29 @@ class ToolSidebar(QWidget):
         layout.setSpacing(10)
 
         header_batch = self._create_section_header(
-            "Procesamiento por Lotes:",
-            "Quita el fondo a múltiples imágenes automáticamente."
+            tr("header_batch"),
+            tr("batch_desc")
         )
         layout.addLayout(header_batch)
 
         # Seleccionar carpeta de entrada
-        self.btn_batch_input = QPushButton("📂 Seleccionar carpeta origen...")
+        self.btn_batch_input = QPushButton(tr("btn_batch_input"))
         self.btn_batch_input.setFixedHeight(36)
         self.btn_batch_input.clicked.connect(self._on_batch_input_clicked)
         layout.addWidget(self.btn_batch_input)
         
-        self.lbl_batch_input = QLabel("No hay carpeta seleccionada")
+        self.lbl_batch_input = QLabel(tr("batch_no_folder"))
         self.lbl_batch_input.setObjectName("shortcutDesc")
         self.lbl_batch_input.setWordWrap(True)
         layout.addWidget(self.lbl_batch_input)
 
         # Seleccionar carpeta de salida
-        self.btn_batch_output = QPushButton("📁 Seleccionar carpeta destino...")
+        self.btn_batch_output = QPushButton(tr("btn_batch_output"))
         self.btn_batch_output.setFixedHeight(36)
         self.btn_batch_output.clicked.connect(self._on_batch_output_clicked)
         layout.addWidget(self.btn_batch_output)
 
-        self.lbl_batch_output = QLabel("No hay carpeta seleccionada")
+        self.lbl_batch_output = QLabel(tr("batch_no_folder"))
         self.lbl_batch_output.setObjectName("shortcutDesc")
         self.lbl_batch_output.setWordWrap(True)
         layout.addWidget(self.lbl_batch_output)
@@ -931,22 +931,22 @@ class ToolSidebar(QWidget):
         layout.addWidget(sep1)
 
         # Opciones de modelo
-        lbl_model = QLabel("Modelo a usar:")
+        lbl_model = QLabel(tr("lbl_batch_model"))
         lbl_model.setObjectName("fieldLabel")
         layout.addWidget(lbl_model)
 
         self.combo_batch_model = QComboBox()
         self.combo_batch_model.setFixedHeight(38)
         for model_id, model_label in BG_REMOVER_MODELS:
-            self.combo_batch_model.addItem(model_label, model_id)
+            self.combo_batch_model.addItem(tr(f"model_{model_id}"), model_id)
         layout.addWidget(self.combo_batch_model)
 
-        self.chk_batch_clothing = QCheckBox("🛡️ Detector avanzado de ropa")
+        self.chk_batch_clothing = QCheckBox(tr("chk_batch_clothing"))
         self.chk_batch_clothing.setChecked(True)
         layout.addWidget(self.chk_batch_clothing)
 
         # Botón Iniciar
-        self.btn_run_batch = QPushButton("🚀 Iniciar Proceso en Lote")
+        self.btn_run_batch = QPushButton(tr("btn_run_batch"))
         self.btn_run_batch.setObjectName("primaryActionButton")
         self.btn_run_batch.setFixedHeight(40)
         self.btn_run_batch.setEnabled(False)
@@ -1016,7 +1016,7 @@ class ToolSidebar(QWidget):
         dir_path = QFileDialog.getExistingDirectory(self, "Seleccionar carpeta de imágenes de origen")
         if dir_path:
             self._batch_input_dir = dir_path
-            self.lbl_batch_input.setText(f"Origen: {dir_path}")
+            self.lbl_batch_input.setText(tr("batch_input_path", path=dir_path))
             self._update_batch_btn_state()
 
     def _on_batch_output_clicked(self):
@@ -1024,7 +1024,7 @@ class ToolSidebar(QWidget):
         dir_path = QFileDialog.getExistingDirectory(self, "Seleccionar carpeta de destino")
         if dir_path:
             self._batch_output_dir = dir_path
-            self.lbl_batch_output.setText(f"Destino: {dir_path}")
+            self.lbl_batch_output.setText(tr("batch_output_path", path=dir_path))
             self._update_batch_btn_state()
 
     def _update_batch_btn_state(self):
