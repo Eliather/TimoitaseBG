@@ -4,6 +4,7 @@ TimoitaseBG - Panel lateral de herramientas (Sidebar) inspirado en el diseño de
 from typing import Optional, List, Tuple
 from PySide6.QtCore import Qt, Signal, Property, QPropertyAnimation, QEasingCurve
 from PySide6.QtGui import QColor, QPainter, QBrush, QPen
+from app.i18n import tr
 from PySide6.QtWidgets import (
     QWidget,
     QVBoxLayout,

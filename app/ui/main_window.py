@@ -8,6 +8,7 @@ from PIL import Image
 from PySide6.QtCore import Qt, QSize, Signal, Slot
 from PySide6.QtGui import QIcon, QKeySequence, QShortcut, QAction, QGuiApplication
 from PySide6.QtWidgets import (
+    QComboBox,
     QMainWindow,
     QWidget,
     QVBoxLayout,
@@ -22,6 +23,8 @@ from PySide6.QtWidgets import (
     QFrame,
     QDialog,
 )
+
+from app.i18n import tr, set_language, get_available_languages, get_current_language
 
 from app.config import (
     APP_NAME,
@@ -115,7 +118,7 @@ class FramelessPopup(QDialog):
         
         layout.addStretch()
         
-        self.btn_ok = QPushButton("Aceptar")
+        self.btn_ok = QPushButton(tr("btn_ok"))
         self.btn_ok.setObjectName("actionButton")
         self.btn_ok.setFixedSize(100, 32)
         self.btn_ok.clicked.connect(self.close)
@@ -183,6 +186,12 @@ class MainWindow(QMainWindow):
             self.showNormal()
         else:
             self.showMaximized()
+
+    def _on_lang_changed(self, index):
+        code = self.combo_lang.itemData(index)
+        if code:
+            set_language(code)
+            FramelessPopup(self, tr("popup_lang_changed_title"), tr("popup_lang_changed_msg")).exec()
 
     def _load_stylesheet(self):
         self.is_dark_theme = getattr(self, "is_dark_theme", False)
@@ -275,25 +284,42 @@ class MainWindow(QMainWindow):
         self.btn_theme = QPushButton("🌙")
         self.btn_theme.setObjectName("compactIconButton")
         self.btn_theme.setFixedSize(30, 30)
-        self.btn_theme.setToolTip("Cambiar entre tema Claro/Oscuro")
+        self.btn_theme.setToolTip(tr("tooltip_theme"))
         self.btn_theme.clicked.connect(self._toggle_theme)
         layout.addWidget(self.btn_theme)
 
         layout.addSpacing(12)
 
+        self.combo_lang = QComboBox()
+        self.combo_lang.setObjectName("langSelector")
+        self.combo_lang.setToolTip(tr("tooltip_lang"))
+        self.combo_lang.setFixedHeight(30)
+        for code, name in get_available_languages():
+            self.combo_lang.addItem(name, code)
+        
+        current = get_current_language()
+        idx = self.combo_lang.findData(current)
+        if idx >= 0:
+            self.combo_lang.setCurrentIndex(idx)
+        
+        self.combo_lang.currentIndexChanged.connect(self._on_lang_changed)
+        layout.addWidget(self.combo_lang)
+
+        layout.addSpacing(12)
+
         # Botón Abrir Imagen
-        self.btn_open = QPushButton("Abrir")
+        self.btn_open = QPushButton(tr("btn_open"))
         self.btn_open.setObjectName("actionButton")
         self.btn_open.setFixedHeight(32)
-        self.btn_open.setToolTip("Abrir imagen desde el explorador (Ctrl+O) o pegar con Ctrl+V")
+        self.btn_open.setToolTip(tr("tooltip_open"))
         self.btn_open.clicked.connect(self.prompt_open_image)
         layout.addWidget(self.btn_open)
 
         # Botón Guardar Como
-        self.btn_save = QPushButton("Guardar")
+        self.btn_save = QPushButton(tr("btn_save"))
         self.btn_save.setObjectName("actionButton")
         self.btn_save.setFixedHeight(32)
-        self.btn_save.setToolTip("Guardar imagen procesada en disco (Ctrl+S)")
+        self.btn_save.setToolTip(tr("tooltip_save"))
         self.btn_save.clicked.connect(self.prompt_save_image)
         layout.addWidget(self.btn_save)
 
@@ -303,21 +329,21 @@ class MainWindow(QMainWindow):
         self.btn_undo = QPushButton("↶")
         self.btn_undo.setObjectName("compactIconButton")
         self.btn_undo.setFixedSize(34, 34)
-        self.btn_undo.setToolTip("Deshacer última acción (Ctrl+Z)")
+        self.btn_undo.setToolTip(tr("tooltip_undo"))
         self.btn_undo.clicked.connect(self.perform_undo)
         layout.addWidget(self.btn_undo)
 
         self.btn_redo = QPushButton("↷")
         self.btn_redo.setObjectName("compactIconButton")
         self.btn_redo.setFixedSize(34, 34)
-        self.btn_redo.setToolTip("Rehacer acción (Ctrl+Y)")
+        self.btn_redo.setToolTip(tr("tooltip_redo"))
         self.btn_redo.clicked.connect(self.perform_redo)
         layout.addWidget(self.btn_redo)
 
         self.btn_reset_orig = QPushButton("↺")
         self.btn_reset_orig.setObjectName("compactIconButton")
         self.btn_reset_orig.setFixedSize(34, 34)
-        self.btn_reset_orig.setToolTip("Recuperar Original (Restaura la imagen inicial)")
+        self.btn_reset_orig.setToolTip(tr("tooltip_reset"))
         self.btn_reset_orig.clicked.connect(self.perform_reset_original)
         layout.addWidget(self.btn_reset_orig)
 
@@ -327,7 +353,7 @@ class MainWindow(QMainWindow):
         self.btn_zoom_out = QPushButton("－")
         self.btn_zoom_out.setObjectName("zoomButton")
         self.btn_zoom_out.setFixedSize(30, 30)
-        self.btn_zoom_out.setToolTip("Reducir zoom")
+        self.btn_zoom_out.setToolTip(tr("tooltip_zoom_out"))
         self.btn_zoom_out.clicked.connect(lambda: self.canvas.set_zoom_delta(1.0 / 1.2))
         layout.addWidget(self.btn_zoom_out)
 
@@ -340,32 +366,32 @@ class MainWindow(QMainWindow):
         self.btn_zoom_in = QPushButton("＋")
         self.btn_zoom_in.setObjectName("zoomButton")
         self.btn_zoom_in.setFixedSize(30, 30)
-        self.btn_zoom_in.setToolTip("Aumentar zoom")
+        self.btn_zoom_in.setToolTip(tr("tooltip_zoom_in"))
         self.btn_zoom_in.clicked.connect(lambda: self.canvas.set_zoom_delta(1.2))
         layout.addWidget(self.btn_zoom_in)
 
-        self.btn_fit = QPushButton("Ajustar")
+        self.btn_fit = QPushButton(tr("btn_zoom_fit"))
         self.btn_fit.setObjectName("zoomButton")
         self.btn_fit.setFixedHeight(30)
-        self.btn_fit.setToolTip("Ajustar imagen completa a la ventana")
+        self.btn_fit.setToolTip(tr("tooltip_zoom_fit"))
         self.btn_fit.clicked.connect(self.canvas.fit_to_view)
         layout.addWidget(self.btn_fit)
 
         self.btn_zoom_100 = QPushButton("1:1")
         self.btn_zoom_100.setObjectName("zoomButton")
         self.btn_zoom_100.setFixedHeight(30)
-        self.btn_zoom_100.setToolTip("Zoom al 100%")
+        self.btn_zoom_100.setToolTip(tr("tooltip_zoom_100"))
         self.btn_zoom_100.clicked.connect(self.canvas.reset_zoom_100)
         layout.addWidget(self.btn_zoom_100)
 
         layout.addWidget(self._create_separator())
 
         # Botón Modo Comparar (Antes / Después con cortina)
-        self.btn_compare = QPushButton("Comparar")
+        self.btn_compare = QPushButton(tr("btn_compare"))
         self.btn_compare.setObjectName("actionButton")
         self.btn_compare.setCheckable(True)
         self.btn_compare.setFixedHeight(32)
-        self.btn_compare.setToolTip("Comparar antes/después con cortina interactiva")
+        self.btn_compare.setToolTip(tr("tooltip_compare"))
         self.btn_compare.clicked.connect(self._on_toggle_compare)
         layout.addWidget(self.btn_compare)
 
@@ -424,10 +450,10 @@ class MainWindow(QMainWindow):
         layout.addWidget(self.progress_bar)
 
         # Botón de Donaciones Ko-fi
-        self.btn_kofi = QPushButton("☕ Apoyar a Eliather")
+        self.btn_kofi = QPushButton(tr("btn_kofi"))
         self.btn_kofi.setObjectName("kofiButton")
         self.btn_kofi.setCursor(Qt.CursorShape.PointingHandCursor)
-        self.btn_kofi.setToolTip("Cómprame un café en Ko-fi para apoyar el desarrollo")
+        self.btn_kofi.setToolTip(tr("tooltip_kofi"))
         import webbrowser
         self.btn_kofi.clicked.connect(lambda: webbrowser.open("https://ko-fi.com/eliather"))
         layout.addWidget(self.btn_kofi)
@@ -547,7 +573,7 @@ class MainWindow(QMainWindow):
     def prompt_save_image(self):
         """Guarda la imagen procesada en disco."""
         if not self.image_state.has_image:
-            FramelessPopup(self, "Sin imagen", "No hay ninguna imagen activa para guardar.").exec()
+            FramelessPopup(self, tr("popup_no_image_title"), tr("popup_no_image_msg")).exec()
             return
 
         default_name = "anime_processed.png"
@@ -586,10 +612,10 @@ class MainWindow(QMainWindow):
                 # PNG por defecto
                 img.save(path)
 
-            self.lbl_status.setText(f"Imagen guardada en: {Path(path).name}")
-            FramelessPopup(self, "Guardado con éxito", f"La imagen se ha guardado correctamente en:\n{path}").exec()
+            self.lbl_status.setText(tr("status_saved", name=Path(path).name))
+            FramelessPopup(self, tr("popup_save_success_title"), tr("popup_save_success_msg", path=path)).exec()
         except Exception as e:
-            FramelessPopup(self, "Error al guardar", f"No se pudo guardar la imagen:\n{e}").exec()
+            FramelessPopup(self, tr("popup_error_save_title"), tr("popup_error_save_msg", error=str(e))).exec()
 
     # -------------------------------------------------------------
     # Acciones de Historial (Undo / Redo / Reset)
@@ -599,7 +625,7 @@ class MainWindow(QMainWindow):
         if img:
             self.canvas.set_image(img, reset_zoom=False)
             self.canvas.set_original_image(self.image_state.current_brush_reference)
-            self.lbl_status.setText(f"Deshecho: {self.image_state.get_status_summary()}")
+            self.lbl_status.setText(tr("status_undo", action=self.image_state.get_status_summary()))
             self._update_image_info_label(img)
             self._update_action_states()
 
@@ -608,7 +634,7 @@ class MainWindow(QMainWindow):
         if img:
             self.canvas.set_image(img, reset_zoom=False)
             self.canvas.set_original_image(self.image_state.current_brush_reference)
-            self.lbl_status.setText(f"Rehecho: {self.image_state.get_status_summary()}")
+            self.lbl_status.setText(tr("status_redo", action=self.image_state.get_status_summary()))
             self._update_image_info_label(img)
             self._update_action_states()
 
