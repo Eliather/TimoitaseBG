@@ -212,7 +212,9 @@ def get_inference_providers():
 
 # Parámetros por defecto de la aplicación
 APP_NAME = "TimoitaseBG"
-DEFAULT_WINDOW_TITLE = APP_NAME
+APP_VERSION = "1.0.0"
+APP_DEVELOPER = "Eliather"
+DEFAULT_WINDOW_TITLE = f"{APP_NAME} v{APP_VERSION} - by {APP_DEVELOPER}"
 WINDOW_MIN_WIDTH = 1000
 WINDOW_MIN_HEIGHT = 700
 

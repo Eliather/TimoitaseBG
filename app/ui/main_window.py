@@ -154,7 +154,8 @@ class MainWindow(QMainWindow):
         layout.setSpacing(10)
 
         # Título y Badge
-        title_label = QLabel(APP_NAME)
+        from app.config import DEFAULT_WINDOW_TITLE
+        title_label = QLabel(DEFAULT_WINDOW_TITLE)
         title_label.setObjectName("appNameLabel")
         layout.addWidget(title_label)
 
