@@ -6,6 +6,7 @@ import numpy as np
 from PIL import Image
 from PySide6.QtCore import Qt, QPoint, QPointF, QRect, QRectF, Signal
 from PySide6.QtWidgets import QWidget, QScrollBar
+from app.i18n import tr
 from PySide6.QtGui import (
     QPainter,
     QColor,
@@ -760,7 +761,7 @@ class CanvasWidget(QWidget):
         painter.drawText(
             QRectF(box_rect.x(), box_rect.y() + 86, box_rect.width(), 30),
             Qt.AlignmentFlag.AlignCenter,
-            "Arrastra una imagen aquí",
+            tr("canvas_drop_title"),
         )
 
         # Subtexto de ayuda
@@ -771,7 +772,7 @@ class CanvasWidget(QWidget):
         painter.drawText(
             QRectF(box_rect.x(), box_rect.y() + 118, box_rect.width(), 24),
             Qt.AlignmentFlag.AlignCenter,
-            "o usa el botón 'Abrir Imagen' o pega con Ctrl+V",
+            tr("canvas_drop_subtitle"),
         )
 
         painter.setFont(font)
@@ -779,7 +780,7 @@ class CanvasWidget(QWidget):
         painter.drawText(
             QRectF(box_rect.x(), box_rect.y() + 155, box_rect.width(), 20),
             Qt.AlignmentFlag.AlignCenter,
-            "Soporta PNG, JPG, JPEG, WEBP y BMP",
+            tr("canvas_drop_formats"),
         )
 
 

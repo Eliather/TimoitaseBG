@@ -339,9 +339,9 @@ class ToolSidebar(QWidget):
         text_layout.setContentsMargins(0, 0, 0, 0)
         text_layout.setSpacing(2)
 
-        title_label = QLabel("Herramientas")
+        title_label = QLabel(tr("sidebar_title"))
         title_label.setObjectName("sidebarHeader")
-        subtitle_label = QLabel("Edición y mejora con IA local")
+        subtitle_label = QLabel(tr("sidebar_subtitle"))
         subtitle_label.setObjectName("sidebarSubheader")
         text_layout.addWidget(title_label)
         text_layout.addWidget(subtitle_label)
@@ -369,7 +369,7 @@ class ToolSidebar(QWidget):
         self.rail_group = QButtonGroup(self)
         self.rail_group.setExclusive(True)
 
-        self.btn_rail_bg = QPushButton("⬚\nQuitar")
+        self.btn_rail_bg = QPushButton(tr("sidebar_tab_bg"))
         self.btn_rail_bg.setObjectName("toolRailButton")
         self.btn_rail_bg.setCheckable(True)
         self.btn_rail_bg.setChecked(True)
@@ -377,21 +377,21 @@ class ToolSidebar(QWidget):
         self.rail_group.addButton(self.btn_rail_bg, 0)
         tabs_layout.addWidget(self.btn_rail_bg)
 
-        self.btn_rail_restore = QPushButton("✦\nEscalar")
+        self.btn_rail_restore = QPushButton(tr("sidebar_tab_restore"))
         self.btn_rail_restore.setObjectName("toolRailButton")
         self.btn_rail_restore.setCheckable(True)
         self.btn_rail_restore.setFixedHeight(58)
         self.rail_group.addButton(self.btn_rail_restore, 1)
         tabs_layout.addWidget(self.btn_rail_restore)
 
-        self.btn_rail_brush = QPushButton("🖌\nPincel")
+        self.btn_rail_brush = QPushButton(tr("sidebar_tab_brush"))
         self.btn_rail_brush.setObjectName("toolRailButton")
         self.btn_rail_brush.setCheckable(True)
         self.btn_rail_brush.setFixedHeight(58)
         self.rail_group.addButton(self.btn_rail_brush, 2)
         tabs_layout.addWidget(self.btn_rail_brush)
 
-        self.btn_rail_batch = QPushButton("📂\nLotes")
+        self.btn_rail_batch = QPushButton(tr("sidebar_tab_batch"))
         self.btn_rail_batch.setObjectName("toolRailButton")
         self.btn_rail_batch.setCheckable(True)
         self.btn_rail_batch.setFixedHeight(58)
@@ -468,7 +468,7 @@ class ToolSidebar(QWidget):
         info_layout.setSpacing(4)
 
         # Header clickeable para colapsar/expandir atajos
-        self.btn_toggle_shortcuts = QPushButton("▸ Atajos rápidos")
+        self.btn_toggle_shortcuts = QPushButton(tr("sidebar_shortcuts_col"))
         self.btn_toggle_shortcuts.setObjectName("infoCardToggle")
         self.btn_toggle_shortcuts.setCursor(Qt.CursorShape.PointingHandCursor)
         self.btn_toggle_shortcuts.clicked.connect(self._toggle_shortcuts)
@@ -482,9 +482,9 @@ class ToolSidebar(QWidget):
         content_layout.setSpacing(4)
 
         shortcuts = [
-            ("Rueda", "Zoom in / out"),
-            ("Click medio / Espacio", "Arrastrar y mover"),
-            ("Ctrl+Z / Ctrl+Y", "Deshacer / Rehacer"),
+            (tr("shortcut_zoom"), tr("shortcut_zoom_desc")),
+            (tr("shortcut_pan"), tr("shortcut_pan_desc")),
+            (tr("shortcut_undo"), tr("shortcut_undo_desc")),
         ]
         for key, desc in shortcuts:
             row = QHBoxLayout()
@@ -525,10 +525,10 @@ class ToolSidebar(QWidget):
 
     def _update_shortcuts_ui(self):
         if self._shortcuts_expanded:
-            self.btn_toggle_shortcuts.setText("▾ Atajos rápidos")
+            self.btn_toggle_shortcuts.setText(tr("sidebar_shortcuts_exp"))
             self.shortcuts_content.show()
         else:
-            self.btn_toggle_shortcuts.setText("▸ Atajos rápidos")
+            self.btn_toggle_shortcuts.setText(tr("sidebar_shortcuts_col"))
             self.shortcuts_content.hide()
 
     @property
@@ -570,8 +570,8 @@ class ToolSidebar(QWidget):
         layout.setSpacing(10)
 
         header_model = self._create_section_header(
-            "Modelo de segmentación:",
-            "Elimina el fondo dejando transparencia limpia optimizada para ilustraciones y anime."
+            tr("header_model"),
+            tr("model_desc")
         )
         layout.addLayout(header_model)
 
@@ -582,14 +582,12 @@ class ToolSidebar(QWidget):
         self.combo_bg_model.setCurrentIndex(0)
         layout.addWidget(self.combo_bg_model)
 
-        self.chk_clothing_protection = QCheckBox("🛡️ Detector avanzado de ropa (evita agujeros en prendas blancas)")
+        self.chk_clothing_protection = QCheckBox(tr("chk_clothing"))
         self.chk_clothing_protection.setChecked(True)
-        self.chk_clothing_protection.setToolTip(
-            "Combina la segmentación con un detector semántico de personas y prendas para proteger playeras, camisas y mangas blancas contra fondos claros."
-        )
+        self.chk_clothing_protection.setToolTip(tr("chk_clothing_tooltip"))
         layout.addWidget(self.chk_clothing_protection)
 
-        self.btn_remove_bg = QPushButton("✨ Quitar Fondo Ahora")
+        self.btn_remove_bg = QPushButton(tr("btn_remove_now"))
         self.btn_remove_bg.setObjectName("primaryActionButton")
         self.btn_remove_bg.setFixedHeight(40)
         self.btn_remove_bg.clicked.connect(self._on_remove_bg_clicked)
@@ -603,14 +601,14 @@ class ToolSidebar(QWidget):
         sep1.setFrameShape(QFrame.Shape.HLine)
         layout.addWidget(sep1)
 
-        lbl_crop = QLabel("Ajuste de Lienzo:")
+        lbl_crop = QLabel(tr("header_crop"))
         lbl_crop.setObjectName("fieldLabel")
         layout.addWidget(lbl_crop)
 
-        self.btn_autocrop = QPushButton("⛶ Recortar al Contenido")
+        self.btn_autocrop = QPushButton(tr("btn_autocrop_now"))
         self.btn_autocrop.setObjectName("secondaryActionButton")
         self.btn_autocrop.setFixedHeight(36)
-        self.btn_autocrop.setToolTip("Aplica primero Quitar Fondo")
+        self.btn_autocrop.setToolTip(tr("btn_autocrop_tooltip"))
         self.btn_autocrop.setEnabled(False)
         self.btn_autocrop.clicked.connect(self.autoCropRequested.emit)
         layout.addWidget(self.btn_autocrop)
@@ -623,7 +621,7 @@ class ToolSidebar(QWidget):
         sep2.setFrameShape(QFrame.Shape.HLine)
         layout.addWidget(sep2)
 
-        lbl_bg_section = QLabel("Fondo:")
+        lbl_bg_section = QLabel(tr("header_bg"))
         lbl_bg_section.setObjectName("fieldLabel")
         layout.addWidget(lbl_bg_section)
 
@@ -639,7 +637,7 @@ class ToolSidebar(QWidget):
         self.btn_swatch_none.setObjectName("swatchNoneButton")
         self.btn_swatch_none.setCheckable(True)
         self.btn_swatch_none.setFixedSize(36, 32)
-        self.btn_swatch_none.setToolTip("Transparente / Ninguno (Restaurar canal alfa)")
+        self.btn_swatch_none.setToolTip(tr("swatch_transparent"))
         self.btn_swatch_none.setEnabled(False)
         self.swatch_group.addButton(self.btn_swatch_none)
         swatches_row.addWidget(self.btn_swatch_none)
@@ -650,7 +648,7 @@ class ToolSidebar(QWidget):
         self.btn_swatch_white.setCheckable(True)
         self.btn_swatch_white.setChecked(True)
         self.btn_swatch_white.setFixedSize(36, 32)
-        self.btn_swatch_white.setToolTip("Fondo Blanco (#FFFFFF)")
+        self.btn_swatch_white.setToolTip(tr("swatch_white"))
         self.btn_swatch_white.setEnabled(False)
         self.swatch_group.addButton(self.btn_swatch_white)
         swatches_row.addWidget(self.btn_swatch_white)
@@ -660,7 +658,7 @@ class ToolSidebar(QWidget):
         self.btn_swatch_black.setObjectName("swatchBlackButton")
         self.btn_swatch_black.setCheckable(True)
         self.btn_swatch_black.setFixedSize(36, 32)
-        self.btn_swatch_black.setToolTip("Fondo Negro (#000000)")
+        self.btn_swatch_black.setToolTip(tr("swatch_black"))
         self.btn_swatch_black.setEnabled(False)
         self.swatch_group.addButton(self.btn_swatch_black)
         swatches_row.addWidget(self.btn_swatch_black)
@@ -670,7 +668,7 @@ class ToolSidebar(QWidget):
         self.btn_swatch_gray.setObjectName("swatchGrayButton")
         self.btn_swatch_gray.setCheckable(True)
         self.btn_swatch_gray.setFixedSize(36, 32)
-        self.btn_swatch_gray.setToolTip("Fondo Gris (#E2E8F0)")
+        self.btn_swatch_gray.setToolTip(tr("swatch_gray"))
         self.btn_swatch_gray.setEnabled(False)
         self.swatch_group.addButton(self.btn_swatch_gray)
         swatches_row.addWidget(self.btn_swatch_gray)
@@ -680,7 +678,7 @@ class ToolSidebar(QWidget):
         self.btn_swatch_custom.setObjectName("swatchCustomButton")
         self.btn_swatch_custom.setCheckable(True)
         self.btn_swatch_custom.setFixedSize(36, 32)
-        self.btn_swatch_custom.setToolTip("Elegir color personalizado...")
+        self.btn_swatch_custom.setToolTip(tr("swatch_custom"))
         self.btn_swatch_custom.setEnabled(False)
         self.swatch_group.addButton(self.btn_swatch_custom)
         swatches_row.addWidget(self.btn_swatch_custom)
@@ -697,7 +695,7 @@ class ToolSidebar(QWidget):
         self.color_preview_box.setFixedSize(22, 22)
         color_action_row.addWidget(self.color_preview_box)
 
-        self.lbl_color_hex = QLabel("Blanco (#FFFFFF)")
+        self.lbl_color_hex = QLabel(tr("color_white"))
         self.lbl_color_hex.setObjectName("colorHexLabel")
         color_action_row.addWidget(self.lbl_color_hex)
 
@@ -706,13 +704,13 @@ class ToolSidebar(QWidget):
 
         # Conectar eventos de swatches
         self.btn_swatch_none.clicked.connect(self._on_swatch_none_clicked)
-        self.btn_swatch_white.clicked.connect(lambda: self._on_color_swatch_clicked((255, 255, 255), "Blanco (#FFFFFF)"))
-        self.btn_swatch_black.clicked.connect(lambda: self._on_color_swatch_clicked((0, 0, 0), "Negro (#000000)"))
-        self.btn_swatch_gray.clicked.connect(lambda: self._on_color_swatch_clicked((226, 232, 240), "Gris (#E2E8F0)"))
+        self.btn_swatch_white.clicked.connect(lambda: self._on_color_swatch_clicked((255, 255, 255), tr("color_white")))
+        self.btn_swatch_black.clicked.connect(lambda: self._on_color_swatch_clicked((0, 0, 0), tr("color_black")))
+        self.btn_swatch_gray.clicked.connect(lambda: self._on_color_swatch_clicked((226, 232, 240), tr("color_gray")))
         self.btn_swatch_custom.clicked.connect(self._on_swatch_custom_clicked)
 
         # Inicializar estado visual del color
-        self._update_color_preview((255, 255, 255), "Blanco (#FFFFFF)")
+        self._update_color_preview((255, 255, 255), tr("color_white"))
 
         layout.addStretch()
 
@@ -725,8 +723,8 @@ class ToolSidebar(QWidget):
         layout.setSpacing(10)
 
         header_scale = self._create_section_header(
-            "Factor de mejora:",
-            "Mejora la nitidez y resolución usando Real-ESRGAN especializado en arte e ilustración."
+            tr("header_scale"),
+            tr("scale_desc")
         )
         layout.addLayout(header_scale)
 
@@ -737,12 +735,12 @@ class ToolSidebar(QWidget):
         self.combo_restore_scale.setCurrentIndex(0)
         layout.addWidget(self.combo_restore_scale)
 
-        self.chk_tiling = QCheckBox("Procesar por bloques (Tiling inteligente)")
+        self.chk_tiling = QCheckBox(tr("chk_tiling"))
         self.chk_tiling.setChecked(True)
-        self.chk_tiling.setToolTip("Evita problemas de memoria en imágenes de alta resolución.")
+        self.chk_tiling.setToolTip(tr("chk_tiling_tooltip"))
         layout.addWidget(self.chk_tiling)
 
-        self.btn_restore = QPushButton("🚀 Escalar Imagen")
+        self.btn_restore = QPushButton(tr("btn_scale_now"))
         self.btn_restore.setObjectName("primaryActionButton")
         self.btn_restore.setFixedHeight(40)
         self.btn_restore.clicked.connect(self._on_restore_clicked)
@@ -759,13 +757,13 @@ class ToolSidebar(QWidget):
         layout.setSpacing(10)
 
         header_brush = self._create_section_header(
-            "Pincel Mágico:",
-            "Pinta sobre cualquier elemento u objeto que desees eliminar y la IA lo rellenará de forma coherente."
+            tr("header_brush"),
+            tr("brush_desc")
         )
         layout.addLayout(header_brush)
 
         # Botón de activación del modo pincel
-        self.btn_toggle_brush = QPushButton("🖌️ Modo Pincel")
+        self.btn_toggle_brush = QPushButton(tr("btn_brush_mode"))
         self.btn_toggle_brush.setObjectName("brushToggleButton")
         self.btn_toggle_brush.setCheckable(True)
         self.btn_toggle_brush.setChecked(False)
@@ -780,13 +778,13 @@ class ToolSidebar(QWidget):
         self.brush_mode_group = QButtonGroup(self)
         self.brush_mode_group.setExclusive(True)
         
-        self.btn_tool_paint = QPushButton("🖌️ Pintar")
+        self.btn_tool_paint = QPushButton(tr("btn_paint"))
         self.btn_tool_paint.setObjectName("brushToolModeButton")
         self.btn_tool_paint.setCheckable(True)
         self.btn_tool_paint.setChecked(True)
         self.btn_tool_paint.setFixedHeight(32)
         
-        self.btn_tool_erase = QPushButton("🧽 Borrador")
+        self.btn_tool_erase = QPushButton(tr("btn_erase"))
         self.btn_tool_erase.setObjectName("brushToolModeButton")
         self.btn_tool_erase.setCheckable(True)
         self.btn_tool_erase.setFixedHeight(32)
@@ -1099,7 +1097,7 @@ class ToolSidebar(QWidget):
         if has_transparency:
             self.btn_autocrop.setToolTip("Elimina los márgenes transparentes sobrantes con 10px de respiro.")
         else:
-            self.btn_autocrop.setToolTip("Aplica primero Quitar Fondo")
+            self.btn_autocrop.setToolTip(tr("btn_autocrop_tooltip"))
 
         # 2. Selector de fondo
         self.btn_swatch_none.setEnabled(has_transparency)
