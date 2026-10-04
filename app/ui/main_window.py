@@ -20,6 +20,7 @@ from PySide6.QtWidgets import (
     QStatusBar,
     QSplitter,
     QFrame,
+    QDialog,
 )
 
 from app.config import (
