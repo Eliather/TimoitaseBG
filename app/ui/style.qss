@@ -1,0 +1,204 @@
+/* 
+  TimoitaseBG - Hoja de estilos principal (Dark Theme Nativo) 
+  Aplicado a la capa superior de PySide6 para uniformidad estética 
+*/
+
+/* --- FONDO GLOBAL Y TEXTO --- */
+QWidget {
+    background-color: #121212;
+    color: #E0E0E0;
+    font-family: 'Segoe UI', 'San Francisco', 'Inter', sans-serif;
+    font-size: 13px;
+}
+
+/* --- BARRA LATERAL (TOOLBAR) --- */
+QWidget#sidebar {
+    background-color: #1A1A1A;
+    border-right: 1px solid #2A2A2A;
+}
+
+/* --- BOTONES PRINCIPALES --- */
+QPushButton {
+    background-color: #2D2D2D;
+    color: #FFFFFF;
+    border: 1px solid #3D3D3D;
+    border-radius: 6px;
+    padding: 8px 16px;
+    font-weight: 500;
+}
+
+QPushButton:hover {
+    background-color: #3D3D3D;
+    border: 1px solid #4D4D4D;
+}
+
+QPushButton:pressed {
+    background-color: #555555;
+}
+
+QPushButton:checked {
+    background-color: #FF4F79; /* Rosa Sakura activo */
+    color: #FFFFFF;
+    border: 1px solid #FF3B6B;
+}
+
+QPushButton:disabled {
+    background-color: #1E1E1E;
+    color: #555555;
+    border: 1px solid #222222;
+}
+
+/* --- BOTÓN DE ACCIÓN DESTACADO (Call to Action) --- */
+QPushButton#actionButton {
+    background-color: #FF4F79;
+    color: white;
+    font-weight: bold;
+    border: none;
+    border-radius: 6px;
+    padding: 10px 20px;
+}
+QPushButton#actionButton:hover {
+    background-color: #FF3B6B;
+}
+QPushButton#actionButton:disabled {
+    background-color: #4A1A27;
+    color: #888888;
+}
+
+/* --- BOTONES DE HERRAMIENTA Y ZOOM --- */
+QPushButton#toolRailButton {
+    padding: 6px 2px;
+    font-size: 12px;
+}
+QPushButton#compactIconButton, QPushButton#zoomButton {
+    padding: 4px;
+    font-size: 14px;
+}
+
+/* --- SWATCHES Y PRESETS --- */
+QPushButton#presetButton {
+    padding: 2px 4px;
+    font-size: 11px;
+}
+QPushButton#brushToolModeButton {
+    padding: 4px 8px;
+}
+
+QPushButton#swatchWhiteButton { background-color: #FFFFFF; border: 1px solid #D6D3D1; padding: 0px; }
+QPushButton#swatchBlackButton { background-color: #000000; border: 1px solid #3D3D3D; padding: 0px; }
+QPushButton#swatchGrayButton { background-color: #E2E8F0; border: 1px solid #D6D3D1; padding: 0px; }
+QPushButton#swatchNoneButton, QPushButton#swatchCustomButton { padding: 0px; }
+
+QPushButton#swatchWhiteButton:checked, QPushButton#swatchBlackButton:checked, QPushButton#swatchGrayButton:checked, QPushButton#swatchCustomButton:checked, QPushButton#swatchNoneButton:checked {
+    border: 2px solid #FF4F79;
+}
+
+/* --- SLIDERS --- */
+QSlider::groove:horizontal {
+    border: 1px solid #333333;
+    height: 6px;
+    background: #2D2D2D;
+    border-radius: 3px;
+}
+
+QSlider::sub-page:horizontal {
+    background: #FF4F79;
+    border-radius: 3px;
+}
+
+QSlider::handle:horizontal {
+    background: #FFFFFF;
+    border: 1px solid #777777;
+    width: 14px;
+    height: 14px;
+    margin-top: -4px;
+    margin-bottom: -4px;
+    border-radius: 7px;
+}
+QSlider::handle:horizontal:hover {
+    background: #EEEEEE;
+    border: 1px solid #FF4F79;
+}
+
+/* --- COMBOBOX / SELECTORS --- */
+QComboBox {
+    background-color: #2D2D2D;
+    border: 1px solid #3D3D3D;
+    border-radius: 4px;
+    padding: 6px;
+    color: #FFFFFF;
+}
+QComboBox:hover {
+    border: 1px solid #4D4D4D;
+}
+QComboBox::drop-down {
+    border: none;
+}
+QComboBox QAbstractItemView {
+    background-color: #2D2D2D;
+    border: 1px solid #3D3D3D;
+    selection-background-color: #FF4F79;
+    color: white;
+}
+
+/* --- SCROLLBARS --- */
+QScrollBar:vertical {
+    background: #121212;
+    width: 12px;
+    margin: 0px 0px 0px 0px;
+}
+QScrollBar::handle:vertical {
+    background: #333333;
+    min-height: 20px;
+    border-radius: 6px;
+    margin: 2px;
+}
+QScrollBar::handle:vertical:hover {
+    background: #555555;
+}
+QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical {
+    height: 0px;
+}
+
+/* --- TABS --- */
+QTabWidget::pane {
+    border: 1px solid #2A2A2A;
+    border-radius: 4px;
+    top: -1px;
+}
+QTabBar::tab {
+    background: #1A1A1A;
+    color: #888888;
+    border: 1px solid #2A2A2A;
+    padding: 8px 16px;
+    border-top-left-radius: 4px;
+    border-top-right-radius: 4px;
+}
+QTabBar::tab:selected {
+    background: #2D2D2D;
+    color: #FFFFFF;
+    border-bottom-color: #2D2D2D;
+}
+QTabBar::tab:hover:!selected {
+    background: #252525;
+    color: #DDDDDD;
+}
+
+/* --- CHECKBOXES --- */
+QCheckBox {
+    spacing: 8px;
+}
+QCheckBox::indicator {
+    width: 18px;
+    height: 18px;
+    border: 1px solid #555555;
+    border-radius: 4px;
+    background: #1E1E1E;
+}
+QCheckBox::indicator:checked {
+    background: #FF4F79;
+    border: 1px solid #FF3B6B;
+}
+QCheckBox::indicator:hover {
+    border: 1px solid #FF4F79;
+}

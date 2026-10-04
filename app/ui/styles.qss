@@ -1,0 +1,746 @@
+/* TimoitaseBG - Hoja de Estilos Moderna QSS (Tema Claro Inspirado en remove.bg & Canva) */
+
+QWidget {
+    background-color: #FAFAF9;
+    color: #1C1917;
+    font-family: "Plus Jakarta Sans", "Manrope", "Segoe UI", -apple-system, BlinkMacSystemFont, Roboto, sans-serif;
+    font-size: 13px;
+}
+
+/* -------------------------------------------------------------
+   Barra Superior (Top Bar)
+------------------------------------------------------------- */
+#topBar {
+    background-color: #FFFFFF;
+    border-bottom: 1px solid #E7E5E4;
+}
+
+#appNameLabel {
+    font-size: 16px;
+    font-weight: 700;
+    color: #1C1917;
+    letter-spacing: -0.2px;
+}
+
+#appBadgeLabel {
+    background-color: #FFE4EC;
+    color: #FF4F79;
+    font-size: 10px;
+    font-weight: 700;
+    padding: 3px 8px;
+    border-radius: 6px;
+}
+
+/* -------------------------------------------------------------
+   Botones de Acción en Barra Superior
+------------------------------------------------------------- */
+#actionButton {
+    background-color: #FFFFFF;
+    color: #1C1917;
+    border: 1px solid #E7E5E4;
+    border-radius: 8px;
+    padding: 6px 14px;
+    font-weight: 500;
+    font-size: 12px;
+}
+
+#actionButton:hover {
+    background-color: #F5F5F4;
+    border-color: #D6D3D1;
+}
+
+#actionButton:pressed {
+    background-color: #E7E5E4;
+}
+
+#actionButton:checked {
+    background-color: #FFE4EC;
+    color: #FF4F79;
+    border: 1.5px solid #FF4F79;
+    font-weight: 600;
+}
+
+#actionButton:disabled {
+    background-color: #FAFAF9;
+    color: #A8A29E;
+    border-color: #E7E5E4;
+}
+
+/* Botón de Acción Secundario (Ajustes de lienzo, color de fondo) */
+#secondaryActionButton {
+    background-color: #FFFFFF;
+    color: #1C1917;
+    border: 1px solid #E7E5E4;
+    border-radius: 8px;
+    font-size: 12px;
+    font-weight: 600;
+    padding: 6px 14px;
+}
+
+#secondaryActionButton:hover {
+    background-color: #F5F5F4;
+    border-color: #D6D3D1;
+    color: #FF4F79;
+}
+
+#secondaryActionButton:pressed {
+    background-color: #E7E5E4;
+}
+
+#secondaryActionButton:disabled {
+    background-color: #FAFAF9;
+    color: #A8A29E;
+    border-color: #E7E5E4;
+}
+
+/* Botones compactos con icono (↶, ↷, ↺) */
+#compactIconButton {
+    background-color: #FFFFFF;
+    color: #1C1917;
+    border: 1px solid #E7E5E4;
+    border-radius: 8px;
+    font-size: 15px;
+    font-weight: 600;
+    padding: 0;
+}
+
+#compactIconButton:hover {
+    background-color: #FFE4EC;
+    color: #FF4F79;
+    border-color: #FF4F79;
+}
+
+#compactIconButton:pressed {
+    background-color: #FFD4E2;
+}
+
+#compactIconButton:disabled {
+    background-color: #FAFAF9;
+    color: #D6D3D1;
+    border-color: #F5F5F4;
+}
+
+/* Controles de Zoom */
+#zoomButton {
+    background-color: #FFFFFF;
+    color: #1C1917;
+    border: 1px solid #E7E5E4;
+    border-radius: 6px;
+    padding: 2px 8px;
+    font-size: 12px;
+    font-weight: 500;
+}
+
+#zoomButton:hover {
+    background-color: #F5F5F4;
+    border-color: #D6D3D1;
+}
+
+#zoomLabel {
+    font-size: 12px;
+    font-weight: 600;
+    color: #78716C;
+}
+
+/* -------------------------------------------------------------
+   Panel Lateral (Sidebar)
+------------------------------------------------------------- */
+#toolSidebar {
+    background-color: #FFFFFF;
+    border-left: 1px solid #E7E5E4;
+}
+
+#sidebarHeader {
+    font-size: 17px;
+    font-weight: 700;
+    color: #1C1917;
+    letter-spacing: -0.3px;
+}
+
+#sidebarSubheader {
+    font-size: 12px;
+    font-weight: 400;
+    color: #78716C;
+}
+
+/* Rail de Herramientas (Estilo Canva: Icono arriba, texto abajo) */
+#toolRailButton {
+    background-color: #FAFAF9;
+    color: #78716C;
+    border: 1px solid #E7E5E4;
+    border-radius: 10px;
+    padding: 6px 4px;
+    font-size: 11px;
+    font-weight: 500;
+    line-height: 1.2;
+}
+
+#toolRailButton:hover {
+    background-color: #F5F5F4;
+    border-color: #D6D3D1;
+    color: #1C1917;
+}
+
+#toolRailButton:checked {
+    background-color: #FFE4EC;
+    color: #FF4F79;
+    border: 1.5px solid #FF4F79;
+    font-weight: 600;
+}
+
+#toolDescription {
+    color: #78716C;
+    font-size: 12px;
+    line-height: 1.45;
+}
+
+#toolInfoIcon {
+    color: #A8A29E;
+    font-size: 13px;
+    font-weight: 700;
+    padding-left: 2px;
+}
+
+#toolInfoIcon:hover {
+    color: #FF4F79;
+}
+
+#fieldLabel {
+    font-size: 12px;
+    font-weight: 600;
+    color: #1C1917;
+}
+
+/* -------------------------------------------------------------
+   Botones de Acción Principal (Primarios)
+------------------------------------------------------------- */
+#primaryActionButton {
+    background-color: #FF4F79;
+    color: #FFFFFF;
+    border: none;
+    border-radius: 10px;
+    font-size: 13px;
+    font-weight: 600;
+    padding: 8px 16px;
+}
+
+#primaryActionButton:hover {
+    background-color: #FF3366;
+}
+
+#primaryActionButton:pressed {
+    background-color: #E02958;
+}
+
+#primaryActionButton:disabled {
+    background-color: #F5F5F4;
+    color: #A8A29E;
+    border: 1px solid #E7E5E4;
+}
+
+/* Botón Modo Pincel */
+#brushToggleButton {
+    background-color: #FAFAF9;
+    color: #1C1917;
+    border: 1px solid #E7E5E4;
+    border-radius: 8px;
+    font-weight: 500;
+    font-size: 12px;
+}
+
+#brushToggleButton:hover {
+    background-color: #F5F5F4;
+    border-color: #D6D3D1;
+}
+
+#brushToggleButton:checked {
+    background-color: #FFE4EC;
+    color: #FF4F79;
+    border: 1.5px solid #FF4F79;
+    font-weight: 600;
+}
+
+/* Sub-herramientas: Pintar / Borrador */
+#brushToolModeButton {
+    background-color: #FAFAF9;
+    color: #1C1917;
+    border: 1px solid #E7E5E4;
+    border-radius: 6px;
+    font-weight: 500;
+    font-size: 12px;
+}
+
+#brushToolModeButton:hover {
+    background-color: #F5F5F4;
+    border-color: #D6D3D1;
+}
+
+#brushToolModeButton:checked {
+    background-color: #FFE4EC;
+    color: #FF4F79;
+    border: 1.5px solid #FF4F79;
+    font-weight: 600;
+}
+
+/* Presets de tamaño de pincel */
+#presetButton {
+    background-color: #FAFAF9;
+    border: 1px solid #E7E5E4;
+    border-radius: 6px;
+    color: #78716C;
+    font-size: 11px;
+    font-weight: 500;
+    padding: 2px 6px;
+}
+
+#presetButton:hover {
+    background-color: #FFE4EC;
+    border-color: #FF4F79;
+    color: #FF4F79;
+}
+
+#brushSizeLabel {
+    font-weight: 700;
+    color: #FF4F79;
+    font-size: 12px;
+}
+
+/* -------------------------------------------------------------
+   Separadores y Muestras de Color (Swatches)
+------------------------------------------------------------- */
+#panelSeparator {
+    color: #E7E5E4;
+    background-color: #E7E5E4;
+    height: 1px;
+    border: none;
+    margin: 4px 0;
+}
+
+#swatchNoneButton {
+    background-color: #FAFAF9;
+    color: #78716C;
+    border: 1.5px dashed #CBD5E1;
+    border-radius: 8px;
+    font-size: 14px;
+    font-weight: 700;
+}
+
+#swatchNoneButton:hover {
+    border-color: #FF4F79;
+    color: #FF4F79;
+    background-color: #FFE4EC;
+}
+
+#swatchNoneButton:checked {
+    border: 2px solid #FF4F79;
+    background-color: #FFE4EC;
+    color: #FF4F79;
+}
+
+#swatchWhiteButton {
+    background-color: #FFFFFF;
+    border: 1.5px solid #CBD5E1;
+    border-radius: 8px;
+}
+
+#swatchWhiteButton:hover {
+    border-color: #FF4F79;
+}
+
+#swatchWhiteButton:checked {
+    border: 2.5px solid #FF4F79;
+}
+
+#swatchBlackButton {
+    background-color: #18181B;
+    border: 1.5px solid #3F3F46;
+    border-radius: 8px;
+}
+
+#swatchBlackButton:hover {
+    border-color: #FF4F79;
+}
+
+#swatchBlackButton:checked {
+    border: 2.5px solid #FF4F79;
+}
+
+#swatchGrayButton {
+    background-color: #E2E8F0;
+    border: 1.5px solid #94A3B8;
+    border-radius: 8px;
+}
+
+#swatchGrayButton:hover {
+    border-color: #FF4F79;
+}
+
+#swatchGrayButton:checked {
+    border: 2.5px solid #FF4F79;
+}
+
+#swatchCustomButton {
+    background-color: #FAFAF9;
+    border: 1.5px solid #CBD5E1;
+    border-radius: 8px;
+    font-size: 14px;
+}
+
+#swatchCustomButton:hover {
+    border-color: #FF4F79;
+    background-color: #FFE4EC;
+}
+
+#swatchCustomButton:checked {
+    border: 2px solid #FF4F79;
+    background-color: #FFE4EC;
+}
+
+#swatchNoneButton:disabled,
+#swatchWhiteButton:disabled,
+#swatchBlackButton:disabled,
+#swatchGrayButton:disabled,
+#swatchCustomButton:disabled {
+    border-color: #E7E5E4;
+    background-color: #F5F5F4;
+    color: #D6D3D1;
+}
+
+#colorHexLabel {
+    font-size: 11px;
+    font-weight: 600;
+    color: #78716C;
+}
+
+#swatchPreview {
+    border-radius: 4px;
+}
+
+/* -------------------------------------------------------------
+   Combobox (QComboBox)
+------------------------------------------------------------- */
+QComboBox {
+    background-color: #FAFAF9;
+    border: 1px solid #E7E5E4;
+    border-radius: 8px;
+    padding: 6px 30px 6px 12px;
+    min-height: 24px;
+    color: #1C1917;
+    font-weight: 500;
+    font-size: 12px;
+}
+
+QComboBox:hover {
+    border-color: #FF4F79;
+    background-color: #FFFFFF;
+}
+
+QComboBox::drop-down {
+    subcontrol-origin: padding;
+    subcontrol-position: top right;
+    width: 28px;
+    border: none;
+}
+
+QComboBox::down-arrow {
+    width: 0;
+    height: 0;
+    border-left: 4px solid transparent;
+    border-right: 4px solid transparent;
+    border-top: 5px solid #78716C;
+    margin-right: 8px;
+}
+
+QComboBox::down-arrow:hover {
+    border-top-color: #FF4F79;
+}
+
+QComboBox QAbstractItemView {
+    background-color: #FFFFFF;
+    border: 1px solid #E7E5E4;
+    border-radius: 8px;
+    selection-background-color: #FFE4EC;
+    selection-color: #FF4F79;
+    color: #1C1917;
+    padding: 4px;
+}
+
+/* -------------------------------------------------------------
+   Sliders y Checkboxes
+------------------------------------------------------------- */
+QSlider::groove:horizontal {
+    height: 6px;
+    background: #E7E5E4;
+    border-radius: 3px;
+}
+
+QSlider::sub-page:horizontal {
+    background: #FF4F79;
+    border-radius: 3px;
+}
+
+QSlider::handle:horizontal {
+    background: #FFFFFF;
+    border: 2px solid #FF4F79;
+    width: 16px;
+    margin-top: -5px;
+    margin-bottom: -5px;
+    border-radius: 8px;
+}
+
+QSlider::handle:horizontal:hover {
+    background: #FFE4EC;
+}
+
+QCheckBox {
+    spacing: 8px;
+    color: #1C1917;
+    font-size: 12px;
+}
+
+QCheckBox::indicator {
+    width: 16px;
+    height: 16px;
+    border: 1px solid #D6D3D1;
+    border-radius: 4px;
+    background: #FFFFFF;
+}
+
+QCheckBox::indicator:hover {
+    border-color: #FF4F79;
+}
+
+QCheckBox::indicator:checked {
+    background: #FF4F79;
+    border-color: #FF4F79;
+}
+
+QGroupBox {
+    border: 1px solid #E7E5E4;
+    border-radius: 10px;
+    margin-top: 10px;
+    padding-top: 14px;
+    font-weight: 600;
+    color: #1C1917;
+    font-size: 12px;
+}
+
+QGroupBox::title {
+    subcontrol-origin: margin;
+    subcontrol-position: top left;
+    left: 10px;
+    padding: 0 4px;
+    background-color: #FFFFFF;
+}
+
+/* Botón genérico (como Limpiar Trazos) */
+QPushButton {
+    background-color: #FFFFFF;
+    color: #1C1917;
+    border: 1px solid #E7E5E4;
+    border-radius: 8px;
+    padding: 6px 12px;
+    font-weight: 500;
+    font-size: 12px;
+}
+
+QPushButton:hover {
+    background-color: #F5F5F4;
+    border-color: #D6D3D1;
+}
+
+QPushButton:pressed {
+    background-color: #E7E5E4;
+}
+
+QPushButton:disabled {
+    background-color: #FAFAF9;
+    color: #A8A29E;
+    border-color: #E7E5E4;
+}
+
+/* -------------------------------------------------------------
+   Tarjeta de Atajos Rápidos
+------------------------------------------------------------- */
+#infoCard {
+    background-color: #FAFAF9;
+    border: 1px solid #E7E5E4;
+    border-radius: 10px;
+}
+
+#infoCardTitle {
+    font-weight: 600;
+    color: #1C1917;
+    font-size: 12px;
+}
+
+#infoCardToggle {
+    background-color: transparent;
+    color: #1C1917;
+    border: none;
+    padding: 0;
+    font-size: 12px;
+    font-weight: 600;
+    text-align: left;
+}
+
+#infoCardToggle:hover {
+    color: #FF4F79;
+}
+
+#shortcutBadge {
+    background-color: #FFFFFF;
+    color: #78716C;
+    border: 1px solid #E7E5E4;
+    border-radius: 4px;
+    font-size: 10px;
+    font-weight: 600;
+    padding: 2px 6px;
+}
+
+#shortcutDesc {
+    color: #78716C;
+    font-size: 11px;
+}
+
+/* -------------------------------------------------------------
+   Barra Inferior de Estado (Status Bar)
+------------------------------------------------------------- */
+#statusBar {
+    background-color: #FFFFFF;
+    border-top: 1px solid #E7E5E4;
+}
+
+#statusText {
+    color: #78716C;
+    font-size: 12px;
+    font-weight: 500;
+}
+
+#imageInfoText {
+    color: #A8A29E;
+    font-size: 12px;
+}
+
+QProgressBar {
+    border: 1px solid #E7E5E4;
+    border-radius: 6px;
+    background-color: #F5F5F4;
+    text-align: center;
+    color: #78716C;
+    font-size: 10px;
+    height: 14px;
+}
+
+QProgressBar::chunk {
+    background: #FF4F79;
+    border-radius: 5px;
+}
+
+#deviceBadgeGpu {
+    color: #FF4F79;
+    font-weight: 600;
+    background-color: #FFE4EC;
+    padding: 3px 10px;
+    border-radius: 6px;
+    font-size: 11px;
+}
+
+#deviceBadgeGpu:hover {
+    background-color: #FFD4E2;
+}
+
+#deviceBadgeCpu {
+    color: #78716C;
+    font-weight: 500;
+    background-color: #F5F5F4;
+    padding: 3px 10px;
+    border-radius: 6px;
+    border: 1px solid #E7E5E4;
+    font-size: 11px;
+}
+
+#deviceBadgeCpu:hover {
+    background-color: #E7E5E4;
+    color: #292524;
+}
+
+#deviceBadgeBlocked {
+    color: #DC2626;
+    font-weight: 600;
+    background-color: #FEE2E2;
+    padding: 3px 10px;
+    border-radius: 6px;
+    border: 1px solid #FCA5A5;
+    font-size: 11px;
+}
+
+/* Toggle de Aceleración en Sidebar */
+#gpuToggleWidget {
+    background-color: #F5F5F4;
+    border: 1px solid #E7E5E4;
+    border-radius: 14px;
+    padding: 2px 4px;
+}
+
+#gpuToggleWidget:hover {
+    background-color: #EFEFEF;
+    border-color: #D6D3D1;
+}
+
+#gpuToggleLabel {
+    background: transparent;
+    border: none;
+}
+
+/* -------------------------------------------------------------
+   Área de Scroll y Barra de Desplazamiento (QScrollBar)
+------------------------------------------------------------- */
+QScrollArea {
+    background-color: transparent;
+    border: none;
+}
+
+#toolScrollArea {
+    background-color: transparent;
+    border: none;
+}
+
+#scroll_content, #toolScrollContent {
+    background-color: transparent;
+}
+
+#sidebar_header, #tool_tabs_row, #quick_shortcuts_box {
+    background-color: transparent;
+}
+
+QScrollArea QScrollBar:vertical {
+    border: none;
+    background: transparent;
+    width: 7px;
+    margin: 0px 2px 0px 0px;
+    border-radius: 3px;
+}
+
+QScrollArea QScrollBar::handle:vertical {
+    background: #D6D3D1;
+    min-height: 24px;
+    border-radius: 3px;
+}
+
+QScrollArea QScrollBar::handle:vertical:hover {
+    background: #A8A29E;
+}
+
+QScrollArea QScrollBar::add-line:vertical,
+QScrollArea QScrollBar::sub-line:vertical {
+    height: 0px;
+    border: none;
+    background: none;
+}
+
+QScrollArea QScrollBar::add-page:vertical,
+QScrollArea QScrollBar::sub-page:vertical {
+    background: none;
+}
+

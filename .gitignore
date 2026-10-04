@@ -1,0 +1,52 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Entornos Virtuales
+.venv/
+venv/
+env/
+
+# PyInstaller / Build
+build/
+dist/
+# build.spec  # Comentado intencionalmente (se recomienda NO ignorarlo)
+
+# Archivos específicos solicitados
+iniciar.bat
+tests/
+
+# Variables de entorno y secretos
+.env
+
+# Directorios de configuración de IA locales (Agentes/Cache)
+.agents/
+.gemini/
+
+# SO
+.DS_Store
+Thumbs.db
+
+# Directorios de IDE / Editores
+.vscode/
+.idea/
+*.swp
+
+# Archivos de Logs
+*.log
+
+# Scripts temporales
+scratch/
+
+# Modelos pesados de IA (por si se descargan en la carpeta local)
+*.onnx
+*.pth
+*.pt
+modelos/
+models/
+
+# Cache de testing (Pytest)
+.pytest_cache/
+htmlcov/
+.coverage

@@ -1,0 +1,11 @@
+Copyright (c) 2026 TimoitaseBG. Todos los derechos reservados.
+
+TimoitaseBG ("el Software") es software propietario. El código fuente, diseño, estructura y cualquier material relacionado (con excepción de librerías de terceros) pertenecen exclusivamente a su creador.
+
+Queda estrictamente prohibida la copia, reproducción, modificación, desensamblado, ingeniería inversa, distribución o venta parcial o total de este código fuente y/o sus binarios ejecutables sin la autorización expresa y por escrito del autor original.
+
+Este software se proporciona "tal cual", sin garantía de ningún tipo, expresa o implícita, incluyendo pero no limitado a garantías de comercialización, idoneidad para un propósito particular y no infracción. En ningún caso los autores o titulares de los derechos de autor serán responsables por reclamos, daños u otras responsabilidades derivadas de la instalación o uso de este software.
+
+---
+TERCEROS Y DEPENDENCIAS:
+Este proyecto utiliza tecnologías de terceros (como PySide6, rembg, onnxruntime y modelos de inteligencia artificial) protegidas bajo diversas licencias de código abierto (incluyendo MIT, Apache 2.0, BSD y LGPL). Los componentes de estas librerías están regulados por sus respectivas licencias. La integración y uso de dichas librerías en este programa no comprometen la propiedad ni alteran el carácter privado y cerrado del código fuente original de TimoitaseBG.
