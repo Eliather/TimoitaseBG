@@ -683,7 +683,6 @@ class MainWindow(QMainWindow):
         # Sidebar
         self.sidebar.btn_remove_bg.setEnabled(has_img)
         self.sidebar.btn_restore.setEnabled(has_img)
-        self.sidebar.btn_toggle_brush.setEnabled(has_img)
         self.sidebar.set_transparency_available(
             has_transparency=self.image_state.has_transparency,
             can_restore=self.image_state.get_last_transparent_state() is not None,

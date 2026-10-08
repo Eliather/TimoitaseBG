@@ -762,14 +762,6 @@ class ToolSidebar(QWidget):
         )
         layout.addLayout(header_brush)
 
-        # Botón de activación del modo pincel
-        self.btn_toggle_brush = QPushButton(tr("btn_brush_mode"))
-        self.btn_toggle_brush.setObjectName("brushToggleButton")
-        self.btn_toggle_brush.setCheckable(True)
-        self.btn_toggle_brush.setChecked(False)
-        self.btn_toggle_brush.setFixedHeight(38)
-        self.btn_toggle_brush.clicked.connect(self._on_brush_toggled)
-        layout.addWidget(self.btn_toggle_brush)
 
         # Sub-herramienta: Pintar o Borrar (Goma)
         mode_row = QHBoxLayout()
@@ -965,15 +957,7 @@ class ToolSidebar(QWidget):
         self.stack.setCurrentIndex(index)
         self.scroll_area.verticalScrollBar().setValue(0)
         is_brush = (index == 2)
-        self.btn_toggle_brush.setChecked(is_brush)
         self.brushModeToggled.emit(is_brush)
-
-    def _on_brush_toggled(self, checked: bool):
-        if checked:
-            self.btn_rail_brush.setChecked(True)
-            self.stack.setCurrentIndex(2)
-            self.scroll_area.verticalScrollBar().setValue(0)
-        self.brushModeToggled.emit(checked)
 
     def _on_brush_tool_clicked(self, index: int):
         self.eraserModeToggled.emit(index == 1)

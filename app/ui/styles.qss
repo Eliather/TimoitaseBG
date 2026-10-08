@@ -7,6 +7,10 @@ QWidget {
     font-size: 13px;
 }
 
+QLabel, QCheckBox {
+    background: transparent;
+}
+
 /* -------------------------------------------------------------
    Barra Superior (Top Bar)
 ------------------------------------------------------------- */
@@ -530,7 +534,7 @@ QGroupBox::title {
     subcontrol-position: top left;
     left: 10px;
     padding: 0 4px;
-    background-color: #FFFFFF;
+    background-color: transparent;
 }
 
 /* Botón genérico (como Limpiar Trazos) */
