@@ -368,7 +368,9 @@ class MainWindow(QMainWindow):
         self.sidebar.setObjectName("toolSidebar")
         self.sidebar.brushModeToggled.connect(self._on_brush_mode_toggled)
         self.sidebar.eraserModeToggled.connect(self.canvas.set_eraser_mode)
-        self.sidebar.wandModeToggled.connect(self.canvas.set_wand_mode)
+        self.sidebar.wandModeToggled.connect(self._on_wand_mode_toggled)
+        self.sidebar.wandAIModeToggled.connect(self._on_wand_ai_mode_toggled)
+        self.canvas.set_wand_ai_mode(self.sidebar.is_wand_ai_mode())
         self.sidebar.wandToleranceChanged.connect(self.canvas.set_wand_tolerance)
         self.sidebar.wandSelectionModeChanged.connect(self.canvas.set_wand_selection_mode)
         self.sidebar.wandAntiAliasChanged.connect(self.canvas.set_wand_anti_alias)
@@ -389,6 +391,9 @@ class MainWindow(QMainWindow):
         self.sidebar.restoreTransparencyRequested.connect(self.perform_restore_transparency)
         self.sidebar.deviceModeChanged.connect(self._on_device_mode_changed)
         self.sidebar.batchRequested.connect(self.start_batch_processing)
+        self.sidebar.detectSubjectsRequested.connect(self.start_detect_subjects)
+        self.sidebar.isolateSubjectRequested.connect(self.perform_isolate_subject)
+        self.sidebar.selectSubjectRequested.connect(self.perform_select_subject)
 
         # 2. Barra Superior (Top Bar)
         top_bar = self._create_top_bar()
@@ -697,6 +702,15 @@ class MainWindow(QMainWindow):
 
         self.current_filepath = filepath
         loaded = self.image_state.load_new_image(pil_img)
+
+        # Invalidar embedding SAM previo
+        from app.core.sam_manager import get_sam_manager
+        get_sam_manager().clear_embedding()
+        if hasattr(self, "sidebar") and self.sidebar.is_wand_ai_mode() and self.sidebar.btn_wand.isChecked():
+            self._ensure_sam_embedding_async()
+        if hasattr(self, "sidebar"):
+            self.sidebar.set_detected_subjects([])
+
         self.btn_compare.setChecked(False)
         self.canvas.set_comparison_mode(False)
         self.canvas.set_image(loaded, reset_zoom=True)
@@ -806,38 +820,54 @@ class MainWindow(QMainWindow):
     def perform_undo(self):
         img = self.image_state.undo()
         if img:
+            from app.core.sam_manager import get_sam_manager
+            get_sam_manager().clear_embedding()
             self.canvas.set_image(img, reset_zoom=False)
             self.canvas.set_original_image(self.image_state.current_brush_reference)
             self._set_status("status_undo", action=self.image_state.get_status_summary())
             self._update_image_info_label(img)
             self._update_action_states()
+            if hasattr(self, "sidebar") and self.sidebar.is_wand_ai_mode() and self.sidebar.btn_wand.isChecked():
+                self._ensure_sam_embedding_async()
 
     def perform_redo(self):
         img = self.image_state.redo()
         if img:
+            from app.core.sam_manager import get_sam_manager
+            get_sam_manager().clear_embedding()
             self.canvas.set_image(img, reset_zoom=False)
             self.canvas.set_original_image(self.image_state.current_brush_reference)
             self._set_status("status_redo", action=self.image_state.get_status_summary())
             self._update_image_info_label(img)
             self._update_action_states()
+            if hasattr(self, "sidebar") and self.sidebar.is_wand_ai_mode() and self.sidebar.btn_wand.isChecked():
+                self._ensure_sam_embedding_async()
 
     def perform_reset_original(self):
         img = self.image_state.reset_to_original()
         if img:
+            from app.core.sam_manager import get_sam_manager
+            get_sam_manager().clear_embedding()
             self.canvas.set_image(img, reset_zoom=False)
             self.canvas.set_original_image(self.image_state.current_brush_reference)
             self._set_status("status_reset")
             self._update_image_info_label(img)
             self._update_action_states()
+            if hasattr(self, "sidebar") and self.sidebar.is_wand_ai_mode() and self.sidebar.btn_wand.isChecked():
+                self._ensure_sam_embedding_async()
 
     def push_new_image_state(self, image: Image.Image, description: str, brush_reference: Optional[Image.Image] = None):
         """Registra un nuevo estado procesado en el historial y canvas."""
+        from app.core.sam_manager import get_sam_manager
+        get_sam_manager().clear_embedding()
         current = self.image_state.push_state(image, description, brush_reference=brush_reference)
         self.canvas.set_image(current, reset_zoom=False)
         self.canvas.set_original_image(self.image_state.current_brush_reference)
         self._set_status_raw(f"Aplicado: {description}")
         self._update_image_info_label(current)
         self._update_action_states()
+        if hasattr(self, "sidebar") and self.sidebar.is_wand_ai_mode() and self.sidebar.btn_wand.isChecked():
+            self._ensure_sam_embedding_async()
 
     # -------------------------------------------------------------
     # Actualizaciones de UI
@@ -986,6 +1016,42 @@ class MainWindow(QMainWindow):
 
     def _on_brush_mode_toggled(self, enabled: bool):
         self.canvas.set_brush_mode(enabled)
+
+    def _on_wand_mode_toggled(self, enabled: bool):
+        self.canvas.set_wand_mode(enabled)
+        if enabled and self.sidebar.is_wand_ai_mode():
+            self._ensure_sam_embedding_async()
+
+    def _on_wand_ai_mode_toggled(self, enabled: bool):
+        self.canvas.set_wand_ai_mode(enabled)
+        if enabled and self.sidebar.btn_wand.isChecked():
+            self._ensure_sam_embedding_async()
+
+    def _ensure_sam_embedding_async(self):
+        """Precomputa el embedding de MobileSAM en segundo plano si aún no está listo."""
+        if not self.image_state.has_image:
+            return
+        from app.core.sam_manager import get_sam_manager
+        sam_mgr = get_sam_manager()
+        if sam_mgr.has_embedding():
+            self.sidebar.set_wand_ai_status(tr("wand_ai_ready"))
+            return
+
+        self.sidebar.set_wand_ai_status(tr("wand_ai_computing"))
+        from app.core.workers import SamEmbeddingWorker
+        pil_img = self.image_state.current_image
+        self.sam_worker = SamEmbeddingWorker(pil_img)
+        self.sam_worker.finishedResult.connect(self._on_sam_embedding_ready)
+        self.sam_worker.failed.connect(self._on_sam_embedding_failed)
+        self.sam_worker.start()
+
+    def _on_sam_embedding_ready(self, _):
+        self.sidebar.set_wand_ai_status(tr("wand_ai_ready"))
+        self._set_status("wand_ai_ready")
+
+    def _on_sam_embedding_failed(self, err_msg: str):
+        self.sidebar.set_wand_ai_status("Error")
+        self._set_status_raw(f"SAM: {err_msg}")
 
     def update_device_badge(self):
         """Actualiza el badge de la barra de estado y el selector del sidebar según el estado actual."""
@@ -1173,3 +1239,52 @@ class MainWindow(QMainWindow):
             
         self.canvas.set_background_color(None)
         self._set_status_raw("Capa de fondo transparente activada")
+
+    def start_detect_subjects(self):
+        """Ejecuta detección y segmentación multiobjeto con YOLO11 en segundo plano."""
+        if not self.image_state.has_image:
+            self._set_status("status_open_first")
+            return
+
+        self.sidebar.set_detecting_subjects_state(True)
+        self._set_status("detect_status_computing")
+        from app.core.workers import YoloDetectionWorker
+        self.yolo_worker = YoloDetectionWorker(self.image_state.current_image)
+        self.yolo_worker.finishedResult.connect(self._on_yolo_finished)
+        self.yolo_worker.failed.connect(self._on_yolo_failed)
+        self.yolo_worker.start()
+
+    def _on_yolo_finished(self, subjects: list):
+        self.sidebar.set_detecting_subjects_state(False)
+        self.sidebar.set_detected_subjects(subjects)
+        if subjects:
+            self._set_status_raw(f"YOLO11: {len(subjects)} sujeto(s) detectado(s). Selecciona un chip para aislar.")
+        else:
+            self._set_status("detect_none_found")
+
+    def _on_yolo_failed(self, err_msg: str):
+        self.sidebar.set_detecting_subjects_state(False)
+        self._set_status_raw(f"Error YOLO: {err_msg}")
+
+    def perform_isolate_subject(self, subject):
+        """Aísla el sujeto detectado, dejando transparente todo el resto."""
+        if not self.image_state.has_image or subject is None:
+            return
+        curr = self.image_state.current_image.convert("RGBA")
+        curr_arr = np.array(curr)
+        mask_bool = subject.mask  # (H, W) bool
+        if mask_bool.shape != curr_arr.shape[:2]:
+            return
+
+        # Multiplicar canal alfa por la máscara del sujeto
+        curr_arr[..., 3] = np.where(mask_bool, curr_arr[..., 3], 0)
+        isolated_img = Image.fromarray(curr_arr, "RGBA")
+        self.push_new_image_state(isolated_img, f"Aislar {subject.class_name.capitalize()}")
+
+    def perform_select_subject(self, subject):
+        """Carga la máscara del sujeto detectado en la selección de hormigas marchantes."""
+        if not self.image_state.has_image or subject is None:
+            return
+        mask_u8 = (subject.mask.astype(np.uint8) * 255)
+        self.canvas._set_selection(mask_u8)
+        self._set_status_raw(f"Seleccionado: {subject.class_name.capitalize()}")

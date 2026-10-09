@@ -86,6 +86,7 @@ class CanvasWidget(QWidget):
         self.mouse_cursor_pos: QPoint = QPoint(-1000, -1000)
         self.eraser_mode: bool = False
         self.wand_mode: bool = False
+        self.wand_ai_mode: bool = False         # True: MobileSAM por clic, False: Color por tolerancia
         self.wand_tolerance: int = 32           # 0-255, igual que Photoshop
         self.wand_selection_mode: str = "new"   # new | add | subtract | intersect
         self.wand_anti_alias: bool = True
@@ -204,6 +205,10 @@ class CanvasWidget(QWidget):
     def set_wand_mode(self, enabled: bool):
         self.wand_mode = enabled
         self.setCursor(self._tool_cursor())
+        self.update()
+
+    def set_wand_ai_mode(self, enabled: bool):
+        self.wand_ai_mode = enabled
         self.update()
 
     def set_wand_tolerance(self, tolerance: int):
@@ -810,7 +815,7 @@ class CanvasWidget(QWidget):
         return self.wand_selection_mode
 
     def _apply_magic_wand(self, pt: QPointF, mode: str = "new"):
-        """Selecciona píxeles de color similar al clicado (no borra nada)."""
+        """Selecciona píxeles (por IA de MobileSAM o por tolerancia de color)."""
         if not self.current_qimage:
             return
 
@@ -819,21 +824,36 @@ class CanvasWidget(QWidget):
             return
 
         try:
-            img_np = np.array(qimage_to_pil(self.current_qimage).convert("RGBA"))
-            region = sel_ops.magic_wand_region(
-                img_np, x, y,
-                tolerance=self.wand_tolerance,
-                contiguous=self.wand_contiguous,
-            )
-            if region is None:
-                return
-            new_mask = sel_ops.region_to_mask(region, anti_alias=self.wand_anti_alias)
+            if getattr(self, "wand_ai_mode", False):
+                # Varita Inteligente por IA (MobileSAM)
+                from app.core.sam_manager import get_sam_manager
+                sam_mgr = get_sam_manager()
+                pil_img = qimage_to_pil(self.current_qimage)
+                if not sam_mgr.has_embedding():
+                    sam_mgr.prepare_image(pil_img)
+                new_mask_bool = sam_mgr.predict_mask_at_point(
+                    x, y, orig_img_size=(pil_img.width, pil_img.height)
+                )
+                if new_mask_bool is None:
+                    return
+                new_mask = (new_mask_bool.astype(np.uint8) * 255)
+            else:
+                img_np = np.array(qimage_to_pil(self.current_qimage).convert("RGBA"))
+                region = sel_ops.magic_wand_region(
+                    img_np, x, y,
+                    tolerance=self.wand_tolerance,
+                    contiguous=self.wand_contiguous,
+                )
+                if region is None:
+                    return
+                new_mask = sel_ops.region_to_mask(region, anti_alias=self.wand_anti_alias)
+
             current = self.active_selection
             if current is not None and current.shape != new_mask.shape:
                 current = None
             self._set_selection(sel_ops.combine_selection(current, new_mask, mode))
         except Exception as e:
-            print(f"Error en Varita Magica: {e}")
+            print(f"Error en Varita: {e}")
 
     def _draw_marching_ants(self, painter: QPainter, img_rect: QRectF):
         """Dibuja el contorno animado de la selección (hormigas marchantes de Photoshop)."""

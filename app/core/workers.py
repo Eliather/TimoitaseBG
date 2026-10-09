@@ -1,7 +1,7 @@
 """
 TimoitaseBG - Hilos de ejecución en segundo plano para inferencia asíncrona no bloqueante.
 """
-from typing import Callable, Any, Tuple, Dict
+from typing import Callable, Any, Tuple, Dict, Optional, List
 from PIL import Image
 from PySide6.QtCore import QThread, Signal
 
@@ -107,3 +107,60 @@ class BatchWorkerThread(QThread):
         except Exception as e:
             traceback.print_exc()
             self.failed.emit(str(e))
+
+
+class SamEmbeddingWorker(QThread):
+    """
+    QThread para descargar (si es necesario) y calcular el embedding de MobileSAM
+    en segundo plano sin congelar la interfaz gráfica.
+    """
+    progressStatus = Signal(str)
+    embeddingReady = Signal(bool)
+    failed = Signal(str)
+
+    def __init__(self, image: Image.Image, image_id: Optional[int] = None):
+        super().__init__()
+        self.image = image
+        self.image_id = image_id
+
+    def run(self):
+        from app.core.sam_manager import get_sam_manager
+        try:
+            self.setPriority(QThread.Priority.LowPriority)
+            self.progressStatus.emit("Preparando Varita IA (MobileSAM)...")
+            sam_mgr = get_sam_manager()
+            success = sam_mgr.prepare_image(self.image, image_id=self.image_id)
+            self.embeddingReady.emit(success)
+        except Exception as e:
+            import traceback
+            traceback.print_exc()
+            self.failed.emit(str(e))
+
+
+class YoloDetectionWorker(QThread):
+    """
+    QThread para descargar (si es necesario) y ejecutar YOLO11-seg
+    en segundo plano sin congelar la interfaz gráfica.
+    """
+    progressStatus = Signal(str)
+    finishedResult = Signal(list)  # List[DetectedSubject]
+    failed = Signal(str)
+
+    def __init__(self, image: Image.Image, conf_threshold: float = 0.35):
+        super().__init__()
+        self.image = image
+        self.conf_threshold = conf_threshold
+
+    def run(self):
+        from app.core.yolo_detector import get_yolo_detector
+        try:
+            self.progressStatus.emit("Detectando sujetos con IA (YOLO11)...")
+            detector = get_yolo_detector()
+            subjects = detector.detect_subjects(self.image, conf_threshold=self.conf_threshold)
+            self.finishedResult.emit(subjects)
+        except Exception as e:
+            import traceback
+            traceback.print_exc()
+            self.failed.emit(str(e))
+
+

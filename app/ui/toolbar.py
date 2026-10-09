@@ -312,6 +312,7 @@ class ToolSidebar(QWidget):
     brushOpacityChanged = Signal(float)
     brushHardnessChanged = Signal(float)
     wandModeToggled = Signal(bool)             # is_wand
+    wandAIModeToggled = Signal(bool)           # is_ai_wand (MobileSAM)
     wandToleranceChanged = Signal(int)         # tolerance (0-255, como Photoshop)
     wandSelectionModeChanged = Signal(str)     # new | add | subtract | intersect
     wandAntiAliasChanged = Signal(bool)
@@ -324,6 +325,9 @@ class ToolSidebar(QWidget):
     inpaintRequested = Signal()
     deviceModeChanged = Signal(bool)           # is_gpu
     batchRequested = Signal(str, str, str, bool) # input_dir, output_dir, model_id, clothing_prot
+    detectSubjectsRequested = Signal()
+    isolateSubjectRequested = Signal(object)   # DetectedSubject
+    selectSubjectRequested = Signal(object)    # DetectedSubject
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -634,6 +638,56 @@ class ToolSidebar(QWidget):
         layout.addWidget(self.btn_remove_bg)
 
         # ---------------------------------------------------------
+        # Sección: Detección Multiobjeto con IA (YOLO11-seg)
+        # ---------------------------------------------------------
+        self.box_subjects = QGroupBox(tr("header_detected_subjects"))
+        self.box_subjects.setObjectName("detectedSubjectsBox")
+        box_subj_layout = QVBoxLayout(self.box_subjects)
+        box_subj_layout.setContentsMargins(10, 12, 10, 10)
+        box_subj_layout.setSpacing(8)
+
+        self.btn_detect_subjects = QPushButton(tr("btn_detect_subjects"))
+        self.btn_detect_subjects.setObjectName("secondaryActionButton")
+        self.btn_detect_subjects.setFixedHeight(34)
+        self.btn_detect_subjects.clicked.connect(self.detectSubjectsRequested.emit)
+        box_subj_layout.addWidget(self.btn_detect_subjects)
+
+        self.lbl_detect_status = QLabel(tr("detect_status_idle"))
+        self.lbl_detect_status.setObjectName("shortcutDesc")
+        self.lbl_detect_status.setWordWrap(True)
+        box_subj_layout.addWidget(self.lbl_detect_status)
+
+        # Contenedor de chips de sujetos
+        self.chips_container = QWidget()
+        self.chips_layout = QVBoxLayout(self.chips_container)
+        self.chips_layout.setContentsMargins(0, 0, 0, 0)
+        self.chips_layout.setSpacing(6)
+        box_subj_layout.addWidget(self.chips_container)
+
+        # Botones de acción del sujeto seleccionado
+        self.subject_actions_widget = QWidget()
+        subj_act_layout = QHBoxLayout(self.subject_actions_widget)
+        subj_act_layout.setContentsMargins(0, 0, 0, 0)
+        subj_act_layout.setSpacing(6)
+
+        self.btn_isolate_subject = QPushButton(tr("btn_isolate_subject"))
+        self.btn_isolate_subject.setObjectName("secondaryActionButton")
+        self.btn_isolate_subject.setFixedHeight(30)
+        self.btn_isolate_subject.clicked.connect(self._on_isolate_subject_clicked)
+        subj_act_layout.addWidget(self.btn_isolate_subject)
+
+        self.btn_select_subject = QPushButton(tr("btn_select_subject"))
+        self.btn_select_subject.setObjectName("secondaryActionButton")
+        self.btn_select_subject.setFixedHeight(30)
+        self.btn_select_subject.clicked.connect(self._on_select_subject_clicked)
+        subj_act_layout.addWidget(self.btn_select_subject)
+
+        self.subject_actions_widget.setVisible(False)
+        box_subj_layout.addWidget(self.subject_actions_widget)
+
+        layout.addWidget(self.box_subjects)
+
+        # ---------------------------------------------------------
         # Sección: Recorte Automático al Contenido (Auto-crop)
         # ---------------------------------------------------------
         sep1 = QFrame()
@@ -935,6 +989,35 @@ class ToolSidebar(QWidget):
         w_layout.setContentsMargins(12, 14, 12, 10)
         w_layout.setSpacing(10)
 
+        # Selector de Tipo de Varita: Por Color vs Por IA (MobileSAM)
+        wand_type_row = QHBoxLayout()
+        wand_type_row.setSpacing(6)
+        self.wand_type_group = QButtonGroup(self)
+        self.wand_type_group.setExclusive(True)
+
+        self.btn_wand_type_color = QPushButton(tr("wand_type_color"))
+        self.btn_wand_type_color.setObjectName("presetButton")
+        self.btn_wand_type_color.setCheckable(True)
+        self.btn_wand_type_color.setChecked(True)
+        self.btn_wand_type_color.setFixedHeight(30)
+        self.btn_wand_type_color.setToolTip(tr("tip_wand_color"))
+        self.btn_wand_type_color.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.wand_type_group.addButton(self.btn_wand_type_color, 0)
+        wand_type_row.addWidget(self.btn_wand_type_color)
+
+        self.btn_wand_type_ai = QPushButton(tr("wand_type_ai"))
+        self.btn_wand_type_ai.setObjectName("presetButton")
+        self.btn_wand_type_ai.setCheckable(True)
+        self.btn_wand_type_ai.setFixedHeight(30)
+        self.btn_wand_type_ai.setToolTip(tr("tip_wand_ai"))
+        self.btn_wand_type_ai.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.wand_type_group.addButton(self.btn_wand_type_ai, 1)
+        wand_type_row.addWidget(self.btn_wand_type_ai)
+        w_layout.addLayout(wand_type_row)
+
+        self.btn_wand_type_color.clicked.connect(lambda: self._on_wand_type_clicked(False))
+        self.btn_wand_type_ai.clicked.connect(lambda: self._on_wand_type_clicked(True))
+
         # Modo de selección: Nueva / Añadir / Restar / Intersecar
         lbl_sel_mode = QLabel(tr("lbl_wand_mode"))
         lbl_sel_mode.setObjectName("fieldLabel")
@@ -969,6 +1052,12 @@ class ToolSidebar(QWidget):
         )
         w_layout.addLayout(sel_mode_row)
 
+        # Contenedor de opciones específicas para Varita por Color
+        self.wand_color_widget = QWidget()
+        cw_layout = QVBoxLayout(self.wand_color_widget)
+        cw_layout.setContentsMargins(0, 0, 0, 0)
+        cw_layout.setSpacing(8)
+
         # Tolerancia (0-255, por defecto 32 como en Photoshop)
         tol_row = QHBoxLayout()
         lbl_tol = QLabel(tr("lbl_tolerance"))
@@ -986,7 +1075,7 @@ class ToolSidebar(QWidget):
         self.lbl_wand_tolerance.setAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
         tol_row.addWidget(self.slider_wand_tolerance)
         tol_row.addWidget(self.lbl_wand_tolerance)
-        w_layout.addLayout(tol_row)
+        cw_layout.addLayout(tol_row)
 
         # Suavizar (anti-alias) y Contiguo
         checks_row = QHBoxLayout()
@@ -1001,7 +1090,23 @@ class ToolSidebar(QWidget):
         checks_row.addWidget(self.chk_wand_anti_alias)
         checks_row.addWidget(self.chk_wand_contiguous)
         checks_row.addStretch()
-        w_layout.addLayout(checks_row)
+        cw_layout.addLayout(checks_row)
+        w_layout.addWidget(self.wand_color_widget)
+
+        # Contenedor de opciones específicas para Varita por IA (MobileSAM)
+        self.wand_ai_widget = QWidget()
+        ai_layout = QVBoxLayout(self.wand_ai_widget)
+        ai_layout.setContentsMargins(0, 0, 0, 0)
+        ai_layout.setSpacing(6)
+        self.lbl_wand_ai_desc = QLabel(tr("wand_ai_desc"))
+        self.lbl_wand_ai_desc.setObjectName("shortcutDesc")
+        self.lbl_wand_ai_desc.setWordWrap(True)
+        ai_layout.addWidget(self.lbl_wand_ai_desc)
+        self.lbl_wand_ai_status = QLabel(tr("wand_ai_ready"))
+        self.lbl_wand_ai_status.setObjectName("fieldLabel")
+        ai_layout.addWidget(self.lbl_wand_ai_status)
+        self.wand_ai_widget.setVisible(False)
+        w_layout.addWidget(self.wand_ai_widget)
 
         lbl_wand_hint = QLabel(tr("wand_hint"))
         lbl_wand_hint.setObjectName("shortcutDesc")
@@ -1182,6 +1287,19 @@ class ToolSidebar(QWidget):
         self.btn_invert_selection.setEnabled(has_sel)
         self.btn_clear_selection.setEnabled(has_sel)
         self._apply_brush_tool_visibility()
+
+    def _on_wand_type_clicked(self, is_ai: bool):
+        self.wand_color_widget.setVisible(not is_ai)
+        self.wand_ai_widget.setVisible(is_ai)
+        self._refresh_stack_geometry()
+        self.wandAIModeToggled.emit(is_ai)
+
+    def set_wand_ai_status(self, text: str):
+        if hasattr(self, "lbl_wand_ai_status"):
+            self.lbl_wand_ai_status.setText(text)
+
+    def is_wand_ai_mode(self) -> bool:
+        return getattr(self, "btn_wand_type_ai", None) is not None and self.btn_wand_type_ai.isChecked()
 
     def _on_slider_wand_tolerance_changed(self, value: int):
         self.lbl_wand_tolerance.setText(str(value))
@@ -1376,4 +1494,105 @@ class ToolSidebar(QWidget):
         if hasattr(self, "selection_box"):
             self.selection_box.setTitle(tr("selection_box"))
         if hasattr(self, "wand_options_box"):
-            self.wand_options_box.setTitle(tr("wand_options_box"))
+            self.wand_options_box.setTitle(tr("wand_settings"))
+        if hasattr(self, "btn_wand_type_color"):
+            self.btn_wand_type_color.setText(tr("wand_type_color"))
+            self.btn_wand_type_color.setToolTip(tr("tip_wand_color"))
+        if hasattr(self, "btn_wand_type_ai"):
+            self.btn_wand_type_ai.setText(tr("wand_type_ai"))
+            self.btn_wand_type_ai.setToolTip(tr("tip_wand_ai"))
+        if hasattr(self, "lbl_wand_ai_desc"):
+            self.lbl_wand_ai_desc.setText(tr("wand_ai_desc"))
+        if hasattr(self, "lbl_wand_ai_status") and self.lbl_wand_ai_status.text() in [
+            "IA lista para seleccionar", "AI ready to select", "ИИ готов к выделению", "AI 已就绪"
+        ]:
+            self.lbl_wand_ai_status.setText(tr("wand_ai_ready"))
+
+        if hasattr(self, "combo_bg_model"):
+            curr_idx = self.combo_bg_model.currentIndex()
+            for i in range(self.combo_bg_model.count()):
+                m_id = self.combo_bg_model.itemData(i)
+                self.combo_bg_model.setItemText(i, tr(f"model_{m_id}"))
+            self.combo_bg_model.setCurrentIndex(curr_idx)
+
+        if hasattr(self, "combo_batch_model"):
+            curr_idx = self.combo_batch_model.currentIndex()
+            for i in range(self.combo_batch_model.count()):
+                m_id = self.combo_batch_model.itemData(i)
+                self.combo_batch_model.setItemText(i, tr(f"model_{m_id}"))
+            self.combo_batch_model.setCurrentIndex(curr_idx)
+
+        if hasattr(self, "box_subjects"):
+            self.box_subjects.setTitle(tr("header_detected_subjects"))
+        if hasattr(self, "btn_detect_subjects"):
+            self.btn_detect_subjects.setText(tr("btn_detect_subjects"))
+        if hasattr(self, "btn_isolate_subject"):
+            self.btn_isolate_subject.setText(tr("btn_isolate_subject"))
+        if hasattr(self, "btn_select_subject"):
+            self.btn_select_subject.setText(tr("btn_select_subject"))
+
+    def set_detected_subjects(self, subjects: list):
+        """Puebla los chips interactivos para los sujetos detectados por YOLO11."""
+        self._current_detected_subjects = subjects
+        self._active_detected_subject = None
+        self.subject_actions_widget.setVisible(False)
+
+        # Limpiar chips previos
+        while self.chips_layout.count() > 0:
+            item = self.chips_layout.takeAt(0)
+            if item.widget():
+                item.widget().deleteLater()
+
+        if not subjects:
+            self.lbl_detect_status.setText(tr("detect_none_found"))
+            return
+
+        self.lbl_detect_status.setText(f"{len(subjects)} objetos encontrados:")
+        self.subject_chip_group = QButtonGroup(self)
+        self.subject_chip_group.setExclusive(True)
+
+        for i, s in enumerate(subjects):
+            btn = QPushButton(f"{s.emoji}  {s.class_name.capitalize()} ({int(s.confidence * 100)}%)")
+            btn.setObjectName("subjectChipButton")
+            btn.setCheckable(True)
+            btn.setFixedHeight(32)
+            btn.setCursor(Qt.CursorShape.PointingHandCursor)
+            btn.setStyleSheet(f"""
+                QPushButton {{
+                    border: 1px solid #44403C;
+                    border-left: 4px solid {s.color_hex};
+                    border-radius: 6px;
+                    padding: 4px 10px;
+                    text-align: left;
+                    font-size: 12px;
+                    font-weight: 500;
+                }}
+                QPushButton:checked {{
+                    background-color: {s.color_hex}33;
+                    border-color: {s.color_hex};
+                    font-weight: 700;
+                }}
+            """)
+            btn.clicked.connect(lambda checked, subj=s: self._on_subject_chip_clicked(subj))
+            self.subject_chip_group.addButton(btn, i)
+            self.chips_layout.addWidget(btn)
+
+    def set_detecting_subjects_state(self, is_detecting: bool):
+        self.btn_detect_subjects.setEnabled(not is_detecting)
+        if is_detecting:
+            self.lbl_detect_status.setText(tr("detect_status_computing"))
+        else:
+            self.lbl_detect_status.setText(tr("detect_status_idle"))
+
+    def _on_subject_chip_clicked(self, subject):
+        self._active_detected_subject = subject
+        self.subject_actions_widget.setVisible(True)
+
+    def _on_isolate_subject_clicked(self):
+        if getattr(self, "_active_detected_subject", None):
+            self.isolateSubjectRequested.emit(self._active_detected_subject)
+
+    def _on_select_subject_clicked(self):
+        if getattr(self, "_active_detected_subject", None):
+            self.selectSubjectRequested.emit(self._active_detected_subject)
+

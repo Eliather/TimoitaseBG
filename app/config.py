@@ -228,9 +228,10 @@ CHECKER_SIZE = 16
 # Opciones de modelos para Quitar Fondo
 BG_REMOVER_MODELS = [
     ("isnet-anime", "IS-Net Anime (Óptimo para Anime, Manga e Ilustración)"),
-    ("u2net_human_seg", "U2-Net Human (Detector de Personas y Ropa — Especial Playeras Blancas)"),
+    ("rmbg-2.0", "RMBG 2.0 (Bria AI SOTA — Máxima Precisión General y Cabello)"),
     ("birefnet-general", "BiRefNet (Alta Definición General y Bordes Complejos)"),
     ("inspyrenet", "InSPyReNet Swin-B (Fotografía y Retratos Reales — Anti-aliasing Subpíxel)"),
+    ("u2net_human_seg", "U2-Net Human (Detector de Personas y Ropa — Especial Playeras Blancas)"),
 ]
 DEFAULT_BG_MODEL = "isnet-anime"
 

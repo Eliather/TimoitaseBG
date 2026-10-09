@@ -11,6 +11,10 @@ from app.config import MODELS_DIR
 MODEL_URLS = {
     "inspyrenet.onnx": "https://huggingface.co/OS-Software/InSPyReNet-SwinB-Plus-Ultra-ONNX/resolve/main/onnx/model.onnx",
     "RealESRGAN_x4plus_anime_6B.onnx": "https://huggingface.co/deepghs/imgutils-models/resolve/main/real_esrgan/RealESRGAN_x4plus_anime_6B.onnx",
+    "mobile_sam_image_encoder.onnx": "https://huggingface.co/Acly/MobileSAM/resolve/main/mobile_sam_image_encoder.onnx",
+    "sam_mask_decoder_single.onnx": "https://huggingface.co/Acly/MobileSAM/resolve/main/sam_mask_decoder_single.onnx",
+    "rmbg-2.0.onnx": "https://huggingface.co/yamura4/RMBG-2.0-ONNX/resolve/main/onnx/model_fp16.onnx",
+    "yolo11n-seg.onnx": "https://huggingface.co/unileon-robotics/YOLO11-ONNX/resolve/main/yolo11n-seg.onnx",
 }
 
 

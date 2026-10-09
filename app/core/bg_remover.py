@@ -62,6 +62,56 @@ def unletterbox_mask(
     return cv2.resize(crop, (orig_w, orig_h), interpolation=cv2.INTER_LINEAR)
 
 
+def _preprocess_rmbg2(
+    input_img: Image.Image,
+) -> Tuple[np.ndarray, Tuple[int, int, int, int], Tuple[int, int]]:
+    """
+    Preprocesamiento para RMBG-2.0 (BiRefNet 1024x1024):
+    1. Letterboxing simétrico a 1024x1024 preservando aspect ratio nativo.
+    2. Conversión a float32 y normalización ImageNet: (x/255.0 - mean) / std.
+    3. Formato NCHW [1, 3, 1024, 1024].
+    """
+    canvas, crop_box, orig_size = letterbox_image(input_img, target_size=1024)
+    rgb = np.asarray(canvas, dtype=np.float32) / 255.0
+    mean = np.array([0.485, 0.456, 0.406], dtype=np.float32)
+    std = np.array([0.229, 0.224, 0.225], dtype=np.float32)
+    norm = (rgb - mean) / std
+    tensor = np.transpose(norm, (2, 0, 1))[None, ...].astype(np.float32)
+    return tensor, crop_box, orig_size
+
+
+def _postprocess_rmbg2_mask(
+    out: Any,
+    crop_box: Tuple[int, int, int, int],
+    orig_size: Tuple[int, int],
+) -> np.ndarray:
+    """
+    Postprocesamiento para RMBG-2.0:
+    Extrae la máscara de salida, aplica sigmoid si es necesario,
+    recorta el padding del letterbox y redimensiona a (orig_w, orig_h).
+    Retorna máscara uint8 [0, 255].
+    """
+    if isinstance(out, (list, tuple)):
+        arr = out[0]
+    else:
+        arr = out
+
+    if arr.ndim == 4:
+        mask_1024 = arr[0, 0]
+    elif arr.ndim == 3:
+        mask_1024 = arr[0]
+    else:
+        mask_1024 = np.squeeze(arr)
+
+    # Sigmoid si los valores son logits
+    if np.any(mask_1024 < 0.0) or np.any(mask_1024 > 1.0):
+        mask_1024 = 1.0 / (1.0 + np.exp(-np.clip(mask_1024, -20.0, 20.0)))
+
+    mask_1024 = np.clip(mask_1024, 0.0, 1.0)
+    unletterboxed = unletterbox_mask(mask_1024, crop_box, orig_size)
+    return np.clip(np.round(unletterboxed * 255.0), 0, 255).astype(np.uint8)
+
+
 def _letterbox_topleft(
     img: Image.Image,
     target_size: int = 448,
@@ -587,9 +637,42 @@ class BackgroundRemover:
                         self._sessions[cache_key] = ort.InferenceSession(str(model_path), providers=["CPUExecutionProvider"])
         return self._sessions[cache_key]
 
+    def get_rmbg2_session(self, force_cpu: bool = False):
+        """Obtiene o inicializa una sesión ONNX para el modelo RMBG-2.0 (BiRefNet 1024x1024)."""
+        cache_key = "rmbg2_cpu" if force_cpu else "rmbg2"
+        if cache_key not in self._sessions:
+            with self._lock:
+                if cache_key not in self._sessions:
+                    from app.core.model_fetcher import ensure_model_file
+                    model_path = ensure_model_file("rmbg-2.0.onnx")
+                    import onnxruntime as ort
+                    providers = ["CPUExecutionProvider"] if force_cpu else get_inference_providers()
+                    sess_options = ort.SessionOptions()
+                    sess_options.graph_optimization_level = ort.GraphOptimizationLevel.ORT_ENABLE_ALL
+                    try:
+                        self._sessions[cache_key] = ort.InferenceSession(str(model_path), sess_options, providers=providers)
+                    except Exception as e:
+                        logger.exception(f"No se pudo inicializar RMBG-2.0 con GPU ({e}). Usando CPU...")
+                        self._sessions[cache_key] = ort.InferenceSession(str(model_path), sess_options, providers=["CPUExecutionProvider"])
+        return self._sessions[cache_key]
+
     def get_session(self, model_name: str = "inspyrenet", force_cpu: bool = False):
-        """Compatibilidad con get_session: redirige siempre a la sesión de InSPyReNet."""
+        """Compatibilidad con get_session: redirige a la sesión correspondiente."""
+        if model_name == "rmbg-2.0":
+            return self.get_rmbg2_session(force_cpu=force_cpu)
         return self.get_inspyrenet_session(force_cpu=force_cpu)
+
+    def _predict_rmbg2(self, session, input_img: Image.Image) -> np.ndarray:
+        """
+        Ejecuta inferencia con RMBG-2.0 (BiRefNet 1024x1024):
+        1. Letterbox simétrico 1024x1024 y normalización ImageNet.
+        2. Inferencia ONNX.
+        3. Des-letterbox a tamaño nativo original con interpolación bilineal.
+        """
+        tensor, crop_box, orig_size = _preprocess_rmbg2(input_img)
+        input_name = session.get_inputs()[0].name
+        out = session.run(None, {input_name: tensor})[0]
+        return _postprocess_rmbg2_mask(out, crop_box, orig_size)
 
     def _predict_inspyrenet(self, session, input_img: Image.Image) -> np.ndarray:
         """
@@ -619,7 +702,11 @@ class BackgroundRemover:
         else:
             input_img = image.copy()
 
-        if model_name in ("isnet-anime", "birefnet-general", "u2net_human_seg"):
+        if model_name == "rmbg-2.0":
+            logger.info("[CPU Fallback/Local] Ejecutando RMBG-2.0 (BiRefNet 1024x1024)...")
+            session = self.get_rmbg2_session(force_cpu=True)
+            final_alpha = self._predict_rmbg2(session, input_img)
+        elif model_name in ("isnet-anime", "birefnet-general", "u2net_human_seg"):
             import rembg
             logger.info(f"[CPU Fallback/Local] Ejecutando {model_name} en CPU...")
             sess = rembg.new_session(model_name, providers=["CPUExecutionProvider"])

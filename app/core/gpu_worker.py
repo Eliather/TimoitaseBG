@@ -107,6 +107,21 @@ class PersistentGPUWorker:
             self._cached_sessions["inspyrenet"] = ort.InferenceSession(str(model_path), providers=eff_providers)
         return self._cached_sessions["inspyrenet"]
 
+    def get_rmbg2_session(self, providers=None):
+        if "rmbg2" not in self._cached_sessions:
+            if self._cached_sessions:
+                self._clear_rembg_sessions()
+
+            from app.core.model_fetcher import ensure_model_file
+            model_path = ensure_model_file("rmbg-2.0.onnx")
+            import onnxruntime as ort
+            eff_providers = self._get_providers(providers)
+            sess_options = ort.SessionOptions()
+            sess_options.graph_optimization_level = ort.GraphOptimizationLevel.ORT_ENABLE_ALL
+            logger.info(f"Cargando sesión RMBG-2.0 con providers: {eff_providers}...")
+            self._cached_sessions["rmbg2"] = ort.InferenceSession(str(model_path), sess_options, providers=eff_providers)
+        return self._cached_sessions["rmbg2"]
+
     def remove_background(
         self,
         image: Image.Image,
@@ -119,6 +134,7 @@ class PersistentGPUWorker:
         """
         Ejecuta la eliminación de fondo en el proceso aislado de GPU con fidelidad cromática 100% íntegra.
         - 'isnet-anime': Modelo especializado en Anime/Manga, cel-shading y mangas/ropa blanca.
+        - 'rmbg-2.0': RMBG 2.0 (BiRefNet 1024x1024) para precisión SOTA general y cabello.
         - 'u2net_human_seg': Detector semántico de personas y prendas (sin fallos en blanco).
         - 'birefnet-general': BiRefNet para alta definición general.
         - 'inspyrenet': InSPyReNet Swin-B (1024x1024) para fotografía y personas reales con anti-aliasing.
@@ -130,7 +146,18 @@ class PersistentGPUWorker:
 
         eff_providers = self._get_providers(providers)
 
-        if model_name in ("isnet-anime", "birefnet-general", "u2net_human_seg"):
+        if model_name == "rmbg-2.0":
+            from app.core.bg_remover import _preprocess_rmbg2, _postprocess_rmbg2_mask
+            logger.info(
+                f"[GPUWorker:{os.getpid()}] Ejecutando RMBG-2.0 (BiRefNet 1024x1024) en GPU..."
+            )
+            session = self.get_rmbg2_session(providers=providers)
+            tensor, crop_box, orig_size = _preprocess_rmbg2(input_img)
+            input_name = session.get_inputs()[0].name
+            out = session.run(None, {input_name: tensor})[0]
+            final_alpha = _postprocess_rmbg2_mask(out, crop_box, orig_size)
+
+        elif model_name in ("isnet-anime", "birefnet-general", "u2net_human_seg"):
             import rembg
             logger.info(f"[GPUWorker:{os.getpid()}] Ejecutando {model_name} en GPU con providers: {eff_providers}...")
             if model_name not in self._cached_sessions:
