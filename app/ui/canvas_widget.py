@@ -1037,7 +1037,7 @@ class CanvasWidget(QWidget):
         # Texto principal
         painter.setPen(text_color)
         font = painter.font()
-        font.setPointSize(13)
+        font.setPixelSize(13)
         font.setBold(True)
         painter.setFont(font)
         painter.drawText(
@@ -1047,7 +1047,7 @@ class CanvasWidget(QWidget):
         )
 
         # Subtexto de ayuda
-        font.setPointSize(10)
+        font.setPixelSize(10)
         font.setBold(False)
         painter.setFont(font)
         painter.setPen(subtext_color)
@@ -1130,7 +1130,7 @@ class CanvasWidget(QWidget):
         # Flechas ◀ ▶ dentro de la manija
         painter.setPen(QColor("#FF4F79"))
         font = painter.font()
-        font.setPointSize(9)
+        font.setPixelSize(9)
         font.setBold(True)
         painter.setFont(font)
         painter.drawText(
@@ -1149,7 +1149,7 @@ class CanvasWidget(QWidget):
             painter.drawRoundedRect(badge_antes_rect, 6, 6)
             painter.setPen(QColor("#FFFFFF"))
             font_b = painter.font()
-            font_b.setPointSize(8)
+            font_b.setPixelSize(8)
             font_b.setBold(True)
             painter.setFont(font_b)
             painter.drawText(badge_antes_rect, Qt.AlignmentFlag.AlignCenter, "ANTES")

@@ -27,7 +27,7 @@ def test_sam_preprocess_scaling():
     img = Image.new("RGB", (800, 400), (255, 0, 0))
     tensor, scale, new_w, new_h = mgr._preprocess_image(img)
     
-    assert tensor.shape == (1, 3, 1024, 1024)
+    assert tensor.shape == (1024, 1024, 3)
     assert tensor.dtype == np.float32
     # El lado más largo (800) se escala a 1024: factor = 1024/800 = 1.28
     assert scale == pytest.approx(1024 / 800, 1e-4)
@@ -90,7 +90,10 @@ def test_wand_ai_toolbar_toggle(qapp):
 
     # Ir a panel de Varita
     sidebar.btn_rail_brush.click()
+    assert sidebar.btn_wand is sidebar.btn_tool_wand
     sidebar.btn_tool_wand.click()
+    assert sidebar.is_wand_tool_active()
+    assert sidebar.btn_wand.isChecked()
 
     ai_toggled = []
     sidebar.wandAIModeToggled.connect(ai_toggled.append)

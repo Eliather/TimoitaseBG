@@ -106,7 +106,11 @@ class SAMManager:
             self.scaled_size = (0, 0)
 
     def _preprocess_image(self, pil_img: Image.Image) -> Tuple[np.ndarray, float, int, int]:
-        """Preprocesa la imagen para el encoder de MobileSAM (resize a 1024, norm y padding a 1024x1024)."""
+        """
+        Preprocesa la imagen para el encoder de MobileSAM.
+        El modelo ONNX de Acly espera entrada de Rango 3: (1024, 1024, 3) en float32 (HWC),
+        y contiene internamente la resta de media y división por std.
+        """
         w, h = pil_img.size
         scale = 1024.0 / max(w, h)
         new_w = max(1, int(round(w * scale)))
@@ -116,14 +120,9 @@ class SAMManager:
         resized = pil_img.convert("RGB").resize((new_w, new_h), resample=_BILINEAR)
         rgb = np.asarray(resized, dtype=np.float32)
 
-        # Normalización estándar de SAM (ImageNet-style de SAM)
-        pixel_mean = np.array([123.675, 116.28, 103.53], dtype=np.float32)
-        pixel_std = np.array([58.395, 57.12, 57.375], dtype=np.float32)
-        norm_rgb = (rgb - pixel_mean) / pixel_std
-
-        # Padding a 1024x1024 colocando la imagen en (0, 0)
-        input_tensor = np.zeros((1, 3, 1024, 1024), dtype=np.float32)
-        input_tensor[0, :, :new_h, :new_w] = np.transpose(norm_rgb, (2, 0, 1))
+        # Padding a 1024x1024x3 (HWC, float32 en rango 0-255)
+        input_tensor = np.zeros((1024, 1024, 3), dtype=np.float32)
+        input_tensor[:new_h, :new_w, :] = rgb
 
         return input_tensor, scale, new_w, new_h
 
@@ -191,16 +190,11 @@ class SAMManager:
         scaled_y = float(click_y) * scale
 
         # Entradas esperadas por el decoder ONNX de MobileSAM
-        # point_coords: (1, N, 2)
         point_coords = np.array([[[scaled_x, scaled_y]]], dtype=np.float32)
-        # point_labels: (1, N) con 1.0 para punto de inclusión
         point_labels = np.array([[1.0]], dtype=np.float32)
-        # mask_input: (1, 1, 256, 256)
         mask_input = np.zeros((1, 1, 256, 256), dtype=np.float32)
-        # has_mask_input: (1,)
         has_mask_input = np.array([0.0], dtype=np.float32)
-        # orig_im_size: (2,) [orig_h, orig_w]
-        orig_im_size = np.array([orig_h, orig_w], dtype=np.float32)
+        orig_im_size = np.array([1024.0, 1024.0], dtype=np.float32)
 
         decoder_inputs = {}
         for inp in self.decoder_session.get_inputs():
@@ -220,33 +214,26 @@ class SAMManager:
 
         try:
             outputs = self.decoder_session.run(None, decoder_inputs)
-            # Salida 0: máscaras (1, 1, H, W) o (1, 1, 256, 256)
             raw_mask = outputs[0]
 
-            # Si devuelve múltiples máscaras, seleccionar la de mejor IoU o la primera
             if raw_mask.ndim == 4:
-                # Shape: (1, 1, H, W)
                 mask_2d = raw_mask[0, 0]
             elif raw_mask.ndim == 3:
                 mask_2d = raw_mask[0]
             else:
                 mask_2d = np.squeeze(raw_mask)
 
-            # Ajustar a las dimensiones de la imagen original si el modelo entregó baja resolución
-            mh, mw = mask_2d.shape[:2]
-            if (mw, mh) != (orig_w, orig_h):
-                # Des-letterbox si es necesario
-                new_w, new_h = self.scaled_size
-                if mw == 1024 and mh == 1024 and new_w > 0 and new_h > 0:
-                    crop_mask = mask_2d[:new_h, :new_w]
-                    resized_mask = cv2.resize(
-                        crop_mask, (orig_w, orig_h), interpolation=cv2.INTER_LINEAR
-                    )
-                else:
-                    resized_mask = cv2.resize(
-                        mask_2d, (orig_w, orig_h), interpolation=cv2.INTER_LINEAR
-                    )
-                return resized_mask > 0.0
+            # Recortar el área activa antes de las dimensiones de padding
+            new_w, new_h = self.scaled_size
+            if new_w > 0 and new_h > 0 and mask_2d.shape[0] >= new_h and mask_2d.shape[1] >= new_w:
+                crop_mask = mask_2d[:new_h, :new_w]
+            else:
+                crop_mask = mask_2d
+
+            resized_mask = cv2.resize(
+                crop_mask, (orig_w, orig_h), interpolation=cv2.INTER_LINEAR
+            )
+            return resized_mask > 0.0
 
             return mask_2d > 0.0
 

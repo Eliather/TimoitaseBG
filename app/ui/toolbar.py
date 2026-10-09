@@ -1301,6 +1301,15 @@ class ToolSidebar(QWidget):
     def is_wand_ai_mode(self) -> bool:
         return getattr(self, "btn_wand_type_ai", None) is not None and self.btn_wand_type_ai.isChecked()
 
+    @property
+    def btn_wand(self):
+        """Compatibilidad con referencias a btn_wand."""
+        return getattr(self, "btn_tool_wand", None)
+
+    def is_wand_tool_active(self) -> bool:
+        """Indica si la herramienta de varita está seleccionada en el sidebar."""
+        return getattr(self, "btn_tool_wand", None) is not None and self.btn_tool_wand.isChecked()
+
     def _on_slider_wand_tolerance_changed(self, value: int):
         self.lbl_wand_tolerance.setText(str(value))
         self.wandToleranceChanged.emit(value)

@@ -116,6 +116,7 @@ class SamEmbeddingWorker(QThread):
     """
     progressStatus = Signal(str)
     embeddingReady = Signal(bool)
+    finishedResult = Signal(bool)
     failed = Signal(str)
 
     def __init__(self, image: Image.Image, image_id: Optional[int] = None):
@@ -131,6 +132,7 @@ class SamEmbeddingWorker(QThread):
             sam_mgr = get_sam_manager()
             success = sam_mgr.prepare_image(self.image, image_id=self.image_id)
             self.embeddingReady.emit(success)
+            self.finishedResult.emit(success)
         except Exception as e:
             import traceback
             traceback.print_exc()

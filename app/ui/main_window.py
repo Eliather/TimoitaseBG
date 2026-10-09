@@ -706,7 +706,7 @@ class MainWindow(QMainWindow):
         # Invalidar embedding SAM previo
         from app.core.sam_manager import get_sam_manager
         get_sam_manager().clear_embedding()
-        if hasattr(self, "sidebar") and self.sidebar.is_wand_ai_mode() and self.sidebar.btn_wand.isChecked():
+        if hasattr(self, "sidebar") and self.sidebar.is_wand_ai_mode() and self.sidebar.is_wand_tool_active():
             self._ensure_sam_embedding_async()
         if hasattr(self, "sidebar"):
             self.sidebar.set_detected_subjects([])
@@ -827,7 +827,7 @@ class MainWindow(QMainWindow):
             self._set_status("status_undo", action=self.image_state.get_status_summary())
             self._update_image_info_label(img)
             self._update_action_states()
-            if hasattr(self, "sidebar") and self.sidebar.is_wand_ai_mode() and self.sidebar.btn_wand.isChecked():
+            if hasattr(self, "sidebar") and self.sidebar.is_wand_ai_mode() and self.sidebar.is_wand_tool_active():
                 self._ensure_sam_embedding_async()
 
     def perform_redo(self):
@@ -840,7 +840,7 @@ class MainWindow(QMainWindow):
             self._set_status("status_redo", action=self.image_state.get_status_summary())
             self._update_image_info_label(img)
             self._update_action_states()
-            if hasattr(self, "sidebar") and self.sidebar.is_wand_ai_mode() and self.sidebar.btn_wand.isChecked():
+            if hasattr(self, "sidebar") and self.sidebar.is_wand_ai_mode() and self.sidebar.is_wand_tool_active():
                 self._ensure_sam_embedding_async()
 
     def perform_reset_original(self):
@@ -853,7 +853,7 @@ class MainWindow(QMainWindow):
             self._set_status("status_reset")
             self._update_image_info_label(img)
             self._update_action_states()
-            if hasattr(self, "sidebar") and self.sidebar.is_wand_ai_mode() and self.sidebar.btn_wand.isChecked():
+            if hasattr(self, "sidebar") and self.sidebar.is_wand_ai_mode() and self.sidebar.is_wand_tool_active():
                 self._ensure_sam_embedding_async()
 
     def push_new_image_state(self, image: Image.Image, description: str, brush_reference: Optional[Image.Image] = None):
@@ -866,7 +866,7 @@ class MainWindow(QMainWindow):
         self._set_status_raw(f"Aplicado: {description}")
         self._update_image_info_label(current)
         self._update_action_states()
-        if hasattr(self, "sidebar") and self.sidebar.is_wand_ai_mode() and self.sidebar.btn_wand.isChecked():
+        if hasattr(self, "sidebar") and self.sidebar.is_wand_ai_mode() and self.sidebar.is_wand_tool_active():
             self._ensure_sam_embedding_async()
 
     # -------------------------------------------------------------
@@ -1024,7 +1024,7 @@ class MainWindow(QMainWindow):
 
     def _on_wand_ai_mode_toggled(self, enabled: bool):
         self.canvas.set_wand_ai_mode(enabled)
-        if enabled and self.sidebar.btn_wand.isChecked():
+        if enabled and self.sidebar.is_wand_tool_active():
             self._ensure_sam_embedding_async()
 
     def _ensure_sam_embedding_async(self):
@@ -1037,10 +1037,14 @@ class MainWindow(QMainWindow):
             self.sidebar.set_wand_ai_status(tr("wand_ai_ready"))
             return
 
+        if getattr(self, "sam_worker", None) is not None and self.sam_worker.isRunning():
+            return
+
         self.sidebar.set_wand_ai_status(tr("wand_ai_computing"))
         from app.core.workers import SamEmbeddingWorker
         pil_img = self.image_state.current_image
         self.sam_worker = SamEmbeddingWorker(pil_img)
+        self.sam_worker.embeddingReady.connect(self._on_sam_embedding_ready)
         self.sam_worker.finishedResult.connect(self._on_sam_embedding_ready)
         self.sam_worker.failed.connect(self._on_sam_embedding_failed)
         self.sam_worker.start()
@@ -1288,3 +1292,12 @@ class MainWindow(QMainWindow):
         mask_u8 = (subject.mask.astype(np.uint8) * 255)
         self.canvas._set_selection(mask_u8)
         self._set_status_raw(f"Seleccionado: {subject.class_name.capitalize()}")
+
+    def closeEvent(self, event):
+        """Asegura que los hilos en segundo plano finalicen limpiamente antes de cerrar la ventana."""
+        for attr in ("sam_worker", "yolo_worker"):
+            worker = getattr(self, attr, None)
+            if worker is not None and worker.isRunning():
+                worker.requestInterruption()
+                worker.wait(1000)
+        super().closeEvent(event)
