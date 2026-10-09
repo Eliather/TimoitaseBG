@@ -9,7 +9,7 @@ import cv2
 import numpy as np
 import scipy.ndimage
 from PIL import Image
-from app.config import get_inference_providers
+from app.config import get_inference_providers, get_optimized_session_options
 
 logger = logging.getLogger("TimoitaseBG.BGRemover")
 
@@ -630,11 +630,12 @@ class BackgroundRemover:
                     model_path = ensure_model_file("inspyrenet.onnx")
                     import onnxruntime as ort
                     providers = ["CPUExecutionProvider"] if force_cpu else get_inference_providers()
+                    sess_options = get_optimized_session_options() or ort.SessionOptions()
                     try:
-                        self._sessions[cache_key] = ort.InferenceSession(str(model_path), providers=providers)
+                        self._sessions[cache_key] = ort.InferenceSession(str(model_path), sess_options, providers=providers)
                     except Exception as e:
                         logger.exception(f"No se pudo inicializar inspyrenet con GPU ({e}). Usando CPU...")
-                        self._sessions[cache_key] = ort.InferenceSession(str(model_path), providers=["CPUExecutionProvider"])
+                        self._sessions[cache_key] = ort.InferenceSession(str(model_path), sess_options, providers=["CPUExecutionProvider"])
         return self._sessions[cache_key]
 
     def get_rmbg2_session(self, force_cpu: bool = False):
@@ -647,8 +648,7 @@ class BackgroundRemover:
                     model_path = ensure_model_file("rmbg-2.0.onnx")
                     import onnxruntime as ort
                     providers = ["CPUExecutionProvider"] if force_cpu else get_inference_providers()
-                    sess_options = ort.SessionOptions()
-                    sess_options.graph_optimization_level = ort.GraphOptimizationLevel.ORT_ENABLE_ALL
+                    sess_options = get_optimized_session_options() or ort.SessionOptions()
                     try:
                         self._sessions[cache_key] = ort.InferenceSession(str(model_path), sess_options, providers=providers)
                     except Exception as e:

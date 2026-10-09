@@ -942,6 +942,9 @@ class MainWindow(QMainWindow):
     def start_remove_bg(self, model_id: str, enable_clothing_protection: Optional[bool] = None):
         if not self.image_state.has_image:
             return
+        if getattr(self, "active_worker", None) is not None and self.active_worker.isRunning():
+            logger.info("Tarea de inferencia ya en curso, ignorando solicitud duplicada.")
+            return
         if enable_clothing_protection is None:
             enable_clothing_protection = getattr(self.sidebar, "is_clothing_protection_enabled", lambda: True)()
         current_img = self.image_state.current_image
@@ -960,6 +963,9 @@ class MainWindow(QMainWindow):
     def start_restore(self, scale_mode: str, use_tiling: bool):
         if not self.image_state.has_image:
             return
+        if getattr(self, "active_worker", None) is not None and self.active_worker.isRunning():
+            logger.info("Tarea de restauración ya en curso, ignorando solicitud duplicada.")
+            return
         current_img = self.image_state.current_image
         desc_map = {"x2": "Escalado 2x", "x4": "Escalado 4x", "enhance_only": "Mejora de nitidez"}
         desc = desc_map.get(scale_mode, f"Escalado {scale_mode}")
@@ -976,6 +982,9 @@ class MainWindow(QMainWindow):
         self.active_worker.start()
 
     def start_batch_processing(self, input_dir: str, output_dir: str, model_id: str, enable_clothing_protection: bool):
+        if getattr(self, "batch_worker", None) is not None and self.batch_worker.isRunning():
+            logger.info("Procesamiento en lote ya en curso, ignorando solicitud duplicada.")
+            return
         from app.core.workers import BatchWorkerThread
         self.progress_bar.setVisible(True)
         self.progress_bar.setRange(0, 100) # Se actualizará luego
@@ -1250,6 +1259,10 @@ class MainWindow(QMainWindow):
             self._set_status("status_open_first")
             return
 
+        if getattr(self, "yolo_worker", None) is not None and self.yolo_worker.isRunning():
+            logger.info("Detección YOLO ya en curso, ignorando solicitud duplicada.")
+            return
+
         self.sidebar.set_detecting_subjects_state(True)
         self._set_status("detect_status_computing")
         from app.core.workers import YoloDetectionWorker
@@ -1294,10 +1307,14 @@ class MainWindow(QMainWindow):
         self._set_status_raw(f"Seleccionado: {subject.class_name.capitalize()}")
 
     def closeEvent(self, event):
-        """Asegura que los hilos en segundo plano finalicen limpiamente antes de cerrar la ventana."""
-        for attr in ("sam_worker", "yolo_worker"):
+        """Asegura que todos los hilos en segundo plano finalicen limpiamente antes de cerrar la ventana."""
+        for attr in ("active_worker", "batch_worker", "sam_worker", "yolo_worker"):
             worker = getattr(self, attr, None)
             if worker is not None and worker.isRunning():
                 worker.requestInterruption()
                 worker.wait(1000)
-        super().closeEvent(event)
+        try:
+            super().closeEvent(event)
+        except Exception:
+            if hasattr(event, "accept"):
+                event.accept()

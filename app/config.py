@@ -210,6 +210,25 @@ def get_inference_providers():
     except Exception:
         return ["CPUExecutionProvider"]
 
+
+def get_optimized_session_options():
+    """
+    Retorna SessionOptions de ONNX Runtime optimizado para alto rendimiento
+    sin saturar la CPU ni congelar la interfaz de usuario.
+    Limita intra_op_num_threads para reservar núcleos al hilo principal y al sistema operativo.
+    """
+    try:
+        import onnxruntime as ort
+        sess_options = ort.SessionOptions()
+        sess_options.graph_optimization_level = ort.GraphOptimizationLevel.ORT_ENABLE_ALL
+        cpu_count = os.cpu_count() or 4
+        threads = max(1, min(4, cpu_count // 2 if cpu_count > 2 else cpu_count))
+        sess_options.intra_op_num_threads = threads
+        sess_options.inter_op_num_threads = 1
+        return sess_options
+    except Exception:
+        return None
+
 # Parámetros por defecto de la aplicación
 APP_NAME = "TimoitaseBG"
 APP_VERSION = "1.0.0"

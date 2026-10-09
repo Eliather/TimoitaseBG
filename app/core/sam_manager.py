@@ -10,7 +10,11 @@ import numpy as np
 import cv2
 from PIL import Image
 
-from app.config import get_inference_providers, MODELS_DIR
+from app.config import (
+    MODELS_DIR,
+    get_inference_providers,
+    get_optimized_session_options,
+)
 from app.core.model_fetcher import ensure_model_file
 
 logger = logging.getLogger("TimoitaseBG.SAMManager")
@@ -68,8 +72,7 @@ class SAMManager:
         import onnxruntime as ort
 
         providers = get_inference_providers()
-        sess_options = ort.SessionOptions()
-        sess_options.graph_optimization_level = ort.GraphOptimizationLevel.ORT_ENABLE_ALL
+        sess_options = get_optimized_session_options() or ort.SessionOptions()
 
         logger.info(f"Cargando MobileSAM Encoder desde {enc_path.name}...")
         try:
@@ -139,6 +142,10 @@ class SAMManager:
             if image_id is not None and self.current_image_id == image_id and self.cached_embedding is not None:
                 return True
 
+            if self._is_computing:
+                logger.info("MobileSAM: Ya hay un cálculo de embedding en progreso, ignorando llamada simultánea.")
+                return False
+
             self._is_computing = True
 
         try:
@@ -179,67 +186,67 @@ class SAMManager:
         """
         Ejecuta el Mask Decoder en <15 ms utilizando el embedding en caché.
         Retorna una máscara booleana 2D de dimensiones (orig_h, orig_w).
+        Protegido por cerrojo para evitar colisiones con actualizaciones de embedding.
         """
-        if self.cached_embedding is None or self.decoder_session is None:
-            logger.warning("No hay embedding en caché o el decoder no está inicializado.")
-            return None
+        with self._lock:
+            if self.cached_embedding is None or self.decoder_session is None:
+                logger.warning("No hay embedding en caché o el decoder no está inicializado.")
+                return None
 
-        orig_w, orig_h = orig_img_size or self.orig_size
-        scale = self.scale_factor or (1024.0 / max(orig_w, orig_h))
-        scaled_x = float(click_x) * scale
-        scaled_y = float(click_y) * scale
+            orig_w, orig_h = orig_img_size or self.orig_size
+            scale = self.scale_factor or (1024.0 / max(orig_w, orig_h))
+            scaled_x = float(click_x) * scale
+            scaled_y = float(click_y) * scale
 
-        # Entradas esperadas por el decoder ONNX de MobileSAM
-        point_coords = np.array([[[scaled_x, scaled_y]]], dtype=np.float32)
-        point_labels = np.array([[1.0]], dtype=np.float32)
-        mask_input = np.zeros((1, 1, 256, 256), dtype=np.float32)
-        has_mask_input = np.array([0.0], dtype=np.float32)
-        orig_im_size = np.array([1024.0, 1024.0], dtype=np.float32)
+            # Entradas esperadas por el decoder ONNX de MobileSAM
+            point_coords = np.array([[[scaled_x, scaled_y]]], dtype=np.float32)
+            point_labels = np.array([[1.0]], dtype=np.float32)
+            mask_input = np.zeros((1, 1, 256, 256), dtype=np.float32)
+            has_mask_input = np.array([0.0], dtype=np.float32)
+            orig_im_size = np.array([1024.0, 1024.0], dtype=np.float32)
 
-        decoder_inputs = {}
-        for inp in self.decoder_session.get_inputs():
-            name = inp.name
-            if "image_embedding" in name:
-                decoder_inputs[name] = self.cached_embedding
-            elif "point_coord" in name:
-                decoder_inputs[name] = point_coords
-            elif "point_label" in name:
-                decoder_inputs[name] = point_labels
-            elif "mask_input" in name and "has" not in name:
-                decoder_inputs[name] = mask_input
-            elif "has_mask_input" in name:
-                decoder_inputs[name] = has_mask_input
-            elif "orig_im_size" in name:
-                decoder_inputs[name] = orig_im_size
+            decoder_inputs = {}
+            for inp in self.decoder_session.get_inputs():
+                name = inp.name
+                if "image_embedding" in name:
+                    decoder_inputs[name] = self.cached_embedding
+                elif "point_coord" in name:
+                    decoder_inputs[name] = point_coords
+                elif "point_label" in name:
+                    decoder_inputs[name] = point_labels
+                elif "mask_input" in name and "has" not in name:
+                    decoder_inputs[name] = mask_input
+                elif "has_mask_input" in name:
+                    decoder_inputs[name] = has_mask_input
+                elif "orig_im_size" in name:
+                    decoder_inputs[name] = orig_im_size
 
-        try:
-            outputs = self.decoder_session.run(None, decoder_inputs)
-            raw_mask = outputs[0]
+            try:
+                outputs = self.decoder_session.run(None, decoder_inputs)
+                raw_mask = outputs[0]
 
-            if raw_mask.ndim == 4:
-                mask_2d = raw_mask[0, 0]
-            elif raw_mask.ndim == 3:
-                mask_2d = raw_mask[0]
-            else:
-                mask_2d = np.squeeze(raw_mask)
+                if raw_mask.ndim == 4:
+                    mask_2d = raw_mask[0, 0]
+                elif raw_mask.ndim == 3:
+                    mask_2d = raw_mask[0]
+                else:
+                    mask_2d = np.squeeze(raw_mask)
 
-            # Recortar el área activa antes de las dimensiones de padding
-            new_w, new_h = self.scaled_size
-            if new_w > 0 and new_h > 0 and mask_2d.shape[0] >= new_h and mask_2d.shape[1] >= new_w:
-                crop_mask = mask_2d[:new_h, :new_w]
-            else:
-                crop_mask = mask_2d
+                # Recortar el área activa antes de las dimensiones de padding
+                new_w, new_h = self.scaled_size
+                if new_w > 0 and new_h > 0 and mask_2d.shape[0] >= new_h and mask_2d.shape[1] >= new_w:
+                    crop_mask = mask_2d[:new_h, :new_w]
+                else:
+                    crop_mask = mask_2d
 
-            resized_mask = cv2.resize(
-                crop_mask, (orig_w, orig_h), interpolation=cv2.INTER_LINEAR
-            )
-            return resized_mask > 0.0
+                resized_mask = cv2.resize(
+                    crop_mask, (orig_w, orig_h), interpolation=cv2.INTER_LINEAR
+                )
+                return resized_mask > 0.0
 
-            return mask_2d > 0.0
-
-        except Exception as e:
-            logger.error(f"Error en inferencia del Decoder de MobileSAM: {e}")
-            return None
+            except Exception as e:
+                logger.error(f"Error en inferencia del Decoder de MobileSAM: {e}")
+                return None
 
 
 # Instancia singleton global

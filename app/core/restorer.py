@@ -60,9 +60,11 @@ class ImageRestorer:
         """Inicializa o retorna la sesión garantizada en CPU."""
         if self._cpu_session is None:
             import onnxruntime as ort
+            from app.config import get_optimized_session_options
             model_path = ensure_model_file(self.MODEL_FILENAME)
             logger.info("Inicializando sesión local de Real-ESRGAN con CPUExecutionProvider...")
-            self._cpu_session = ort.InferenceSession(str(model_path), providers=["CPUExecutionProvider"])
+            sess_options = get_optimized_session_options() or ort.SessionOptions()
+            self._cpu_session = ort.InferenceSession(str(model_path), sess_options, providers=["CPUExecutionProvider"])
         return self._cpu_session
 
     def _get_session(self, force_cpu: bool = True):

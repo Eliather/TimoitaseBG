@@ -15,7 +15,7 @@ import numpy as np
 import cv2
 from PIL import Image
 
-from app.config import APP_DIR, get_gpu_name
+from app.config import APP_DIR, get_gpu_name, get_optimized_session_options
 
 logging.basicConfig(
     level=logging.INFO,
@@ -103,8 +103,9 @@ class PersistentGPUWorker:
             model_path = ensure_model_file("inspyrenet.onnx")
             import onnxruntime as ort
             eff_providers = self._get_providers(providers)
+            sess_options = get_optimized_session_options() or ort.SessionOptions()
             logger.info(f"Cargando sesión inspyrenet con providers: {eff_providers}...")
-            self._cached_sessions["inspyrenet"] = ort.InferenceSession(str(model_path), providers=eff_providers)
+            self._cached_sessions["inspyrenet"] = ort.InferenceSession(str(model_path), sess_options, providers=eff_providers)
         return self._cached_sessions["inspyrenet"]
 
     def get_rmbg2_session(self, providers=None):
@@ -116,8 +117,7 @@ class PersistentGPUWorker:
             model_path = ensure_model_file("rmbg-2.0.onnx")
             import onnxruntime as ort
             eff_providers = self._get_providers(providers)
-            sess_options = ort.SessionOptions()
-            sess_options.graph_optimization_level = ort.GraphOptimizationLevel.ORT_ENABLE_ALL
+            sess_options = get_optimized_session_options() or ort.SessionOptions()
             logger.info(f"Cargando sesión RMBG-2.0 con providers: {eff_providers}...")
             self._cached_sessions["rmbg2"] = ort.InferenceSession(str(model_path), sess_options, providers=eff_providers)
         return self._cached_sessions["rmbg2"]
@@ -231,8 +231,9 @@ class PersistentGPUWorker:
             import onnxruntime as ort
             from app.core.model_fetcher import ensure_model_file
             model_path = ensure_model_file(ImageRestorer.MODEL_FILENAME)
+            sess_options = get_optimized_session_options() or ort.SessionOptions()
             logger.info(f"Worker: Inicializando Real-ESRGAN con providers: {eff_providers}...")
-            self._restorer_instance._session = ort.InferenceSession(str(model_path), providers=eff_providers)
+            self._restorer_instance._session = ort.InferenceSession(str(model_path), sess_options, providers=eff_providers)
 
         return self._restorer_instance.restore_image(
             image,

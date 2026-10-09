@@ -12,7 +12,7 @@ import cv2
 import numpy as np
 from PIL import Image
 
-from app.config import get_inference_providers
+from app.config import get_inference_providers, get_optimized_session_options
 from app.core.model_fetcher import ensure_model_file
 
 logger = logging.getLogger("TimoitaseBG.YOLODetector")
@@ -89,8 +89,7 @@ class YOLODetector:
                 )
                 import onnxruntime as ort
                 providers = get_inference_providers()
-                sess_options = ort.SessionOptions()
-                sess_options.graph_optimization_level = ort.GraphOptimizationLevel.ORT_ENABLE_ALL
+                sess_options = get_optimized_session_options() or ort.SessionOptions()
                 try:
                     self._session = ort.InferenceSession(
                         str(model_path), sess_options, providers=providers
@@ -137,14 +136,15 @@ class YOLODetector:
         if pil_img is None or pil_img.width <= 0 or pil_img.height <= 0:
             return []
 
-        if self._session is None:
-            self.ensure_model()
+        with self._lock:
+            if self._session is None:
+                self.ensure_model()
 
-        tensor, crop_box, (orig_w, orig_h), scale = self._preprocess(pil_img, 640)
-        pad_x, pad_y, new_w, new_h = crop_box
+            tensor, crop_box, (orig_w, orig_h), scale = self._preprocess(pil_img, 640)
+            pad_x, pad_y, new_w, new_h = crop_box
 
-        input_name = self._session.get_inputs()[0].name
-        outputs = self._session.run(None, {input_name: tensor})
+            input_name = self._session.get_inputs()[0].name
+            outputs = self._session.run(None, {input_name: tensor})
 
         # Salida 0: (1, 116, 8400) -> Transponer a (8400, 116)
         output0 = outputs[0]
