@@ -12,9 +12,30 @@ QWidget {
 }
 
 /* --- BARRA LATERAL (TOOLBAR) --- */
-QWidget#sidebar {
+QWidget#toolSidebar, QWidget#sidebar {
     background-color: #1A1A1A;
-    border-right: 1px solid #2A2A2A;
+    border-left: 1px solid #2A2A2A;
+}
+
+QWidget#sidebar_header, QWidget#tool_tabs_row, QWidget#quick_shortcuts_box, QWidget#scroll_content, QWidget#toolsStack {
+    background-color: transparent;
+}
+
+QLabel, QCheckBox, QRadioButton {
+    background: transparent;
+}
+
+QLabel#sidebarHeader {
+    font-size: 16px;
+    font-weight: 700;
+    color: #FFFFFF;
+    background: transparent;
+}
+
+QLabel#sidebarSubheader {
+    font-size: 12px;
+    color: #888888;
+    background: transparent;
 }
 
 /* --- BOTONES PRINCIPALES --- */
@@ -83,6 +104,46 @@ QPushButton#presetButton {
 QPushButton#brushToolModeButton {
     padding: 4px 8px;
 }
+QPushButton#selectionModeButton {
+    background-color: #2D2D2D;
+    color: #CCCCCC;
+    border: 1px solid #3D3D3D;
+    border-radius: 6px;
+    font-size: 14px;
+    font-weight: bold;
+    padding: 2px 8px;
+}
+QPushButton#selectionModeButton:hover {
+    background-color: #3D3D3D;
+    border-color: #555555;
+    color: #FFFFFF;
+}
+QPushButton#selectionModeButton:checked {
+    background-color: #2563EB;
+    border: 1px solid #3B82F6;
+    color: #FFFFFF;
+}
+
+QPushButton#dangerActionButton {
+    background-color: #DC2626;
+    color: #FFFFFF;
+    font-weight: bold;
+    font-size: 13px;
+    border: none;
+    border-radius: 6px;
+    padding: 8px 16px;
+}
+QPushButton#dangerActionButton:hover {
+    background-color: #EF4444;
+}
+QPushButton#dangerActionButton:pressed {
+    background-color: #B91C1C;
+}
+QPushButton#dangerActionButton:disabled {
+    background-color: #3D1C24;
+    color: #77555E;
+    border: 1px solid #4D222E;
+}
 
 QPushButton#swatchWhiteButton { background-color: #FFFFFF; border: 1px solid #D6D3D1; padding: 0px; }
 QPushButton#swatchBlackButton { background-color: #000000; border: 1px solid #3D3D3D; padding: 0px; }
@@ -124,21 +185,37 @@ QSlider::handle:horizontal:hover {
 QComboBox {
     background-color: #2D2D2D;
     border: 1px solid #3D3D3D;
-    border-radius: 4px;
-    padding: 6px;
+    border-radius: 6px;
+    padding: 5px 28px 5px 10px;
     color: #FFFFFF;
+    font-size: 12px;
 }
 QComboBox:hover {
-    border: 1px solid #4D4D4D;
+    border: 1px solid #FF4F79;
 }
 QComboBox::drop-down {
+    subcontrol-origin: padding;
+    subcontrol-position: top right;
+    width: 24px;
     border: none;
+    background: transparent;
+}
+QComboBox::down-arrow {
+    image: url({ASSETS_PATH}/chevron-down-dark.svg);
+    width: 12px;
+    height: 12px;
+    margin-right: 8px;
+}
+QComboBox::down-arrow:hover {
+    image: url({ASSETS_PATH}/chevron-down-hover.svg);
 }
 QComboBox QAbstractItemView {
     background-color: #2D2D2D;
     border: 1px solid #3D3D3D;
+    border-radius: 6px;
     selection-background-color: #FF4F79;
     color: white;
+    padding: 4px;
 }
 
 /* --- SCROLLBARS --- */
@@ -249,3 +326,88 @@ QCheckBox::indicator:hover {
     font-weight: bold;
     color: #8E8E8E;
 }
+
+/* --- GROUPBOXES Y ETIQUETAS DE SECCIÓN CON FONDO DETRÁS DEL TEXTO --- */
+QGroupBox {
+    background-color: #1E1E1E;
+    border: 1px solid #2D2D2D;
+    border-radius: 10px;
+    margin-top: 14px;
+    padding: 16px 12px 12px 12px;
+}
+
+QGroupBox::title {
+    subcontrol-origin: margin;
+    subcontrol-position: top left;
+    left: 12px;
+    padding: 3px 10px;
+    background-color: #2D2D2D;
+    color: #FFFFFF;
+    border: 1px solid #3D3D3D;
+    border-radius: 6px;
+    font-weight: 700;
+    font-size: 11px;
+}
+
+QGroupBox#wandOptionsBox::title {
+    background-color: #3B1828;
+    color: #FF4F79;
+    border: 1px solid #5C1E3A;
+}
+
+QGroupBox#selectionBox::title {
+    background-color: #1E293B;
+    color: #60A5FA;
+    border: 1px solid #334155;
+}
+
+/* --- SHORTCUTS MODAL DIALOG --- */
+#shortcutsDialogRoot {
+    background-color: #1E1E1E;
+    border-radius: 12px;
+    border: 1px solid #333333;
+}
+#shortcutsDialogTitle {
+    font-size: 14px;
+    font-weight: 700;
+    color: #F3F4F6;
+}
+#shortcutsCategoryTitle {
+    font-size: 11px;
+    font-weight: 700;
+    color: #FF4F79;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    margin-top: 4px;
+}
+#statusShortcutsButton {
+    background-color: #262626;
+    color: #9CA3AF;
+    border: 1px solid #3D3D3D;
+    border-radius: 6px;
+    padding: 3px 10px;
+    font-size: 11px;
+    font-weight: 600;
+}
+#statusShortcutsButton:hover {
+    color: #FF4F79;
+    border-color: #FF4F79;
+    background-color: #2D2024;
+}
+#statusShortcutsButton:pressed {
+    background-color: #38242A;
+}
+#shortcutBadge {
+    background-color: #262626;
+    color: #E5E7EB;
+    border: 1px solid #404040;
+    border-radius: 5px;
+    font-size: 11px;
+    font-weight: 600;
+    padding: 3px 8px;
+}
+#shortcutDesc {
+    color: #D1D5DB;
+    font-size: 12px;
+}
+

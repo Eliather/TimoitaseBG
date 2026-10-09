@@ -22,7 +22,9 @@ def load_stylesheet() -> str:
     qss_path = APP_DIR / "ui" / "styles.qss"
     if qss_path.exists():
         with open(qss_path, "r", encoding="utf-8") as f:
-            return f.read()
+            content = f.read()
+            assets_path = (APP_DIR / "ui" / "assets").as_posix()
+            return content.replace("{ASSETS_PATH}", assets_path)
     return ""
 
 

@@ -2,13 +2,15 @@
 TimoitaseBG - Canvas interactivo para visualización, zoom, paneo y trazado de máscara de pincel.
 """
 from typing import Optional
+import cv2
 import numpy as np
 from PIL import Image
-from PySide6.QtCore import Qt, QPoint, QPointF, QRect, QRectF, Signal
+from PySide6.QtCore import Qt, QPoint, QPointF, QRect, QRectF, Signal, QTimer
 from PySide6.QtWidgets import QWidget, QScrollBar
 from app.i18n import tr
 from PySide6.QtGui import (
     QPainter,
+    QPainterPath,
     QColor,
     QPen,
     QBrush,
@@ -24,7 +26,9 @@ from app.core.image_utils import (
     qimage_to_pil,
     create_checkerboard_pattern,
 )
+from app.core import selection as sel_ops
 from app.config import DEFAULT_BRUSH_SIZE, MIN_BRUSH_SIZE, MAX_BRUSH_SIZE, CHECKER_SIZE
+from app.ui.icons import render_icon
 
 
 class CanvasWidget(QWidget):
@@ -36,7 +40,8 @@ class CanvasWidget(QWidget):
     maskChanged = Signal(bool)  # Emite True si hay trazos dibujados, False si está limpia
     zoomChanged = Signal(float) # Emite el porcentaje de zoom actual
     fileDropped = Signal(str)   # Emite la ruta de archivo si el usuario arrastra una imagen
-    imageEditedDirectly = Signal()
+    imageEditedDirectly = Signal(str)  # Descripción de la edición para el historial
+    selectionChanged = Signal(int, int)  # (píxeles seleccionados, píxeles totales)
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -80,6 +85,20 @@ class CanvasWidget(QWidget):
         self.last_draw_point: Optional[QPointF] = None
         self.mouse_cursor_pos: QPoint = QPoint(-1000, -1000)
         self.eraser_mode: bool = False
+        self.wand_mode: bool = False
+        self.wand_tolerance: int = 32           # 0-255, igual que Photoshop
+        self.wand_selection_mode: str = "new"   # new | add | subtract | intersect
+        self.wand_anti_alias: bool = True
+        self.wand_contiguous: bool = True
+        
+        # Selección (máscara uint8 0-255) + representación visual
+        self.active_selection: Optional[np.ndarray] = None
+        self.selection_qimage: Optional[QImage] = None
+        self.selection_path: Optional[QPainterPath] = None
+        self._ants_offset: float = 0.0
+        self._ants_timer = QTimer(self)
+        self._ants_timer.setInterval(140)
+        self._ants_timer.timeout.connect(self._advance_marching_ants)
 
         # Patrón de transparencia
         self.checker_pixmap = create_checkerboard_pattern(size=CHECKER_SIZE)
@@ -121,6 +140,7 @@ class CanvasWidget(QWidget):
         """Establece la imagen activa y ajusta o preserva la máscara."""
         if pil_img is None:
             self.current_qimage = None
+            self.clear_selection()
             self.update()
             self.maskChanged.emit(False)
             return
@@ -132,6 +152,10 @@ class CanvasWidget(QWidget):
         img_w = self.current_qimage.width()
         img_h = self.current_qimage.height()
 
+        # Una selección solo es válida para imágenes del mismo tamaño
+        if reset_zoom or (img_w, img_h) != (prev_w, prev_h):
+            self.clear_selection()
+
         if reset_zoom or prev_w == 0:
             self.fit_to_view()
         else:
@@ -140,13 +164,18 @@ class CanvasWidget(QWidget):
 
 
 
+    def _tool_cursor(self) -> Qt.CursorShape:
+        """Cursor adecuado para la herramienta activa."""
+        if not self.brush_mode:
+            return Qt.CursorShape.ArrowCursor
+        if self.wand_mode:
+            return Qt.CursorShape.CrossCursor
+        return Qt.CursorShape.BlankCursor
+
     def set_brush_mode(self, enabled: bool):
         """Activa o desactiva el modo de dibujo de máscara."""
         self.brush_mode = enabled
-        if enabled:
-            self.setCursor(Qt.CursorShape.BlankCursor)
-        else:
-            self.setCursor(Qt.CursorShape.ArrowCursor)
+        self.setCursor(self._tool_cursor())
         self.update()
 
     def set_brush_size(self, size: int):
@@ -171,6 +200,119 @@ class CanvasWidget(QWidget):
     def set_eraser_mode(self, enabled: bool):
         """Activa o desactiva el modo borrador (borrar trazos de la máscara)."""
         self.eraser_mode = enabled
+        
+    def set_wand_mode(self, enabled: bool):
+        self.wand_mode = enabled
+        self.setCursor(self._tool_cursor())
+        self.update()
+
+    def set_wand_tolerance(self, tolerance: int):
+        self.wand_tolerance = int(max(0, min(255, tolerance)))
+
+    def set_wand_selection_mode(self, mode: str):
+        if mode in sel_ops.SELECTION_MODES:
+            self.wand_selection_mode = mode
+
+    def set_wand_anti_alias(self, enabled: bool):
+        self.wand_anti_alias = enabled
+
+    def set_wand_contiguous(self, enabled: bool):
+        self.wand_contiguous = enabled
+
+    # -------------------------------------------------------------
+    # Selección (estilo Photoshop)
+    # -------------------------------------------------------------
+    def has_selection(self) -> bool:
+        return self.active_selection is not None
+
+    def _set_selection(self, mask: Optional[np.ndarray]):
+        """Establece la máscara de selección y regenera overlay, contorno y señales."""
+        if mask is not None and sel_ops.selection_pixel_count(mask) == 0:
+            mask = None
+
+        self.active_selection = mask
+        total = 0
+        if self.current_qimage:
+            total = self.current_qimage.width() * self.current_qimage.height()
+
+        if mask is None:
+            self.selection_qimage = None
+            self.selection_path = None
+            self._ants_timer.stop()
+            self.selectionChanged.emit(0, total)
+            self.update()
+            return
+
+        h, w = mask.shape
+        # Tinte azul muy sutil para ver las islas pequeñas; el borde lo marcan las "hormigas"
+        overlay = np.zeros((h, w, 4), dtype=np.uint8)
+        overlay[..., 1] = 120
+        overlay[..., 2] = 255
+        overlay[..., 3] = (mask.astype(np.uint16) * 45 // 255).astype(np.uint8)
+        self.selection_qimage = pil_to_qimage(Image.fromarray(overlay, "RGBA"))
+
+        # Contorno vectorial en coordenadas de imagen para las hormigas marchantes
+        binary = (mask > 127).astype(np.uint8)
+        contours, _ = cv2.findContours(binary, cv2.RETR_LIST, cv2.CHAIN_APPROX_SIMPLE)
+        path = QPainterPath()
+        for cnt in contours:
+            pts = cnt.reshape(-1, 2)
+            if len(pts) == 0:
+                continue
+            path.moveTo(float(pts[0][0]) + 0.5, float(pts[0][1]) + 0.5)
+            for px, py in pts[1:]:
+                path.lineTo(float(px) + 0.5, float(py) + 0.5)
+            path.closeSubpath()
+        self.selection_path = path
+
+        if not self._ants_timer.isActive():
+            self._ants_timer.start()
+        self.selectionChanged.emit(sel_ops.selection_pixel_count(mask), total)
+        self.update()
+
+    def _advance_marching_ants(self):
+        self._ants_offset = (self._ants_offset + 1.0) % 8.0
+        self.update()
+
+    def clear_selection(self):
+        """Deseleccionar (Ctrl+D)."""
+        if self.active_selection is not None or self.selection_path is not None:
+            self._set_selection(None)
+
+    def select_all(self):
+        """Seleccionar todo (Ctrl+A)."""
+        if self.current_qimage:
+            self._set_selection(
+                sel_ops.select_all(self.current_qimage.height(), self.current_qimage.width())
+            )
+
+    def invert_selection(self):
+        """Invertir selección (Ctrl+Shift+I)."""
+        if self.active_selection is not None:
+            self._set_selection(sel_ops.invert_selection(self.active_selection))
+
+    def delete_selection(self) -> bool:
+        """
+        Borra (vuelve transparentes) los píxeles seleccionados, como Supr en Photoshop.
+        La selección se mantiene activa tras borrar. Devuelve True si hubo cambios.
+        """
+        if self.active_selection is None or not self.current_qimage:
+            return False
+        try:
+            img_np = np.array(qimage_to_pil(self.current_qimage).convert("RGBA"))
+            if self.active_selection.shape != img_np.shape[:2]:
+                self.clear_selection()
+                return False
+            new_np = sel_ops.delete_selected_pixels(img_np, self.active_selection)
+            if np.array_equal(new_np[..., 3], img_np[..., 3]):
+                return False  # Ya era transparente: no ensuciar el historial
+            self.current_qimage = pil_to_qimage(Image.fromarray(new_np, "RGBA"))
+            self.imageEditedDirectly.emit(tr("history_delete_selection"))
+            self.update()
+            return True
+        except Exception as e:
+            print(f"Error borrando selección: {e}")
+            return False
 
     # -------------------------------------------------------------
     # Paneo, Zoom y Transformaciones
@@ -359,6 +501,12 @@ class CanvasWidget(QWidget):
             return
 
         if event.button() == Qt.MouseButton.LeftButton and self.brush_mode:
+            if self.wand_mode and self.current_qimage:
+                img_pt = self.widget_to_image_coords(pos)
+                self._apply_magic_wand(img_pt, self._effective_selection_mode(event.modifiers()))
+                event.accept()
+                return
+
             if self.current_qimage:
                 self.is_drawing_mask = True
                 img_pt = self.widget_to_image_coords(pos)
@@ -401,12 +549,13 @@ class CanvasWidget(QWidget):
             img_pt = self.widget_to_image_coords(pos)
             if self.last_draw_point:
                 if self.brush_smoothness > 0:
-                    # Rango duplicado: factor baja hasta 0.02 (antes 0.05) para hacer el lag más fuerte
                     factor = 1.0 - (self.brush_smoothness / 100.0) * 0.98
                     current_pt = self.last_draw_point + (img_pt - self.last_draw_point) * factor
                 else:
                     current_pt = img_pt
+                
                 self._draw_brush_stroke(self.last_draw_point, current_pt)
+                
                 self.last_draw_point = current_pt
             else:
                 self.last_draw_point = img_pt
@@ -428,10 +577,7 @@ class CanvasWidget(QWidget):
 
         if event.button() in (Qt.MouseButton.MiddleButton, Qt.MouseButton.RightButton) or self.is_panning:
             self.is_panning = False
-            if self.brush_mode:
-                self.setCursor(Qt.CursorShape.BlankCursor)
-            else:
-                self.setCursor(Qt.CursorShape.ArrowCursor)
+            self.setCursor(self._tool_cursor())
             self.update()
 
         if event.button() == Qt.MouseButton.LeftButton and self.is_drawing_mask:
@@ -441,7 +587,7 @@ class CanvasWidget(QWidget):
                 
             self.is_drawing_mask = False
             self.last_draw_point = None
-            self.imageEditedDirectly.emit()
+            self.imageEditedDirectly.emit("Edición Manual")
             self.update()
 
         super().mouseReleaseEvent(event)
@@ -457,10 +603,7 @@ class CanvasWidget(QWidget):
         if event.key() == Qt.Key.Key_Space:
             self.space_pressed = False
             if not self.is_panning:
-                if self.brush_mode:
-                    self.setCursor(Qt.CursorShape.BlankCursor)
-                else:
-                    self.setCursor(Qt.CursorShape.ArrowCursor)
+                self.setCursor(self._tool_cursor())
         super().keyReleaseEvent(event)
 
     def leaveEvent(self, event):
@@ -504,9 +647,17 @@ class CanvasWidget(QWidget):
             return
 
         radius = max(1.0, self.brush_size / 2.0)
+        pad = radius + 2
+        min_x = int(min(start_pt.x(), end_pt.x()) - pad)
+        min_y = int(min(start_pt.y(), end_pt.y()) - pad)
+        max_x = int(max(start_pt.x(), end_pt.x()) + pad)
+        max_y = int(max(start_pt.y(), end_pt.y()) + pad)
+        
+        w, h = max_x - min_x, max_y - min_y
+        if w <= 0 or h <= 0: return
 
-        # Si es duro (100%), dibujamos directo para máxima velocidad
-        if self.brush_hardness >= 0.99:
+        # Si es duro (100%) y NO hay selección activa, dibujamos directo para máxima velocidad
+        if self.brush_hardness >= 0.99 and self.active_selection is None:
             painter_img = QPainter(self.current_qimage)
             painter_img.setRenderHint(QPainter.RenderHint.Antialiasing, True)
             painter_img.setOpacity(self.brush_opacity)
@@ -538,7 +689,7 @@ class CanvasWidget(QWidget):
             painter_img.end()
             return
 
-        # Para pincel suave
+        # Para pincel suave o cuando hay selección activa
         if self.brush_hardness < 0.25:
             steps = 6
         elif self.brush_hardness < 0.50:
@@ -548,16 +699,7 @@ class CanvasWidget(QWidget):
         else:
             steps = 2
         
-        pad = radius + 2
-        min_x = min(start_pt.x(), end_pt.x()) - pad
-        min_y = min(start_pt.y(), end_pt.y()) - pad
-        max_x = max(start_pt.x(), end_pt.x()) + pad
-        max_y = max(start_pt.y(), end_pt.y()) + pad
-        
-        w, h = int(max_x - min_x), int(max_y - min_y)
-        if w <= 0 or h <= 0: return
-        
-        # Máscara suave en un QImage temporal (blanco y negro no importa, usamos Alpha)
+        # Máscara suave en un QImage temporal
         temp_img = QImage(w, h, QImage.Format_ARGB32_Premultiplied)
         temp_img.fill(Qt.GlobalColor.transparent)
         
@@ -567,19 +709,64 @@ class CanvasWidget(QWidget):
         t_start = QPointF(start_pt.x() - min_x, start_pt.y() - min_y)
         t_end = QPointF(end_pt.x() - min_x, end_pt.y() - min_y)
         
-        step_alpha = 1.0 - (0.05)**(1.0/steps)
-        temp_p.setOpacity(step_alpha)
-        temp_p.setCompositionMode(QPainter.CompositionMode.CompositionMode_SourceOver)
-        
-        for i in range(steps):
-            r = radius * (1.0 - (i / steps) * (1.0 - self.brush_hardness))
-            pen = QPen(QColor(0, 0, 0, 255), r * 2, Qt.PenStyle.SolidLine, Qt.PenCapStyle.RoundCap, Qt.PenJoinStyle.RoundJoin)
+        if self.brush_hardness >= 0.99:
+            # Trazo duro dentro de temp_img
+            temp_p.setOpacity(1.0)
+            pen = QPen(QColor(0, 0, 0, 255), radius * 2, Qt.PenStyle.SolidLine, Qt.PenCapStyle.RoundCap, Qt.PenJoinStyle.RoundJoin)
             temp_p.setPen(pen)
             if (start_pt - end_pt).manhattanLength() < 0.5:
                 temp_p.drawPoint(t_start)
             else:
                 temp_p.drawLine(t_start, t_end)
+        else:
+            # Trazo suave
+            step_alpha = 1.0 - (0.05)**(1.0/steps)
+            temp_p.setOpacity(step_alpha)
+            temp_p.setCompositionMode(QPainter.CompositionMode.CompositionMode_SourceOver)
+            
+            for i in range(steps):
+                r = radius * (1.0 - (i / steps) * (1.0 - self.brush_hardness))
+                pen = QPen(QColor(0, 0, 0, 255), r * 2, Qt.PenStyle.SolidLine, Qt.PenCapStyle.RoundCap, Qt.PenJoinStyle.RoundJoin)
+                temp_p.setPen(pen)
+                if (start_pt - end_pt).manhattanLength() < 0.5:
+                    temp_p.drawPoint(t_start)
+                else:
+                    temp_p.drawLine(t_start, t_end)
         temp_p.end()
+        
+        # Si hay selección, recortar (clip) la máscara temporal (temp_img)
+        if getattr(self, 'active_selection', None) is not None:
+            # Extraer ROI de active_selection
+            sel_h, sel_w = self.active_selection.shape
+            
+            # Limites del ROI seguros
+            roi_y1 = max(0, min(sel_h, min_y))
+            roi_y2 = max(0, min(sel_h, max_y))
+            roi_x1 = max(0, min(sel_w, min_x))
+            roi_x2 = max(0, min(sel_w, max_x))
+            
+            # Si el ROI está fuera de los límites de la imagen, cancelamos
+            if roi_y1 >= roi_y2 or roi_x1 >= roi_x2:
+                return
+                
+            sel_patch = self.active_selection[roi_y1:roi_y2, roi_x1:roi_x2]
+            
+            # Ajustar la posición en temp_img si se recortó
+            t_off_y = roi_y1 - min_y
+            t_off_x = roi_x1 - min_x
+            
+            # Convertir temp_img a numpy
+            try:
+                temp_np = np.array(qimage_to_pil(temp_img).convert("RGBA"))
+                patch_h, patch_w = sel_patch.shape
+                # Multiplicar el alfa del trazo por la selección (0-255, respeta bordes suaves)
+                region = temp_np[t_off_y:t_off_y + patch_h, t_off_x:t_off_x + patch_w, 3].astype(np.uint16)
+                temp_np[t_off_y:t_off_y + patch_h, t_off_x:t_off_x + patch_w, 3] = (
+                    region * sel_patch.astype(np.uint16) // 255
+                ).astype(np.uint8)
+                temp_img = pil_to_qimage(Image.fromarray(temp_np, "RGBA"))
+            except Exception as e:
+                print(f"Error clipping brush to selection: {e}")
         
         # Componer sobre la imagen real
         painter_img = QPainter(self.current_qimage)
@@ -606,6 +793,71 @@ class CanvasWidget(QWidget):
             painter_img.drawImage(min_x, min_y, patch)
             
         painter_img.end()
+
+    def _effective_selection_mode(self, modifiers) -> str:
+        """
+        Modo de selección según los modificadores, igual que Photoshop:
+        Shift = añadir, Alt = restar, Shift+Alt = intersecar; si no, el modo de la barra.
+        """
+        shift = bool(modifiers & Qt.KeyboardModifier.ShiftModifier)
+        alt = bool(modifiers & Qt.KeyboardModifier.AltModifier)
+        if shift and alt:
+            return "intersect"
+        if shift:
+            return "add"
+        if alt:
+            return "subtract"
+        return self.wand_selection_mode
+
+    def _apply_magic_wand(self, pt: QPointF, mode: str = "new"):
+        """Selecciona píxeles de color similar al clicado (no borra nada)."""
+        if not self.current_qimage:
+            return
+
+        x, y = int(pt.x()), int(pt.y())
+        if x < 0 or y < 0 or x >= self.current_qimage.width() or y >= self.current_qimage.height():
+            return
+
+        try:
+            img_np = np.array(qimage_to_pil(self.current_qimage).convert("RGBA"))
+            region = sel_ops.magic_wand_region(
+                img_np, x, y,
+                tolerance=self.wand_tolerance,
+                contiguous=self.wand_contiguous,
+            )
+            if region is None:
+                return
+            new_mask = sel_ops.region_to_mask(region, anti_alias=self.wand_anti_alias)
+            current = self.active_selection
+            if current is not None and current.shape != new_mask.shape:
+                current = None
+            self._set_selection(sel_ops.combine_selection(current, new_mask, mode))
+        except Exception as e:
+            print(f"Error en Varita Magica: {e}")
+
+    def _draw_marching_ants(self, painter: QPainter, img_rect: QRectF):
+        """Dibuja el contorno animado de la selección (hormigas marchantes de Photoshop)."""
+        if self.selection_path is None or self.selection_path.isEmpty():
+            return
+        painter.save()
+        painter.setClipRect(img_rect.adjusted(-1, -1, 1, 1))
+        painter.translate(img_rect.topLeft())
+        painter.scale(self.zoom_factor, self.zoom_factor)
+        painter.setRenderHint(QPainter.RenderHint.Antialiasing, False)
+        painter.setBrush(Qt.BrushStyle.NoBrush)
+
+        white_pen = QPen(QColor(255, 255, 255), 1)
+        white_pen.setCosmetic(True)
+        painter.setPen(white_pen)
+        painter.drawPath(self.selection_path)
+
+        black_pen = QPen(QColor(0, 0, 0), 1)
+        black_pen.setCosmetic(True)
+        black_pen.setDashPattern([4, 4])
+        black_pen.setDashOffset(self._ants_offset)
+        painter.setPen(black_pen)
+        painter.drawPath(self.selection_path)
+        painter.restore()
 
     # -------------------------------------------------------------
     # Pintado Principal
@@ -667,6 +919,11 @@ class CanvasWidget(QWidget):
 
             # Dibujar la imagen escalada
             painter.drawImage(img_rect, self.current_qimage)
+            
+            # Dibujar la selección (overlay azul) si existe
+            if self.selection_qimage:
+                painter.drawImage(img_rect, self.selection_qimage)
+                
             painter.restore()
 
         # 5. (Eliminado overlay de máscara)
@@ -677,8 +934,17 @@ class CanvasWidget(QWidget):
         painter.setBrush(Qt.BrushStyle.NoBrush)
         painter.drawRect(img_rect)
 
-        # 7. Indicador del cursor del pincel
-        if self.brush_mode and self.rect().contains(self.mouse_cursor_pos) and not self.is_panning:
+        # 6b. Hormigas marchantes de la selección activa
+        if not self.comparison_mode:
+            self._draw_marching_ants(painter, img_rect)
+
+        # 7. Indicador del cursor del pincel (la varita usa cursor en cruz)
+        if (
+            self.brush_mode
+            and not self.wand_mode
+            and self.rect().contains(self.mouse_cursor_pos)
+            and not self.is_panning
+        ):
             self._draw_brush_cursor(painter)
 
     def _draw_empty_state(self, painter: QPainter):
@@ -745,12 +1011,8 @@ class CanvasWidget(QWidget):
         painter.setPen(Qt.PenStyle.NoPen)
         painter.drawRoundedRect(icon_rect, 24, 24)
 
-        painter.setPen(QColor("#FF4F79"))
-        font_icon = painter.font()
-        font_icon.setPointSize(18)
-        font_icon.setBold(True)
-        painter.setFont(font_icon)
-        painter.drawText(icon_rect, Qt.AlignmentFlag.AlignCenter, "🖼")
+        # Icono SVG vectorial (Lucide image)
+        render_icon(painter, "image", icon_rect.adjusted(12, 12, -12, -12), color="#FF4F79")
 
         # Texto principal
         painter.setPen(text_color)

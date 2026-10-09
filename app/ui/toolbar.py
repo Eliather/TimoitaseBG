@@ -2,13 +2,15 @@
 TimoitaseBG - Panel lateral de herramientas (Sidebar) inspirado en el diseño de remove.bg y Canva.
 """
 from typing import Optional, List, Tuple
-from PySide6.QtCore import Qt, Signal, Property, QPropertyAnimation, QEasingCurve
+from PySide6.QtCore import Qt, Signal, Property, QPropertyAnimation, QEasingCurve, QSize
 from PySide6.QtGui import QColor, QPainter, QBrush, QPen
 from app.i18n import tr
+from app.ui.icons import get_icon, get_pixmap
 from PySide6.QtWidgets import (
     QWidget,
     QVBoxLayout,
     QHBoxLayout,
+    QGridLayout,
     QLabel,
     QPushButton,
     QComboBox,
@@ -181,18 +183,24 @@ class GpuToggle(QWidget):
         layout.setContentsMargins(8, 2, 6, 2)
         layout.setSpacing(6)
 
-        self.lbl_text = QLabel("⚡ GPU")
+        self.lbl_icon = QLabel()
+        self.lbl_icon.setFixedSize(14, 14)
+        self.lbl_icon.setStyleSheet("background: transparent; border: none;")
+
+        self.lbl_text = QLabel("GPU")
         self.lbl_text.setObjectName("gpuToggleLabel")
         self.lbl_text.setCursor(Qt.CursorShape.PointingHandCursor)
 
         self.switch = ToggleSwitch(self)
         self.switch.toggled.connect(self._on_switch_toggled)
 
+        layout.addWidget(self.lbl_icon)
         layout.addWidget(self.lbl_text)
         layout.addWidget(self.switch)
 
         self._is_gpu = True
         self._is_blocked = False
+        self._update_presentation()
 
     def mousePressEvent(self, event):
         if event.button() == Qt.MouseButton.LeftButton and self.isEnabled() and not self._is_blocked:
@@ -224,15 +232,18 @@ class GpuToggle(QWidget):
 
     def _update_presentation(self):
         if self._is_blocked:
-            self.lbl_text.setText("⚠️ CPU")
+            self.lbl_icon.setPixmap(get_pixmap("alert-triangle", size=14, color="#DC2626"))
+            self.lbl_text.setText("CPU")
             self.lbl_text.setStyleSheet("color: #DC2626; font-weight: 700; font-size: 11px; border: none; background: transparent;")
             self.setToolTip("GPU bloqueada por fallo previo. La app funciona en CPU de forma segura.")
         elif not self.switch.isEnabled():
-            self.lbl_text.setText("💻 CPU")
+            self.lbl_icon.setPixmap(get_pixmap("cpu", size=14, color="#94A3B8"))
+            self.lbl_text.setText("CPU")
             self.lbl_text.setStyleSheet("color: #94A3B8; font-weight: 600; font-size: 11px; border: none; background: transparent;")
             self.setToolTip("GPU no disponible en este equipo. Modo CPU activo.")
         elif self.switch.isChecked():
-            self.lbl_text.setText("⚡ GPU")
+            self.lbl_icon.setPixmap(get_pixmap("zap", size=14, color="#059669"))
+            self.lbl_text.setText("GPU")
             self.lbl_text.setStyleSheet("color: #059669; font-weight: 700; font-size: 11px; border: none; background: transparent;")
             try:
                 from app.config import get_gpu_name
@@ -242,7 +253,8 @@ class GpuToggle(QWidget):
             except Exception:
                 self.setToolTip("Aceleración GPU activa. Clic para pasar a CPU.")
         else:
-            self.lbl_text.setText("💻 CPU")
+            self.lbl_icon.setPixmap(get_pixmap("cpu", size=14, color="#64748B"))
+            self.lbl_text.setText("CPU")
             self.lbl_text.setStyleSheet("color: #64748B; font-weight: 600; font-size: 11px; border: none; background: transparent;")
             self.setToolTip("Modo CPU activo (0 MB VRAM). Clic para activar GPU.")
 
@@ -282,9 +294,9 @@ class _GpuToggleAdapter:
 class ToolSidebar(QWidget):
     """
     Panel lateral derecho con selector de herramientas estilo rail (Canva/remove.bg):
-    1. ⬚ Quitar Fondo
-    2. ✦ Restaurar
-    3. 🖌 Pincel Mágico
+    1. Quitar Fondo
+    2. Restaurar
+    3. Pincel Mágico
     """
 
     # Señales para comunicar con la ventana principal
@@ -299,6 +311,15 @@ class ToolSidebar(QWidget):
     brushSmoothnessChanged = Signal(int)       # smoothness percentage (0-100)
     brushOpacityChanged = Signal(float)
     brushHardnessChanged = Signal(float)
+    wandModeToggled = Signal(bool)             # is_wand
+    wandToleranceChanged = Signal(int)         # tolerance (0-255, como Photoshop)
+    wandSelectionModeChanged = Signal(str)     # new | add | subtract | intersect
+    wandAntiAliasChanged = Signal(bool)
+    wandContiguousChanged = Signal(bool)
+    deleteSelectionRequested = Signal()
+    invertSelectionRequested = Signal()
+    selectAllRequested = Signal()
+    clearSelectionRequested = Signal()
     clearMaskRequested = Signal()
     inpaintRequested = Signal()
     deviceModeChanged = Signal(bool)           # is_gpu
@@ -311,7 +332,6 @@ class ToolSidebar(QWidget):
         self._selected_color_rgb: Tuple[int, int, int] = (255, 255, 255)
         self.has_transparency: bool = False
         self.can_restore_transparency: bool = False
-        self._shortcuts_expanded: bool = False
         self._setup_ui()
         self._init_accel_state()
 
@@ -326,6 +346,7 @@ class ToolSidebar(QWidget):
         # ---------------------------------------------------------
         self.sidebar_header = QWidget()
         self.sidebar_header.setObjectName("sidebar_header")
+        self.sidebar_header.setStyleSheet("background: transparent;")
         self.sidebar_header.setSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Fixed)
         header_layout = QVBoxLayout(self.sidebar_header)
         header_layout.setContentsMargins(16, 14, 16, 6)
@@ -341,8 +362,10 @@ class ToolSidebar(QWidget):
 
         title_label = QLabel(tr("sidebar_title"))
         title_label.setObjectName("sidebarHeader")
+        title_label.setStyleSheet("background: transparent;")
         subtitle_label = QLabel(tr("sidebar_subtitle"))
         subtitle_label.setObjectName("sidebarSubheader")
+        subtitle_label.setStyleSheet("background: transparent;")
         text_layout.addWidget(title_label)
         text_layout.addWidget(subtitle_label)
         header_top_row.addLayout(text_layout)
@@ -361,6 +384,7 @@ class ToolSidebar(QWidget):
         # ---------------------------------------------------------
         self.tool_tabs_row = QWidget()
         self.tool_tabs_row.setObjectName("tool_tabs_row")
+        self.tool_tabs_row.setStyleSheet("background: transparent;")
         self.tool_tabs_row.setSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Fixed)
         tabs_layout = QHBoxLayout(self.tool_tabs_row)
         tabs_layout.setContentsMargins(16, 2, 16, 8)
@@ -451,58 +475,86 @@ class ToolSidebar(QWidget):
         # Conectar cambio de herramienta en el rail
         self.rail_group.idClicked.connect(self._on_rail_clicked)
 
-        # ---------------------------------------------------------
-        # [BLOQUE FIJO INFERIOR] QWidget "quick_shortcuts_box"
-        # ---------------------------------------------------------
-        self.quick_shortcuts_box = QWidget()
-        self.quick_shortcuts_box.setObjectName("quick_shortcuts_box")
-        self.quick_shortcuts_box.setSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Fixed)
-        shortcuts_box_layout = QVBoxLayout(self.quick_shortcuts_box)
-        shortcuts_box_layout.setContentsMargins(16, 4, 16, 12)
-        shortcuts_box_layout.setSpacing(0)
+        self.update_theme_icons(is_dark=True)
 
-        info_frame = QFrame()
-        info_frame.setObjectName("infoCard")
-        info_layout = QVBoxLayout(info_frame)
-        info_layout.setContentsMargins(10, 6, 10, 6)
-        info_layout.setSpacing(4)
+    def update_theme_icons(self, is_dark: bool = True):
+        """Aplica y refresca iconos vectoriales Open Source adaptados al tema."""
+        fg_color = "#EAEAEA" if is_dark else "#292524"
+        accent_color = "#FF4F79"
+        sub_color = "#999999" if is_dark else "#78716C"
+        dis_color = "#666666" if is_dark else "#A8A29E"
 
-        # Header clickeable para colapsar/expandir atajos
-        self.btn_toggle_shortcuts = QPushButton(tr("sidebar_shortcuts_col"))
-        self.btn_toggle_shortcuts.setObjectName("infoCardToggle")
-        self.btn_toggle_shortcuts.setCursor(Qt.CursorShape.PointingHandCursor)
-        self.btn_toggle_shortcuts.clicked.connect(self._toggle_shortcuts)
-        info_layout.addWidget(self.btn_toggle_shortcuts)
+        # Pestañas del Rail
+        if hasattr(self, "btn_rail_bg"):
+            self.btn_rail_bg.setIcon(get_icon("sparkles", color=sub_color, active_color=accent_color, size=18))
+            self.btn_rail_bg.setIconSize(QSize(18, 18))
+        if hasattr(self, "btn_rail_restore"):
+            self.btn_rail_restore.setIcon(get_icon("maximize-2", color=sub_color, active_color=accent_color, size=18))
+            self.btn_rail_restore.setIconSize(QSize(18, 18))
+        if hasattr(self, "btn_rail_brush"):
+            self.btn_rail_brush.setIcon(get_icon("brush", color=sub_color, active_color=accent_color, size=18))
+            self.btn_rail_brush.setIconSize(QSize(18, 18))
+        if hasattr(self, "btn_rail_batch"):
+            self.btn_rail_batch.setIcon(get_icon("folder", color=sub_color, active_color=accent_color, size=18))
+            self.btn_rail_batch.setIconSize(QSize(18, 18))
 
-        # Contenedor colapsable de atajos
-        self.shortcuts_content = QWidget()
-        self.shortcuts_content.setObjectName("shortcutsContent")
-        content_layout = QVBoxLayout(self.shortcuts_content)
-        content_layout.setContentsMargins(0, 4, 0, 2)
-        content_layout.setSpacing(4)
+        # Panel Quitar Fondo
+        if hasattr(self, "btn_remove_bg"):
+            self.btn_remove_bg.setIcon(get_icon("sparkles", color="#FFFFFF", size=16))
+            self.btn_remove_bg.setIconSize(QSize(16, 16))
+        if hasattr(self, "btn_autocrop"):
+            self.btn_autocrop.setIcon(get_icon("crop", color=fg_color, active_color=accent_color, disabled_color=dis_color, size=16))
+            self.btn_autocrop.setIconSize(QSize(16, 16))
+        if hasattr(self, "btn_swatch_custom"):
+            self.btn_swatch_custom.setIcon(get_icon("palette", color=fg_color, active_color=accent_color, disabled_color=dis_color, size=18))
+            self.btn_swatch_custom.setIconSize(QSize(18, 18))
 
-        shortcuts = [
-            (tr("shortcut_zoom"), tr("shortcut_zoom_desc")),
-            (tr("shortcut_pan"), tr("shortcut_pan_desc")),
-            (tr("shortcut_undo"), tr("shortcut_undo_desc")),
-        ]
-        for key, desc in shortcuts:
-            row = QHBoxLayout()
-            k_lbl = QLabel(key)
-            k_lbl.setObjectName("shortcutBadge")
-            d_lbl = QLabel(desc)
-            d_lbl.setObjectName("shortcutDesc")
-            row.addWidget(k_lbl)
-            row.addStretch()
-            row.addWidget(d_lbl)
-            content_layout.addLayout(row)
+        # Panel Restaurar
+        if hasattr(self, "btn_restore"):
+            self.btn_restore.setIcon(get_icon("maximize-2", color="#FFFFFF", size=16))
+            self.btn_restore.setIconSize(QSize(16, 16))
 
-        info_layout.addWidget(self.shortcuts_content)
-        shortcuts_box_layout.addWidget(info_frame)
-        main_layout.addWidget(self.quick_shortcuts_box, stretch=0)
+        # Subherramientas de pincel
+        if hasattr(self, "btn_tool_paint"):
+            self.btn_tool_paint.setIcon(get_icon("brush", color=fg_color, active_color=accent_color, size=16))
+            self.btn_tool_paint.setIconSize(QSize(16, 16))
+        if hasattr(self, "btn_tool_erase"):
+            self.btn_tool_erase.setIcon(get_icon("eraser", color=fg_color, active_color=accent_color, size=16))
+            self.btn_tool_erase.setIconSize(QSize(16, 16))
+        if hasattr(self, "btn_tool_wand"):
+            self.btn_tool_wand.setIcon(get_icon("wand", color=fg_color, active_color=accent_color, size=16))
+            self.btn_tool_wand.setIconSize(QSize(16, 16))
 
-        # Aplicar visibilidad inicial (colapsado)
-        self._update_shortcuts_ui()
+        # Modos de selección de varita
+        if hasattr(self, "wand_mode_buttons"):
+            for btn, icon_name in self.wand_mode_buttons:
+                btn.setIcon(get_icon(icon_name, color=fg_color, active_color=accent_color, disabled_color=dis_color, size=16))
+                btn.setIconSize(QSize(16, 16))
+
+        # Acciones de selección
+        if hasattr(self, "btn_delete_selection"):
+            self.btn_delete_selection.setIcon(get_icon("trash", color="#FFFFFF", size=16))
+            self.btn_delete_selection.setIconSize(QSize(16, 16))
+        if hasattr(self, "btn_invert_selection"):
+            self.btn_invert_selection.setIcon(get_icon("invert", color=fg_color, active_color=accent_color, disabled_color=dis_color, size=14))
+            self.btn_invert_selection.setIconSize(QSize(14, 14))
+        if hasattr(self, "btn_select_all"):
+            self.btn_select_all.setIcon(get_icon("select-all", color=fg_color, active_color=accent_color, disabled_color=dis_color, size=14))
+            self.btn_select_all.setIconSize(QSize(14, 14))
+        if hasattr(self, "btn_clear_selection"):
+            self.btn_clear_selection.setIcon(get_icon("deselect", color=fg_color, active_color=accent_color, disabled_color=dis_color, size=14))
+            self.btn_clear_selection.setIconSize(QSize(14, 14))
+
+        # Panel Lotes (Batch)
+        if hasattr(self, "btn_batch_input"):
+            self.btn_batch_input.setIcon(get_icon("folder-open", color=fg_color, active_color=accent_color, size=16))
+            self.btn_batch_input.setIconSize(QSize(16, 16))
+        if hasattr(self, "btn_batch_output"):
+            self.btn_batch_output.setIcon(get_icon("folder", color=fg_color, active_color=accent_color, size=16))
+            self.btn_batch_output.setIconSize(QSize(16, 16))
+        if hasattr(self, "btn_run_batch"):
+            self.btn_run_batch.setIcon(get_icon("rocket", color="#FFFFFF", size=16))
+            self.btn_run_batch.setIconSize(QSize(16, 16))
 
     def _create_section_header(self, title: str, tooltip: str) -> QHBoxLayout:
         """Crea una cabecera compacta con título y un ícono 'ⓘ' con tooltip explicativo."""
@@ -518,18 +570,6 @@ class ToolSidebar(QWidget):
         header.addWidget(info)
         header.addStretch()
         return header
-
-    def _toggle_shortcuts(self):
-        self._shortcuts_expanded = not self._shortcuts_expanded
-        self._update_shortcuts_ui()
-
-    def _update_shortcuts_ui(self):
-        if self._shortcuts_expanded:
-            self.btn_toggle_shortcuts.setText(tr("sidebar_shortcuts_exp"))
-            self.shortcuts_content.show()
-        else:
-            self.btn_toggle_shortcuts.setText(tr("sidebar_shortcuts_col"))
-            self.shortcuts_content.hide()
 
     @property
     def btn_accel_gpu(self):
@@ -674,7 +714,7 @@ class ToolSidebar(QWidget):
         swatches_row.addWidget(self.btn_swatch_gray)
 
         # 5. Swatch Personalizado
-        self.btn_swatch_custom = QPushButton("🎨")
+        self.btn_swatch_custom = QPushButton()
         self.btn_swatch_custom.setObjectName("swatchCustomButton")
         self.btn_swatch_custom.setCheckable(True)
         self.btn_swatch_custom.setFixedSize(36, 32)
@@ -781,17 +821,27 @@ class ToolSidebar(QWidget):
         self.btn_tool_erase.setCheckable(True)
         self.btn_tool_erase.setFixedHeight(32)
         
+        self.btn_tool_wand = QPushButton(tr("btn_wand"))
+        self.btn_tool_wand.setObjectName("brushToolModeButton")
+        self.btn_tool_wand.setCheckable(True)
+        self.btn_tool_wand.setFixedHeight(32)
+        self.btn_tool_wand.setToolTip(tr("tip_wand"))
+        
         self.brush_mode_group.addButton(self.btn_tool_paint, 0)
         self.brush_mode_group.addButton(self.btn_tool_erase, 1)
+        self.brush_mode_group.addButton(self.btn_tool_wand, 2)
         
         self.brush_mode_group.idClicked.connect(self._on_brush_tool_clicked)
         
         mode_row.addWidget(self.btn_tool_paint)
         mode_row.addWidget(self.btn_tool_erase)
+        mode_row.addWidget(self.btn_tool_wand)
         layout.addLayout(mode_row)
 
-        # Control de tamaño del pincel
+        # ---------- Opciones del Pincel / Borrador (se ocultan con la Varita) ----------
         brush_ctrl_box = QGroupBox(tr("brush_settings"))
+        brush_ctrl_box.setObjectName("brushOptionsBox")
+        self.brush_options_box = brush_ctrl_box
         b_layout = QVBoxLayout(brush_ctrl_box)
         b_layout.setContentsMargins(12, 14, 12, 10)
         b_layout.setSpacing(10)
@@ -878,6 +928,137 @@ class ToolSidebar(QWidget):
         b_layout.addLayout(presets_row)
         layout.addWidget(brush_ctrl_box)
 
+        # ---------- Opciones de la Varita Mágica (estilo barra de opciones de Photoshop) ----------
+        self.wand_options_box = QGroupBox(tr("wand_settings"))
+        self.wand_options_box.setObjectName("wandOptionsBox")
+        w_layout = QVBoxLayout(self.wand_options_box)
+        w_layout.setContentsMargins(12, 14, 12, 10)
+        w_layout.setSpacing(10)
+
+        # Modo de selección: Nueva / Añadir / Restar / Intersecar
+        lbl_sel_mode = QLabel(tr("lbl_wand_mode"))
+        lbl_sel_mode.setObjectName("fieldLabel")
+        w_layout.addWidget(lbl_sel_mode)
+
+        sel_mode_row = QHBoxLayout()
+        sel_mode_row.setSpacing(4)
+        self.wand_mode_group = QButtonGroup(self)
+        self.wand_mode_group.setExclusive(True)
+        self._wand_mode_ids = {}
+        self.wand_mode_buttons = []
+        for idx, (mode_id, icon_name, tip_key) in enumerate([
+            ("new", "sel-new", "tip_wand_new"),
+            ("add", "sel-add", "tip_wand_add"),
+            ("subtract", "sel-subtract", "tip_wand_subtract"),
+            ("intersect", "sel-intersect", "tip_wand_intersect"),
+        ]):
+            btn = QPushButton()
+            btn.setObjectName("selectionModeButton")
+            btn.setCheckable(True)
+            btn.setFixedHeight(30)
+            btn.setToolTip(tr(tip_key))
+            btn.setCursor(Qt.CursorShape.PointingHandCursor)
+            if mode_id == "new":
+                btn.setChecked(True)
+            self.wand_mode_group.addButton(btn, idx)
+            self._wand_mode_ids[idx] = mode_id
+            self.wand_mode_buttons.append((btn, icon_name))
+            sel_mode_row.addWidget(btn)
+        self.wand_mode_group.idClicked.connect(
+            lambda i: self.wandSelectionModeChanged.emit(self._wand_mode_ids[i])
+        )
+        w_layout.addLayout(sel_mode_row)
+
+        # Tolerancia (0-255, por defecto 32 como en Photoshop)
+        tol_row = QHBoxLayout()
+        lbl_tol = QLabel(tr("lbl_tolerance"))
+        lbl_tol.setFixedWidth(72)
+        lbl_tol.setToolTip(tr("tip_tolerance"))
+        tol_row.addWidget(lbl_tol)
+        self.slider_wand_tolerance = QSlider(Qt.Orientation.Horizontal)
+        self.slider_wand_tolerance.setRange(0, 255)
+        self.slider_wand_tolerance.setValue(32)
+        self.slider_wand_tolerance.setToolTip(tr("tip_tolerance"))
+        self.slider_wand_tolerance.valueChanged.connect(self._on_slider_wand_tolerance_changed)
+        self.lbl_wand_tolerance = QLabel("32")
+        self.lbl_wand_tolerance.setObjectName("brushSizeLabel")
+        self.lbl_wand_tolerance.setFixedWidth(34)
+        self.lbl_wand_tolerance.setAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
+        tol_row.addWidget(self.slider_wand_tolerance)
+        tol_row.addWidget(self.lbl_wand_tolerance)
+        w_layout.addLayout(tol_row)
+
+        # Suavizar (anti-alias) y Contiguo
+        checks_row = QHBoxLayout()
+        self.chk_wand_anti_alias = QCheckBox(tr("chk_anti_alias"))
+        self.chk_wand_anti_alias.setChecked(True)
+        self.chk_wand_anti_alias.setToolTip(tr("tip_anti_alias"))
+        self.chk_wand_anti_alias.toggled.connect(self.wandAntiAliasChanged.emit)
+        self.chk_wand_contiguous = QCheckBox(tr("chk_contiguous"))
+        self.chk_wand_contiguous.setChecked(True)
+        self.chk_wand_contiguous.setToolTip(tr("tip_contiguous"))
+        self.chk_wand_contiguous.toggled.connect(self.wandContiguousChanged.emit)
+        checks_row.addWidget(self.chk_wand_anti_alias)
+        checks_row.addWidget(self.chk_wand_contiguous)
+        checks_row.addStretch()
+        w_layout.addLayout(checks_row)
+
+        lbl_wand_hint = QLabel(tr("wand_hint"))
+        lbl_wand_hint.setObjectName("shortcutDesc")
+        lbl_wand_hint.setWordWrap(True)
+        w_layout.addWidget(lbl_wand_hint)
+        layout.addWidget(self.wand_options_box)
+
+        # ---------- Acciones sobre la selección ----------
+        self.selection_box = QGroupBox(tr("selection_box"))
+        self.selection_box.setObjectName("selectionBox")
+        s_layout = QVBoxLayout(self.selection_box)
+        s_layout.setContentsMargins(12, 14, 12, 10)
+        s_layout.setSpacing(8)
+
+        self.lbl_selection_info = QLabel(tr("selection_none"))
+        self.lbl_selection_info.setObjectName("shortcutDesc")
+        self.lbl_selection_info.setWordWrap(True)
+        s_layout.addWidget(self.lbl_selection_info)
+
+        self.btn_delete_selection = QPushButton(tr("btn_delete_selection"))
+        self.btn_delete_selection.setObjectName("dangerActionButton")
+        self.btn_delete_selection.setFixedHeight(38)
+        self.btn_delete_selection.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.btn_delete_selection.setToolTip(tr("tip_delete_selection"))
+        self.btn_delete_selection.clicked.connect(self.deleteSelectionRequested.emit)
+        s_layout.addWidget(self.btn_delete_selection)
+
+        sel_actions_row = QHBoxLayout()
+        sel_actions_row.setSpacing(6)
+        self.btn_invert_selection = QPushButton(tr("btn_invert_selection"))
+        self.btn_invert_selection.setObjectName("presetButton")
+        self.btn_invert_selection.setFixedHeight(30)
+        self.btn_invert_selection.setToolTip(tr("tip_invert_selection"))
+        self.btn_invert_selection.clicked.connect(self.invertSelectionRequested.emit)
+
+        self.btn_select_all = QPushButton(tr("btn_select_all"))
+        self.btn_select_all.setObjectName("presetButton")
+        self.btn_select_all.setFixedHeight(30)
+        self.btn_select_all.setToolTip(tr("tip_select_all"))
+        self.btn_select_all.clicked.connect(self.selectAllRequested.emit)
+
+        self.btn_clear_selection = QPushButton(tr("btn_clear_selection"))
+        self.btn_clear_selection.setObjectName("presetButton")
+        self.btn_clear_selection.setFixedHeight(30)
+        self.btn_clear_selection.setToolTip(tr("tip_clear_selection"))
+        self.btn_clear_selection.clicked.connect(self.clearSelectionRequested.emit)
+
+        sel_actions_row.addWidget(self.btn_invert_selection)
+        sel_actions_row.addWidget(self.btn_select_all)
+        sel_actions_row.addWidget(self.btn_clear_selection)
+        s_layout.addLayout(sel_actions_row)
+        layout.addWidget(self.selection_box)
+
+        self._has_selection = False
+        self._active_brush_tool = 0
+        self.set_selection_info(0, 0)
+        self._apply_brush_tool_visibility()
 
         layout.addStretch()
 
@@ -961,6 +1142,50 @@ class ToolSidebar(QWidget):
 
     def _on_brush_tool_clicked(self, index: int):
         self.eraserModeToggled.emit(index == 1)
+        self.wandModeToggled.emit(index == 2)
+        self._active_brush_tool = index
+        self._apply_brush_tool_visibility()
+
+    def _apply_brush_tool_visibility(self):
+        """
+        Muestra solo las opciones de la herramienta activa (como la barra de opciones
+        de Photoshop): Pincel/Borrador -> ajustes del pincel; Varita -> opciones de
+        selección. El bloque de Selección aparece con la Varita o si hay selección activa.
+        """
+        is_wand = self._active_brush_tool == 2
+        self.brush_options_box.setVisible(not is_wand)
+        self.wand_options_box.setVisible(is_wand)
+        self.selection_box.setVisible(is_wand or self._has_selection)
+        self._refresh_stack_geometry()
+
+    def _refresh_stack_geometry(self):
+        """Recalcula la altura del panel tras mostrar/ocultar grupos para no dejar huecos."""
+        self.panel_brush.updateGeometry()
+        self.panel_brush.adjustSize()
+        if hasattr(self, "stack"):
+            self.stack.updateGeometry()
+            if hasattr(self, "scroll_content"):
+                self.scroll_content.adjustSize()
+
+    def set_selection_info(self, selected_px: int, total_px: int):
+        """Actualiza el estado del bloque de selección (contador y botones)."""
+        has_sel = selected_px > 0
+        self._has_selection = has_sel
+        if has_sel:
+            pct = (selected_px / total_px * 100.0) if total_px else 0.0
+            self.lbl_selection_info.setText(
+                tr("selection_info", px=f"{selected_px:,}".replace(",", "."), pct=f"{pct:.1f}")
+            )
+        else:
+            self.lbl_selection_info.setText(tr("selection_none"))
+        self.btn_delete_selection.setEnabled(has_sel)
+        self.btn_invert_selection.setEnabled(has_sel)
+        self.btn_clear_selection.setEnabled(has_sel)
+        self._apply_brush_tool_visibility()
+
+    def _on_slider_wand_tolerance_changed(self, value: int):
+        self.lbl_wand_tolerance.setText(str(value))
+        self.wandToleranceChanged.emit(value)
 
     def _on_slider_size_changed(self, value: int):
         self.lbl_brush_size.setText(f"{value} px")
@@ -1102,3 +1327,53 @@ class ToolSidebar(QWidget):
             self.btn_autocrop.setEnabled(False)
         else:
             self.set_transparency_available(self.has_transparency, self.can_restore_transparency)
+
+    def retranslate_ui(self):
+        """Actualiza las etiquetas y botones de la barra lateral al cambiar idioma."""
+        if hasattr(self, "btn_rail_bg"):
+            self.btn_rail_bg.setText(tr("sidebar_tab_bg"))
+        if hasattr(self, "btn_rail_restore"):
+            self.btn_rail_restore.setText(tr("sidebar_tab_restore"))
+        if hasattr(self, "btn_rail_brush"):
+            self.btn_rail_brush.setText(tr("sidebar_tab_brush"))
+        if hasattr(self, "btn_rail_batch"):
+            self.btn_rail_batch.setText(tr("sidebar_tab_batch"))
+        if hasattr(self, "btn_remove_bg"):
+            self.btn_remove_bg.setText(tr("btn_remove_now"))
+        if hasattr(self, "btn_autocrop"):
+            self.btn_autocrop.setText(tr("btn_autocrop_now"))
+            self.btn_autocrop.setToolTip(tr("btn_autocrop_tooltip"))
+        if hasattr(self, "btn_restore"):
+            self.btn_restore.setText(tr("btn_scale_now"))
+        if hasattr(self, "btn_tool_paint"):
+            self.btn_tool_paint.setText(tr("btn_paint"))
+        if hasattr(self, "btn_tool_erase"):
+            self.btn_tool_erase.setText(tr("btn_erase"))
+        if hasattr(self, "btn_tool_wand"):
+            self.btn_tool_wand.setText(tr("btn_wand"))
+        if hasattr(self, "btn_delete_selection"):
+            self.btn_delete_selection.setText(tr("btn_delete_selection"))
+            self.btn_delete_selection.setToolTip(tr("tip_delete_selection"))
+        if hasattr(self, "btn_invert_selection"):
+            self.btn_invert_selection.setText(tr("btn_invert_selection"))
+            self.btn_invert_selection.setToolTip(tr("tip_invert_selection"))
+        if hasattr(self, "btn_select_all"):
+            self.btn_select_all.setText(tr("btn_select_all"))
+            self.btn_select_all.setToolTip(tr("tip_select_all"))
+        if hasattr(self, "btn_clear_selection"):
+            self.btn_clear_selection.setText(tr("btn_clear_selection"))
+            self.btn_clear_selection.setToolTip(tr("tip_clear_selection"))
+        if hasattr(self, "btn_run_batch"):
+            self.btn_run_batch.setText(tr("btn_run_batch"))
+        if hasattr(self, "chk_tiling"):
+            self.chk_tiling.setText(tr("chk_tiling"))
+            self.chk_tiling.setToolTip(tr("chk_tiling_tooltip"))
+        if hasattr(self, "chk_clothing_protection"):
+            self.chk_clothing_protection.setText(tr("chk_clothing"))
+            self.chk_clothing_protection.setToolTip(tr("chk_clothing_tooltip"))
+        if hasattr(self, "chk_batch_clothing"):
+            self.chk_batch_clothing.setText(tr("chk_batch_clothing"))
+        if hasattr(self, "selection_box"):
+            self.selection_box.setTitle(tr("selection_box"))
+        if hasattr(self, "wand_options_box"):
+            self.wand_options_box.setTitle(tr("wand_options_box"))

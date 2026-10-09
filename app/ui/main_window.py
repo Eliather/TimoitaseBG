@@ -45,6 +45,8 @@ from app.core.restorer import get_image_restorer
 from app.core.workers import WorkerThread
 from app.ui.canvas_widget import CanvasWidget
 from app.ui.toolbar import ToolSidebar
+from app.ui.icons import get_icon
+from app.ui.shortcuts_dialog import ShortcutsDialog
 
 class CustomTopBar(QWidget):
     def __init__(self, parent_window):
@@ -187,11 +189,85 @@ class MainWindow(QMainWindow):
         else:
             self.showMaximized()
 
+    def _set_status(self, key: str, **kwargs):
+        """Asigna texto a la barra de estado y guarda la clave para re-traducción en vivo."""
+        self._current_status_i18n = (key, kwargs)
+        if hasattr(self, "lbl_status"):
+            self.lbl_status.setText(tr(key, **kwargs))
+
+    def _set_status_raw(self, text: str):
+        """Asigna texto directo que no tiene clave de traducción."""
+        self._current_status_i18n = None
+        if hasattr(self, "lbl_status"):
+            self.lbl_status.setText(text)
+
     def _on_lang_changed(self, index):
         code = self.combo_lang.itemData(index)
-        if code:
+        if code and code != get_current_language():
             set_language(code)
-            FramelessPopup(self, tr("popup_lang_changed_title"), tr("popup_lang_changed_msg")).exec()
+            self.retranslate_ui()
+
+    def retranslate_ui(self):
+        """Actualiza dinámicamente los textos de toda la interfaz al cambiar de idioma."""
+        # Barra de estado inferior
+        if hasattr(self, "lbl_status"):
+            if getattr(self, "_current_status_i18n", None):
+                k, args = self._current_status_i18n
+                self.lbl_status.setText(tr(k, **args))
+            else:
+                from app.i18n import TRANSLATIONS
+                ready_texts = {trans.get("status_ready", "") for trans in TRANSLATIONS.values()}
+                ready_texts.update({"Listo", "Ready", "Готово", "就绪", ""})
+                if not getattr(self, "image_state", None) or not self.image_state.has_image or self.lbl_status.text() in ready_texts:
+                    self._set_status("status_ready")
+
+        # Botones de la barra de estado inferior
+        if hasattr(self, "btn_shortcuts"):
+            self.btn_shortcuts.setText(tr("btn_shortcuts"))
+            self.btn_shortcuts.setToolTip(tr("tooltip_shortcuts"))
+        if hasattr(self, "btn_kofi"):
+            self.btn_kofi.setText(tr("btn_kofi"))
+            self.btn_kofi.setToolTip(tr("tooltip_kofi"))
+
+        # Botones de la barra superior
+        if hasattr(self, "btn_open"):
+            self.btn_open.setText(tr("btn_open"))
+            self.btn_open.setToolTip(tr("tooltip_open"))
+        if hasattr(self, "btn_save"):
+            self.btn_save.setText(tr("btn_save"))
+            self.btn_save.setToolTip(tr("tooltip_save"))
+        if hasattr(self, "btn_compare"):
+            self.btn_compare.setText(tr("btn_compare"))
+            self.btn_compare.setToolTip(tr("tooltip_compare"))
+        if hasattr(self, "btn_fit"):
+            self.btn_fit.setText(tr("btn_zoom_fit"))
+            self.btn_fit.setToolTip(tr("tooltip_zoom_fit"))
+
+        # Tooltips de barra superior
+        if hasattr(self, "btn_theme"):
+            self.btn_theme.setToolTip(tr("tooltip_theme"))
+        if hasattr(self, "combo_lang"):
+            self.combo_lang.setToolTip(tr("tooltip_lang"))
+        if hasattr(self, "btn_undo"):
+            self.btn_undo.setToolTip(tr("tooltip_undo"))
+        if hasattr(self, "btn_redo"):
+            self.btn_redo.setToolTip(tr("tooltip_redo"))
+        if hasattr(self, "btn_reset_orig"):
+            self.btn_reset_orig.setToolTip(tr("tooltip_reset"))
+        if hasattr(self, "btn_zoom_out"):
+            self.btn_zoom_out.setToolTip(tr("tooltip_zoom_out"))
+        if hasattr(self, "btn_zoom_in"):
+            self.btn_zoom_in.setToolTip(tr("tooltip_zoom_in"))
+        if hasattr(self, "btn_zoom_100"):
+            self.btn_zoom_100.setToolTip(tr("tooltip_zoom_100"))
+
+        # Barra lateral
+        if hasattr(self, "sidebar") and hasattr(self.sidebar, "retranslate_ui"):
+            self.sidebar.retranslate_ui()
+
+        # Canvas (texto central cuando no hay imagen)
+        if hasattr(self, "canvas"):
+            self.canvas.update()
 
     def _load_stylesheet(self):
         self.is_dark_theme = getattr(self, "is_dark_theme", False)
@@ -199,15 +275,79 @@ class MainWindow(QMainWindow):
         style_path = Path(APP_DIR) / "ui" / style_file
         if style_path.exists():
             with open(style_path, "r", encoding="utf-8") as f:
-                self.setStyleSheet(f.read())
-                
+                content = f.read()
+                assets_path = (Path(APP_DIR) / "ui" / "assets").as_posix()
+                content = content.replace("{ASSETS_PATH}", assets_path)
+                self.setStyleSheet(content)
+        self._update_theme_icons()
+
     def _toggle_theme(self):
         self.is_dark_theme = not getattr(self, "is_dark_theme", False)
-        if self.is_dark_theme:
-            self.btn_theme.setText("☀️")
-        else:
-            self.btn_theme.setText("🌙")
         self._load_stylesheet()
+
+    def _update_theme_icons(self):
+        """Aplica iconos vectoriales nítidos y adaptados al contraste del tema activo."""
+        fg_color = "#EAEAEA" if self.is_dark_theme else "#292524"
+        accent_color = "#FF4F79"
+        dis_color = "#666666" if self.is_dark_theme else "#A8A29E"
+
+        theme_icon = "sun" if self.is_dark_theme else "moon"
+        if hasattr(self, "btn_theme"):
+            self.btn_theme.setIcon(get_icon(theme_icon, color=fg_color, active_color=accent_color, size=18))
+            self.btn_theme.setIconSize(QSize(18, 18))
+            self.btn_theme.setText("")
+
+        if hasattr(self, "btn_open"):
+            self.btn_open.setIcon(get_icon("folder-open", color=fg_color, active_color=accent_color, disabled_color=dis_color, size=16))
+            self.btn_open.setIconSize(QSize(16, 16))
+
+        if hasattr(self, "btn_save"):
+            self.btn_save.setIcon(get_icon("save", color=fg_color, active_color=accent_color, disabled_color=dis_color, size=16))
+            self.btn_save.setIconSize(QSize(16, 16))
+
+        if hasattr(self, "btn_undo"):
+            self.btn_undo.setIcon(get_icon("undo", color=fg_color, active_color=accent_color, disabled_color=dis_color, size=18))
+            self.btn_undo.setIconSize(QSize(18, 18))
+            self.btn_undo.setText("")
+
+        if hasattr(self, "btn_redo"):
+            self.btn_redo.setIcon(get_icon("redo", color=fg_color, active_color=accent_color, disabled_color=dis_color, size=18))
+            self.btn_redo.setIconSize(QSize(18, 18))
+            self.btn_redo.setText("")
+
+        if hasattr(self, "btn_reset_orig"):
+            self.btn_reset_orig.setIcon(get_icon("reset", color=fg_color, active_color=accent_color, disabled_color=dis_color, size=18))
+            self.btn_reset_orig.setIconSize(QSize(18, 18))
+            self.btn_reset_orig.setText("")
+
+        if hasattr(self, "btn_zoom_out"):
+            self.btn_zoom_out.setIcon(get_icon("zoom-out", color=fg_color, active_color=accent_color, disabled_color=dis_color, size=16))
+            self.btn_zoom_out.setIconSize(QSize(16, 16))
+            self.btn_zoom_out.setText("")
+
+        if hasattr(self, "btn_zoom_in"):
+            self.btn_zoom_in.setIcon(get_icon("zoom-in", color=fg_color, active_color=accent_color, disabled_color=dis_color, size=16))
+            self.btn_zoom_in.setIconSize(QSize(16, 16))
+            self.btn_zoom_in.setText("")
+
+        if hasattr(self, "btn_fit"):
+            self.btn_fit.setIcon(get_icon("fit", color=fg_color, active_color=accent_color, disabled_color=dis_color, size=16))
+            self.btn_fit.setIconSize(QSize(16, 16))
+
+        if hasattr(self, "btn_compare"):
+            self.btn_compare.setIcon(get_icon("compare", color=fg_color, active_color=accent_color, disabled_color=dis_color, size=16))
+            self.btn_compare.setIconSize(QSize(16, 16))
+
+        if hasattr(self, "btn_kofi"):
+            self.btn_kofi.setIcon(get_icon("coffee", color="#FFFFFF", size=16))
+            self.btn_kofi.setIconSize(QSize(16, 16))
+
+        if hasattr(self, "btn_shortcuts"):
+            self.btn_shortcuts.setIcon(get_icon("keyboard", color=fg_color, active_color=accent_color, size=15))
+            self.btn_shortcuts.setIconSize(QSize(15, 15))
+
+        if hasattr(self, "sidebar") and hasattr(self.sidebar, "update_theme_icons"):
+            self.sidebar.update_theme_icons(self.is_dark_theme)
                 
     def _init_ui(self):
         central_widget = QWidget(self)
@@ -228,6 +368,16 @@ class MainWindow(QMainWindow):
         self.sidebar.setObjectName("toolSidebar")
         self.sidebar.brushModeToggled.connect(self._on_brush_mode_toggled)
         self.sidebar.eraserModeToggled.connect(self.canvas.set_eraser_mode)
+        self.sidebar.wandModeToggled.connect(self.canvas.set_wand_mode)
+        self.sidebar.wandToleranceChanged.connect(self.canvas.set_wand_tolerance)
+        self.sidebar.wandSelectionModeChanged.connect(self.canvas.set_wand_selection_mode)
+        self.sidebar.wandAntiAliasChanged.connect(self.canvas.set_wand_anti_alias)
+        self.sidebar.wandContiguousChanged.connect(self.canvas.set_wand_contiguous)
+        self.sidebar.deleteSelectionRequested.connect(self.perform_delete_selection)
+        self.sidebar.invertSelectionRequested.connect(self.canvas.invert_selection)
+        self.sidebar.selectAllRequested.connect(self.canvas.select_all)
+        self.sidebar.clearSelectionRequested.connect(self.canvas.clear_selection)
+        self.canvas.selectionChanged.connect(self.sidebar.set_selection_info)
         self.sidebar.brushSizeChanged.connect(self.canvas.set_brush_size)
         self.sidebar.brushSmoothnessChanged.connect(self.canvas.set_brush_smoothness)
         self.sidebar.brushOpacityChanged.connect(self.canvas.set_brush_opacity)
@@ -269,19 +419,15 @@ class MainWindow(QMainWindow):
         layout.setContentsMargins(10, 8, 10, 8)
         layout.setSpacing(8)
 
-        # Título y Badge
+        # Título
         from app.config import DEFAULT_WINDOW_TITLE
         title_label = QLabel(DEFAULT_WINDOW_TITLE)
         title_label.setObjectName("appNameLabel")
         layout.addWidget(title_label)
 
-        badge_label = QLabel("LOCAL AI")
-        badge_label.setObjectName("appBadgeLabel")
-        layout.addWidget(badge_label)
-
         layout.addSpacing(12)
 
-        self.btn_theme = QPushButton("🌙")
+        self.btn_theme = QPushButton()
         self.btn_theme.setObjectName("compactIconButton")
         self.btn_theme.setFixedSize(30, 30)
         self.btn_theme.setToolTip(tr("tooltip_theme"))
@@ -325,22 +471,22 @@ class MainWindow(QMainWindow):
 
         layout.addWidget(self._create_separator())
 
-        # Botones compactos de historial (↶, ↷, ↺) con tooltip
-        self.btn_undo = QPushButton("↶")
+        # Botones compactos de historial con tooltip
+        self.btn_undo = QPushButton()
         self.btn_undo.setObjectName("compactIconButton")
         self.btn_undo.setFixedSize(34, 34)
         self.btn_undo.setToolTip(tr("tooltip_undo"))
         self.btn_undo.clicked.connect(self.perform_undo)
         layout.addWidget(self.btn_undo)
 
-        self.btn_redo = QPushButton("↷")
+        self.btn_redo = QPushButton()
         self.btn_redo.setObjectName("compactIconButton")
         self.btn_redo.setFixedSize(34, 34)
         self.btn_redo.setToolTip(tr("tooltip_redo"))
         self.btn_redo.clicked.connect(self.perform_redo)
         layout.addWidget(self.btn_redo)
 
-        self.btn_reset_orig = QPushButton("↺")
+        self.btn_reset_orig = QPushButton()
         self.btn_reset_orig.setObjectName("compactIconButton")
         self.btn_reset_orig.setFixedSize(34, 34)
         self.btn_reset_orig.setToolTip(tr("tooltip_reset"))
@@ -350,7 +496,7 @@ class MainWindow(QMainWindow):
         layout.addStretch()
 
         # Controles de Zoom
-        self.btn_zoom_out = QPushButton("－")
+        self.btn_zoom_out = QPushButton()
         self.btn_zoom_out.setObjectName("zoomButton")
         self.btn_zoom_out.setFixedSize(30, 30)
         self.btn_zoom_out.setToolTip(tr("tooltip_zoom_out"))
@@ -363,7 +509,7 @@ class MainWindow(QMainWindow):
         self.lbl_zoom.setAlignment(Qt.AlignmentFlag.AlignCenter)
         layout.addWidget(self.lbl_zoom)
 
-        self.btn_zoom_in = QPushButton("＋")
+        self.btn_zoom_in = QPushButton()
         self.btn_zoom_in.setObjectName("zoomButton")
         self.btn_zoom_in.setFixedSize(30, 30)
         self.btn_zoom_in.setToolTip(tr("tooltip_zoom_in"))
@@ -429,11 +575,22 @@ class MainWindow(QMainWindow):
         bar.setObjectName("statusBar")
         layout = QHBoxLayout(bar)
         layout.setContentsMargins(16, 6, 16, 6)
-        layout.setSpacing(14)
+        layout.setSpacing(12)
+
+        # Botón de Atajos Rápidos (a la izquierda)
+        self.btn_shortcuts = QPushButton(tr("btn_shortcuts"))
+        self.btn_shortcuts.setObjectName("statusShortcutsButton")
+        self.btn_shortcuts.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.btn_shortcuts.setToolTip(tr("tooltip_shortcuts"))
+        self.btn_shortcuts.clicked.connect(self.show_shortcuts_modal)
+        layout.addWidget(self.btn_shortcuts)
+
+        layout.addWidget(self._create_separator())
 
         # Estado del documento / imagen
-        self.lbl_status = QLabel("Listo. Arrastra una imagen o pulsa 'Abrir Imagen'.")
+        self.lbl_status = QLabel(tr("status_ready"))
         self.lbl_status.setObjectName("statusText")
+        self._current_status_i18n = ("status_ready", {})
         layout.addWidget(self.lbl_status)
 
         self.lbl_img_info = QLabel("")
@@ -472,10 +629,19 @@ class MainWindow(QMainWindow):
         sep.setStyleSheet("background-color: #E7E5E4; width: 1px; max-height: 20px; border: none;")
         return sep
 
+    def show_shortcuts_modal(self):
+        """Abre el diálogo modal con la lista interactiva de atajos de teclado y gestos."""
+        dialog = ShortcutsDialog(self, is_dark_theme=getattr(self, "is_dark_theme", False))
+        dialog.exec()
+
     # -------------------------------------------------------------
     # Atajos de Teclado
     # -------------------------------------------------------------
     def _setup_shortcuts(self):
+        # Ayuda y atajos
+        QShortcut(QKeySequence("F1"), self, self.show_shortcuts_modal)
+        QShortcut(QKeySequence("Ctrl+/"), self, self.show_shortcuts_modal)
+
         # Abrir / Guardar / Pegar
         QShortcut(QKeySequence("Ctrl+O"), self, self.prompt_open_image)
         QShortcut(QKeySequence("Ctrl+S"), self, self.prompt_save_image)
@@ -489,6 +655,23 @@ class MainWindow(QMainWindow):
         # Ajuste de vista
         QShortcut(QKeySequence("Ctrl+0"), self, self.canvas.fit_to_view)
         QShortcut(QKeySequence("Ctrl+1"), self, self.canvas.reset_zoom_100)
+
+        # Selección (mismos atajos que Photoshop)
+        QShortcut(QKeySequence(Qt.Key.Key_Delete), self, self.perform_delete_selection)
+        QShortcut(QKeySequence(Qt.Key.Key_Backspace), self, self.perform_delete_selection)
+        QShortcut(QKeySequence("Ctrl+D"), self, self.canvas.clear_selection)
+        QShortcut(QKeySequence(Qt.Key.Key_Escape), self, self.canvas.clear_selection)
+        QShortcut(QKeySequence("Ctrl+A"), self, self.canvas.select_all)
+        QShortcut(QKeySequence("Ctrl+Shift+I"), self, self.canvas.invert_selection)
+
+    def perform_delete_selection(self):
+        """Borra los píxeles seleccionados con la varita (Supr / botón 'Borrar selección')."""
+        if not self.canvas.has_selection():
+            return
+        if self.canvas.delete_selection():
+            self._set_status("status_selection_deleted")
+        else:
+            self._set_status("status_selection_nothing")
 
     # -------------------------------------------------------------
     # Lógica de Apertura, Pegado y Guardado
@@ -519,7 +702,7 @@ class MainWindow(QMainWindow):
         self.canvas.set_image(loaded, reset_zoom=True)
         self.canvas.set_original_image(self.image_state.current_brush_reference)
 
-        self.lbl_status.setText(f"Cargada: {source_name}")
+        self._set_status("status_loaded", name=source_name)
         self._update_image_info_label(loaded)
         self._update_action_states()
 
@@ -568,7 +751,7 @@ class MainWindow(QMainWindow):
                     return
 
         # 3. Si no hay imagen (texto plano, URL de texto, archivo de texto, etc.), feedback discreto en barra de estado
-        self.lbl_status.setText("El portapapeles no contiene una imagen.")
+        self._set_status("status_no_clipboard")
 
     def prompt_save_image(self):
         """Guarda la imagen procesada en disco."""
@@ -612,7 +795,7 @@ class MainWindow(QMainWindow):
                 # PNG por defecto
                 img.save(path)
 
-            self.lbl_status.setText(tr("status_saved", name=Path(path).name))
+            self._set_status("status_saved", name=Path(path).name)
             FramelessPopup(self, tr("popup_save_success_title"), tr("popup_save_success_msg", path=path)).exec()
         except Exception as e:
             FramelessPopup(self, tr("popup_error_save_title"), tr("popup_error_save_msg", error=str(e))).exec()
@@ -625,7 +808,7 @@ class MainWindow(QMainWindow):
         if img:
             self.canvas.set_image(img, reset_zoom=False)
             self.canvas.set_original_image(self.image_state.current_brush_reference)
-            self.lbl_status.setText(tr("status_undo", action=self.image_state.get_status_summary()))
+            self._set_status("status_undo", action=self.image_state.get_status_summary())
             self._update_image_info_label(img)
             self._update_action_states()
 
@@ -634,7 +817,7 @@ class MainWindow(QMainWindow):
         if img:
             self.canvas.set_image(img, reset_zoom=False)
             self.canvas.set_original_image(self.image_state.current_brush_reference)
-            self.lbl_status.setText(tr("status_redo", action=self.image_state.get_status_summary()))
+            self._set_status("status_redo", action=self.image_state.get_status_summary())
             self._update_image_info_label(img)
             self._update_action_states()
 
@@ -643,7 +826,7 @@ class MainWindow(QMainWindow):
         if img:
             self.canvas.set_image(img, reset_zoom=False)
             self.canvas.set_original_image(self.image_state.current_brush_reference)
-            self.lbl_status.setText("Imagen restaurada al estado original.")
+            self._set_status("status_reset")
             self._update_image_info_label(img)
             self._update_action_states()
 
@@ -652,7 +835,7 @@ class MainWindow(QMainWindow):
         current = self.image_state.push_state(image, description, brush_reference=brush_reference)
         self.canvas.set_image(current, reset_zoom=False)
         self.canvas.set_original_image(self.image_state.current_brush_reference)
-        self.lbl_status.setText(f"Aplicado: {description}")
+        self._set_status_raw(f"Aplicado: {description}")
         self._update_image_info_label(current)
         self._update_action_states()
 
@@ -694,11 +877,11 @@ class MainWindow(QMainWindow):
     def _on_mask_changed(self, has_mask: bool):
         self.sidebar.set_has_mask(has_mask)
 
-    def _on_image_edited_directly(self):
-        """Captura la edición directa de píxeles (ej. Pincel / Borrador) y lo guarda en el historial."""
+    def _on_image_edited_directly(self, description: str = "Edición Manual"):
+        """Captura la edición directa de píxeles (Pincel / Borrador / Borrar selección) y la guarda en el historial."""
         if self.canvas.current_qimage:
             pil_img = qimage_to_pil(self.canvas.current_qimage)
-            self.push_new_image_state(pil_img, "Edición Manual")
+            self.push_new_image_state(pil_img, description or "Edición Manual")
 
     def _on_zoom_changed(self, zoom: float):
         percent = int(zoom * 100)
@@ -716,9 +899,12 @@ class MainWindow(QMainWindow):
         self.btn_compare.setEnabled(not is_processing and self.image_state.has_image and self.image_state._current_index > 0)
 
         if is_processing:
-            self.lbl_status.setText(f"⏳ {message}...")
+            self._set_status_raw(f"⏳ {message}...")
         else:
-            self.lbl_status.setText(message or "Listo")
+            if message:
+                self._set_status_raw(message)
+            else:
+                self._set_status("status_ready")
 
     # -------------------------------------------------------------
     # Inferencia Asíncrona de Modelos (Workers)
@@ -763,13 +949,13 @@ class MainWindow(QMainWindow):
         from app.core.workers import BatchWorkerThread
         self.progress_bar.setVisible(True)
         self.progress_bar.setRange(0, 100) # Se actualizará luego
-        self.lbl_status.setText("Preparando lote...")
+        self._set_status("status_batch_preparing")
         self.sidebar.btn_run_batch.setEnabled(False)
         self.btn_open.setEnabled(False)
         self.btn_save.setEnabled(False)
 
         self.batch_worker = BatchWorkerThread(input_dir, output_dir, model_id, enable_clothing_protection)
-        self.batch_worker.progressText.connect(self.lbl_status.setText)
+        self.batch_worker.progressText.connect(self._set_status_raw)
         
         def update_progress(current, total):
             if total > 0:
@@ -784,7 +970,7 @@ class MainWindow(QMainWindow):
             self.btn_open.setEnabled(True)
             self.btn_save.setEnabled(self.image_state.has_image)
             QMessageBox.information(self, "Lote Completado", f"Se procesaron {success_count} de {total} imágenes con éxito.")
-            self.lbl_status.setText("Procesamiento por lote finalizado.")
+            self._set_status("status_batch_finished")
             
         def on_batch_failed(err_msg):
             self.progress_bar.setVisible(False)
@@ -792,7 +978,7 @@ class MainWindow(QMainWindow):
             self.btn_open.setEnabled(True)
             self.btn_save.setEnabled(self.image_state.has_image)
             QMessageBox.critical(self, "Error en lote", f"El procesamiento se detuvo por un error:\n{err_msg}")
-            self.lbl_status.setText("Error en lote.")
+            self._set_status("status_batch_error")
 
         self.batch_worker.finishedResult.connect(on_batch_finished)
         self.batch_worker.failed.connect(on_batch_failed)
@@ -815,8 +1001,7 @@ class MainWindow(QMainWindow):
         from app.config import detect_device
         self.device = detect_device()
         is_gpu = "GPU" in self.device.upper()
-        gpu_icon = "⚡ " if is_gpu else "💻 "
-        device_text = f"{gpu_icon}{self.device}"
+        device_text = f"{self.device}"
         self.lbl_device.setText(device_text)
         self.lbl_device.setObjectName("deviceBadgeGpu" if is_gpu else "deviceBadgeCpu")
         self.lbl_device.style().unpolish(self.lbl_device)
@@ -844,15 +1029,15 @@ class MainWindow(QMainWindow):
             from app.config import get_gpu_name
             gpu_name = get_gpu_name() or "DirectML"
             clean_name = gpu_name.replace("NVIDIA ", "").replace(" Laptop GPU", "")
-            self.lbl_status.setText(f"⚡ Aceleración por GPU activada ({clean_name}).")
+            self._set_status_raw(f"Aceleración por GPU activada ({clean_name}).")
         elif not is_gpu:
-            self.lbl_status.setText("💻 Modo CPU activado (GPU liberada de VRAM).")
+            self._set_status_raw("Modo CPU activado (GPU liberada de VRAM).")
         else:
-            self.lbl_status.setText("⚠️ No se pudo activar la GPU. Se mantiene modo CPU.")
+            self._set_status_raw("No se pudo activar la GPU. Se mantiene modo CPU.")
 
     def update_device_badge_blocked(self):
         """Actualiza el badge de la barra de estado indicando que la GPU está bloqueada y se fuerza CPU."""
-        self.lbl_device.setText("⚠️ CPU (GPU bloqueada — reinicia la app)")
+        self.lbl_device.setText("CPU (GPU bloqueada — reinicia la app)")
         self.lbl_device.setObjectName("deviceBadgeBlocked")
         self.lbl_device.style().unpolish(self.lbl_device)
         self.lbl_device.style().polish(self.lbl_device)
@@ -865,9 +1050,9 @@ class MainWindow(QMainWindow):
         from app.core.gpu_manager import get_gpu_manager
         if get_gpu_manager().has_orphaned_worker() or "bloqueada" in message or "reiniciar" in message or "no pudo cerrarse" in message:
             self.update_device_badge_blocked()
-            self.lbl_status.setText("⚠️ " + message)
+            self._set_status_raw(message)
         elif "GPU no respondió" in message or "GPU con error" in message:
-            self.lbl_status.setText("⚠️ " + message)
+            self._set_status_raw(message)
 
     def _on_worker_finished(self, result_image: Image.Image, description: str):
         from app.core.gpu_manager import get_gpu_manager
@@ -919,38 +1104,38 @@ class MainWindow(QMainWindow):
         """Activa o desactiva la vista comparativa antes/después con cortina."""
         if not self.image_state.has_image:
             self.btn_compare.setChecked(False)
-            self.lbl_status.setText("Abre una imagen primero.")
+            self._set_status("status_open_first")
             return
 
         # Si aún no se ha aplicado ninguna herramienta (índice 0) o no hay diferencias
         if self.image_state._current_index == 0:
             self.btn_compare.setChecked(False)
             self.canvas.set_comparison_mode(False)
-            self.lbl_status.setText("No hay cambios que comparar")
+            self._set_status("status_no_changes_compare")
             return
 
         is_active = self.btn_compare.isChecked()
         if is_active:
             orig = self.image_state.original_image
             self.canvas.set_comparison_mode(True, orig)
-            self.lbl_status.setText("Modo comparación activo: arrastra la barra divisoria para comparar con el original.")
+            self._set_status("status_compare_active")
         else:
             self.canvas.set_comparison_mode(False)
-            self.lbl_status.setText("Modo comparación desactivado.")
+            self._set_status("status_compare_inactive")
 
     def perform_autocrop(self):
         """Recorta los márgenes transparentes alrededor del sujeto con 10px de respiro."""
         if not self.image_state.has_image:
             return
         if not self.image_state.has_transparency:
-            self.lbl_status.setText("Aplica primero Quitar Fondo para recortar al contenido.")
+            self._set_status("status_crop_first_remove")
             return
 
         current_img = self.image_state.current_image
         alpha = current_img.split()[-1]
         bbox = alpha.getbbox()
         if bbox is None:
-            self.lbl_status.setText("No se detectó contenido para recortar.")
+            self._set_status("status_crop_none")
             return
 
         pad = 10
@@ -963,7 +1148,7 @@ class MainWindow(QMainWindow):
         cropped = current_img.crop(crop_box)
 
         if cropped.size == current_img.size:
-            self.lbl_status.setText("La imagen ya está ajustada al contenido.")
+            self._set_status("status_crop_already")
             return
 
         brush_ref = self.image_state.current_brush_reference
@@ -979,7 +1164,7 @@ class MainWindow(QMainWindow):
         
         self.canvas.set_background_color(color_rgb)
         hex_str = f"#{color_rgb[0]:02X}{color_rgb[1]:02X}{color_rgb[2]:02X}"
-        self.lbl_status.setText(f"Capa de fondo visualizada: {hex_str}")
+        self._set_status_raw(f"Capa de fondo visualizada: {hex_str}")
 
     def perform_restore_transparency(self):
         """Oculta la capa de color sólido restaurando el fondo transparente original."""
@@ -987,4 +1172,4 @@ class MainWindow(QMainWindow):
             return
             
         self.canvas.set_background_color(None)
-        self.lbl_status.setText("Capa de fondo transparente activada")
+        self._set_status_raw("Capa de fondo transparente activada")

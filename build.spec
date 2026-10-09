@@ -4,7 +4,7 @@ from pathlib import Path
 block_cipher = None
 
 datas = [
-    ('app/ui/styles.qss', 'app/ui'),
+    ('app/ui', 'app/ui'),
     ('app/models', 'app/models'),
 ]
 
