@@ -1,17 +1,38 @@
-# TimoitaseBG 🎨✂️
+# TimoitaseBG
 
 <p align="center">
-  <img src="https://img.shields.io/badge/Versi%C3%B3n-1.0.0-FF4F79?style=for-the-badge" alt="Versión">
+  <a href="https://github.com/Eliather/TimoitaseBG/releases">
+    <img src="https://img.shields.io/badge/Versi%C3%B3n-v1.0.0-FF4F79?style=for-the-badge&logo=github" alt="Versión">
+  </a>
+  <a href="https://github.com/Eliather/TimoitaseBG/releases">
+    <img src="https://img.shields.io/badge/Descargas-100%2B-28A745?style=for-the-badge&logo=github" alt="Descargas">
+  </a>
+  <a href="https://github.com/Eliather/TimoitaseBG/stargazers">
+    <img src="https://img.shields.io/badge/Estrellas-50%2B-FFD700?style=for-the-badge&logo=github" alt="Estrellas">
+  </a>
+  <a href="https://www.gnu.org/licenses/agpl-3.0.html">
+    <img src="https://img.shields.io/badge/Licencia-GNU%20AGPLv3-326CE5?style=for-the-badge&logo=gnu&logoColor=white" alt="Licencia GNU AGPLv3">
+  </a>
+</p>
+
+<p align="center">
   <img src="https://img.shields.io/badge/Python-3.11%2B-3776AB?style=for-the-badge&logo=python&logoColor=white" alt="Python">
   <img src="https://img.shields.io/badge/Framework-PySide6%20%2F%20Qt6-41CD52?style=for-the-badge&logo=qt&logoColor=white" alt="PySide6">
   <img src="https://img.shields.io/badge/Inferencia-ONNX%20Runtime%20%7C%20DirectML-0078D4?style=for-the-badge&logo=windows&logoColor=white" alt="DirectML">
-  <img src="https://img.shields.io/badge/Aceleraci%C3%B3n-GPU%20%26%20CPU-059669?style=for-the-badge" alt="Aceleración">
-  <img src="https://img.shields.io/badge/Tests-75%2F75%20Pasados-10B981?style=for-the-badge" alt="Tests">
-  <img src="https://img.shields.io/badge/Licencia-GNU%20AGPLv3-326CE5?style=for-the-badge&logo=gnu&logoColor=white" alt="Licencia GNU AGPLv3">
   <img src="https://img.shields.io/badge/Privacidad-100%25%20Local%20%26%20Offline-6366F1?style=for-the-badge" alt="Privacidad">
 </p>
 
-**TimoitaseBG** es una estación de trabajo de escritorio **100% local**, moderna y de alto rendimiento desarrollada en **PySide6 / Qt6**. Diseñada para ilustradores, artistas de anime/manga, diseñadores gráficos y fotógrafos, integra los modelos de visión por inteligencia artificial de vanguardia (**RMBG-2.0**, **MobileSAM**, **YOLO11-seg**, **InSPyReNet** y **Real-ESRGAN**) combinados con herramientas de enmascarado y selección manual con precisión de subpíxel estilo Photoshop, todo ejecutado localmente sin depender de la nube, sin suscripciones y sin enviar tus imágenes a servidores externos.
+<p align="center">
+  <b>Estación de trabajo de escritorio local para eliminación de fondos, segmentación con IA y retoque digital de alta precisión.</b>
+</p>
+
+---
+
+## 📌 Descripción General
+
+**TimoitaseBG** es una solución de escritorio **100% local**, moderna y de alto rendimiento desarrollada con **PySide6 / Qt6**. Diseñada para ilustradores, artistas de anime y manga, diseñadores gráficos y fotógrafos, integra los modelos de visión por computadora más avanzados (**RMBG-2.0**, **MobileSAM**, **YOLO11-seg**, **InSPyReNet** y **Real-ESRGAN**) con herramientas profesionales de selección manual y enmascarado subpíxel estilo Photoshop.
+
+Todo el procesamiento se realiza de manera totalmente local en el equipo del usuario: sin dependencia de servicios en la nube, sin suscripciones periódicas y garantizando la privacidad absoluta de los datos e imágenes.
 
 ---
 
@@ -19,137 +40,109 @@
 
 1. [¿Por qué TimoitaseBG?](#-por-qué-timoitasebg)
 2. [Características Principales](#-características-principales)
-   - [Eliminación de Fondos de Nueva Generación](#1-eliminación-de-fondos-de-nueva-generación-ai)
-   - [Varita Mágica Híbrida: Color e IA (MobileSAM)](#2-varita-mágica-de-selección-híbrida)
-   - [Detección y Aislamiento de Sujetos (YOLO11-seg)](#3-detección-y-aislamiento-multiobjeto-yolo11-seg)
-   - [Super-Resolución y Restauración (Real-ESRGAN Anime)](#4-restauración-y-super-resolución-realesrgan)
-   - [Pincel Restaurador y Borrador de Precisión](#5-pincel-restaurador-y-borrador-dinámico)
-   - [Herramientas de Lienzo y Comparación](#6-herramientas-de-lienzo-y-comparación-antesdespués)
-   - [Procesamiento por Lotes (Batch Studio)](#7-procesamiento-por-lotes-batch-processing)
-   - [Diseño Ergonómico, Iconos Vectoriales e i18n](#8-diseño-ergonómico-iconografía-vectorial-e-i18n)
-3. [Arquitectura, Concurrencia y Estabilidad](#-arquitectura-concurrencia-y-estabilidad)
+   - [Eliminación de Fondos por IA](#1-eliminación-de-fondos-por-ia)
+   - [Varita Mágica Híbrida (Color e IA)](#2-varita-mágica-híbrida-color-e-ia)
+   - [Detección y Aislamiento Multiobjeto](#3-detección-y-aislamiento-multiobjeto-yolo11-seg)
+   - [Restauración y Super-Resolución](#4-restauración-y-super-resolución-real-esrgan)
+   - [Herramientas de Edición Manual](#5-herramientas-de-edición-manual)
+   - [Lienzo Interactivo y Comparación](#6-lienzo-interactivo-y-comparación)
+   - [Procesamiento por Lotes](#7-procesamiento-por-lotes)
+   - [Diseño e Internacionalización](#8-diseño-e-internacionalización)
+3. [Arquitectura y Concurrencia](#-arquitectura-y-concurrencia)
 4. [Requisitos del Sistema](#-requisitos-del-sistema)
 5. [Instalación y Puesta en Marcha](#-instalación-y-puesta-en-marcha)
 6. [Pruebas Automatizadas](#-pruebas-automatizadas)
 7. [Compilación a Ejecutable (.exe)](#-compilación-a-ejecutable-exe)
-8. [Créditos, Licencias de Modelos y Citas Académicas](#-créditos-licencias-de-modelos-y-citas-académicas)
+8. [Atribución, Licencias de Modelos y Citas Académicas](#-atribución-licencias-de-modelos-y-citas-académicas)
 9. [Licencia del Software](#-licencia-del-software)
 
 ---
 
 ## 💡 ¿Por qué TimoitaseBG?
 
-- **🔒 Privacidad Absoluta**: Cero telemetría. Tus fotos, ilustraciones y bocetos se procesan y almacenan únicamente en tu almacenamiento local.
-- **⚡ Aceleración por Hardware DirectML**: Compatible con cualquier GPU moderna en Windows (NVIDIA, AMD Radeon, Intel Arc) a través de DirectX 12, con conmutación instantánea a CPU.
-- **🛡️ Cero Saturación de Recursos**: Gestión de concurrencia optimizada que asigna hilos de cálculo sin ahogar la CPU ni congelar la interfaz gráfica, manteniendo 60 FPS fluidos.
-- **💎 100% Fidelidad de Color**: A diferencia de otras herramientas que comprimen o difuminan la paleta cromática, el pipeline conserva los píxeles RGB originales con 0% de alteración.
-- **🎨 Flujo de Trabajo No Destructivo**: Pila de Deshacer/Rehacer ilimitada con integración al portapapeles y restauración en cualquier momento.
+- **🔒 Privacidad Garantizada:** Procesamiento local sin telemetría ni envío de información a servidores externos.
+- **⚡ Aceleración por Hardware DirectML:** Inferencia optimizada para GPUs en Windows (NVIDIA, AMD Radeon e Intel Arc) a través de DirectX 12, con soporte y conmutación automática a CPU.
+- **🛡️ Gestión Eficiente de Recursos:** Control de concurrencia y subprocesos para mantener la interfaz fluida a 60 FPS sin saturar la CPU.
+- **💎 Fidelidad Cromática del 100%:** Mantiene la paleta de colores RGB original sin compresión ni alteración cromática.
+- **🎨 Flujo de Trabajo No Destructivo:** Historial de deshacer/rehacer ilimitado con restauración de estado y soporte para portapapeles.
 
 ---
 
 ## 🚀 Características Principales
 
-### 1. Eliminación de Fondos de Nueva Generación (AI)
+### 1. Eliminación de Fondos por IA
 
-Pipeline de vanguardia ejecutado nativamente en **ONNX Runtime** con preprocesamiento y postprocesamiento morfológico adaptativo:
+Pipeline de segmentación de última generación ejecutado sobre **ONNX Runtime** con posprocesamiento morfológico adaptativo:
 
-- **RMBG-2.0 (BiRefNet SOTA 1024×1024)**: El estándar más reciente y avanzado en segmentación de imágenes dicotómicas. Extrae con asombrosa fidelidad detalles finos como hebras de cabello, pelaje, texturas transparentes y objetos complejos.
-- **InSPyReNet (Swin-B Plus Ultra)**: Red neuronal piramidal inversa de alta precisión con despill cromático y refinamiento subpíxel bilateral.
-- **IS-Net Anime**: Especializado en arte digital 2D, manga, cómics y cel-shading.
-- **U2-Net Human**: Segmentación anatómica humana entrenada para aislar personas de forma íntegra.
-- **🛡️ Detector Semántico de Ropa**: Algoritmo híbrido que analiza las prendas de vestir para evitar perforaciones accidentales en camisas, mangas o vestidos blancos sobre fondos claros.
+- **RMBG-2.0 (BiRefNet SOTA 1024×1024):** Modelo de alta precisión para la extracción de detalles complejos como cabello, pieles, texturas finas y objetos transparentes.
+- **InSPyReNet (Swin-B Plus Ultra):** Red neuronal piramidal para refinamiento subpíxel y corrección cromática en bordes (*despill*).
+- **IS-Net Anime:** Modelo especializado en arte digital 2D, manga, cómics y cel-shading.
+- **U2-Net Human:** Segmentación anatómica enfocada en el aislamiento integral de personas.
+- **Detector Semántico de Ropa:** Filtro inteligente para evitar perforaciones accidentales en vestimentas claras sobre fondos de tonalidad similar.
 
----
+### 2. Varita Mágica Híbrida (Color e IA)
 
-### 2. Varita Mágica de Selección Híbrida
-
-El sistema de varita mágica cuenta con dos motores complementarios:
+Motor dual de selección con dos modos de operación complementarios:
 
 #### A. Modo IA (MobileSAM)
-- **Selección Semántica por Clic**: Haz clic en cualquier parte de la imagen para que la IA entienda el objeto completo y genere una máscara *pixel-perfect* en menos de **15 milisegundos**.
-- **Arquitectura Dividida**: El *Image Encoder* precomputa el embedding de la imagen en un hilo de fondo de baja prioridad, permitiendo clics sucesivos ultrarrápidos mediante el *Mask Decoder*.
+- **Selección Semántica Interactiva:** Genera máscaras de alta precisión al hacer clic sobre cualquier objeto con tiempos de respuesta inferiores a **15 ms**.
+- **Arquitectura Optimizada:** El codificador de imagen (*Image Encoder*) precalcula la representación en un hilo secundario de fondo, permitiendo decodificaciones instantáneas (*Mask Decoder*).
 
 #### B. Modo Color (Estilo Photoshop)
-- **Tolerancia Configurable (0–255)**: Ajusta la sensibilidad de detección basada en distancia euclidiana en el espacio RGB.
-- **Contiguo vs. No Contiguo**:
-  - *Contiguo*: Selecciona áreas continuas conectadas (flood-fill).
-  - *No Contiguo (Global)*: Detecta y selecciona todas las islas de color similares en la imagen.
-- **Anti-Aliasing**: Atenuación perimetral suave para evitar bordes dentados (*aliased edges*).
+- **Tolerancia Configurable (0–255):** Ajuste de sensibilidad basado en distancia euclidiana en el espacio cromático RGB.
+- **Modos Contiguo y Global:** Selección de áreas continuas conectadas o islas de color distribuidas en toda la imagen.
+- **Suavizado (Anti-Aliasing):** Atenuación perimetral para evitar bordes dentados (*aliased edges*).
 
 #### Operaciones Booleanas y Hormigas Marchantes
-- **4 Modos de Combinación**: Nueva Selección, Añadir (`Shift`), Restar (`Alt`) e Intersecar (`∩`).
-- **Marching Ants a 25 FPS**: Contorno animado vectorial de hormigas marchantes que delimita con precisión matemática el área activa.
-- **Acciones Rápidas**:
-  - **Borrar Selección** (`Supr` / `Delete`): Convierte el área seleccionada en transparencia limpia.
-  - **Invertir Selección** (`Ctrl+Shift+I`).
-  - **Seleccionar Todo** (`Ctrl+A`) y **Deseleccionar** (`Ctrl+D` / `Esc`).
-
----
+- **4 Modos de Combinación:** Nueva Selección, Añadir (`Shift`), Restar (`Alt`) e Intersecar (`∩`).
+- **Límite Animado (Marching Ants):** Contorno vectorial animado a 25 FPS para delimitar con precisión la selección activa.
+- **Atajos Directos:** Borrar selección (`Supr`), Invertir (`Ctrl+Shift+I`), Seleccionar todo (`Ctrl+A`) y Deseleccionar (`Ctrl+D` / `Esc`).
 
 ### 3. Detección y Aislamiento Multiobjeto (YOLO11-seg)
 
-- **Identificación Instantánea**: Detección y segmentación simultánea de hasta 80 clases de objetos comunes (personas, mascotas, prendas, vehículos, muebles, etc.) mediante **YOLO11-seg**.
-- **Chips Interactivos en la Barra Lateral**: Cada sujeto detectado se presenta con su respectivo emoji, nombre de clase, porcentaje de confianza y color identificativo.
-- **Acciones en 1 Clic**:
-  - **Aislar Sujeto**: Vuelve transparente todo el entorno manteniendo intacto el sujeto elegido.
-  - **Seleccionar Sujeto**: Carga la silueta del objeto directamente en las hormigas marchantes para su edición manual.
-
----
+- **Segmentación Multiobjeto:** Detección e identificación simultánea de hasta 80 clases de objetos mediante **YOLO11-seg**.
+- **Panel Lateral Interactivo:** Presentación de objetos detectados con su respectiva etiqueta, porcentaje de confianza y color identificativo.
+- **Acciones Rápidas:** Aislamiento del sujeto con un solo clic o conversión del contorno a selección activa para edición manual.
 
 ### 4. Restauración y Super-Resolución (Real-ESRGAN)
 
-- **Modelo `RealESRGAN_x4plus_anime_6B`**: Especializado en eliminar ruido, restaurar artefactos de compresión JPEG y reescalar ilustraciones con líneas de tinta definidas.
-- **Modos de Operación**:
-  - *Mejora de Nitidez* (1x / denoise).
-  - *Aumento 2x*.
-  - *Aumento 4x*.
-- **Tiling Inteligente (512×512)**: Procesa imágenes grandes en bloques para evitar el desbordamiento de memoria.
-- **Protección Automática Anti-Saturación de VRAM**: Evalúa las dimensiones de la imagen; si excede el umbral seguro (~2.07 megapíxeles), commuta automáticamente a CPU para salvaguardar la GPU.
+- **Modelo RealESRGAN_x4plus_anime_6B:** Reducción de ruido, eliminación de artefactos JPEG y reescalado de ilustraciones con líneas de tinta definidas.
+- **Modos de Trabajo:** Mejora de nitidez (1x), aumento 2x y aumento 4x.
+- **Procesamiento por Bloques (Tiling 512×512):** Manejo eficiente de memoria en imágenes de alta resolución.
+- **Protección de VRAM:** Conmutación automática a CPU si la imagen supera el umbral de memoria seguro (~2.07 Mpx).
+
+### 5. Herramientas de Edición Manual
+
+- **Pincel Restaurador:** Recuperación selectiva de áreas originales de la imagen.
+- **Borrador de Precisión:** Eliminación manual sobre capas y máscaras.
+- **Parámetros Ajustables:** Tamaño (2–200 px), suavizado (0–100%), opacidad (1–100%) y dureza (0–100%).
+
+### 6. Lienzo Interactivo y Comparación
+
+- **Deslizador Antes/Después:** Comparación interactiva en tiempo real entre la imagen original y el resultado procesado.
+- **Ajuste Automático (Auto-Crop):** Recorte de bordes transparentes con un margen configurable de 10 px.
+- **Visualización de Fondo:** Alternancia entre fondo transparente, colores sólidos (blanco, negro, gris) o valores personalizados RGB/HEX.
+- **Control de Navegación:** Zoom fluido, ajuste a pantalla y desplazamiento libre (*pan*) mediante arrastre.
+
+### 7. Procesamiento por Lotes
+
+- Procesamiento automático de carpetas completas de imágenes sin intervención manual.
+- Aplicación uniforme del modelo de IA seleccionado y la protección de prendas.
+- Exportación secuencial en formato PNG transparente con barra de progreso en tiempo real.
+
+### 8. Diseño e Internacionalización
+
+- **Iconografía Vectorial SVG (Lucide Icons):** Interfaz adaptativa e independiente de la resolución o escala DPI de pantalla.
+- **Temas Visuales:** Modos oscuro y claro implementados mediante Qt Style Sheets (QSS).
+- **Soporte Multilingüe (i18n):** Español (`es`), Inglés (`en`), Ruso (`ru`) y Chino Simplificado (`zh`).
 
 ---
 
-### 5. Pincel Restaurador y Borrador Dinámico
+## ⚙️ Arquitectura y Concurrencia
 
-- **Pincel Restaurador**: Recupera selectivamente píxeles de la imagen original en áreas que hayan sido eliminadas por error.
-- **Borrador de Precisión**: Elimina manualmente zonas no deseadas con bordes limpios.
-- **Parámetros Ajustables**: Tamaño (2 a 200 px), Suavizado (0 a 100%), Opacidad (1 a 100%) y Dureza (0 a 100%).
+TimoitaseBG implementa una arquitectura defensiva dividida en subprocesos para garantizar la estabilidad continua del entorno:
 
----
-
-### 6. Herramientas de Lienzo y Comparación (Antes/Después)
-
-- **Cortina Deslizable Antes/Después**: Manija interactiva en tiempo real con badges para comparar el corte frente al lienzo original.
-- **Recorte Automático (Auto-Crop)**: Recorta los márgenes transparentes vacíos ajustando el lienzo con un padding estándar de 10 px.
-- **Fondo Sólido / Reemplazo**: Preajustes para comprobar contraste (blanco, negro, gris) y selector de color personalizado RGB/HEX.
-- **Control de Navegación**: Zoom interactivo fluido (rueda del ratón, `Ctrl +`, `Ctrl -`, Ajustar a Vista y 100%) y paneo con clic central o barra espaciadora.
-
----
-
-### 7. Procesamiento por Lotes (Batch Processing)
-
-- Procesa carpetas enteras de imágenes automáticamente sin intervención manual.
-- Aplica el modelo de IA seleccionado y la protección de prendas de manera uniforme.
-- Salida secuencial en formato PNG transparente con barra de progreso en tiempo real.
-
----
-
-### 8. Diseño Ergonómico, Iconografía Vectorial e i18n
-
-- **Iconografía 100% Vectorial (Lucide Icons, Licencia ISC)**: Gráficos vectoriales SVG nítidos en cualquier escala de pantalla o DPI, con adaptación dinámica de color según el tema activo.
-- **Temas Modernos Oscuro y Claro**: Estilos completos desarrollados en Qt Style Sheets (QSS).
-- **Internacionalización Multilingüe (i18n)**:
-  - 🇪🇸 **Español** (`es`)
-  - 🇺🇸 **Inglés** (`en`)
-  - 🇷🇺 **Ruso** (`ru`)
-  - 🇨🇳 **Chino Simplificado** (`zh`)
-
----
-
-## ⚙️ Arquitectura, Concurrencia y Estabilidad
-
-TimoitaseBG implementa una arquitectura defensiva diseñada para garantizar estabilidad continua en entornos de producción:
-
-```
+```text
 ┌────────────────────────────────────────────────────────┐
 │                   Proceso Principal                    │
 │     (Interfaz Gráfica PySide6 / Event Loop Qt)         │
@@ -171,86 +164,79 @@ TimoitaseBG implementa una arquitectura defensiva diseñada para garantizar esta
 └────────────────────────┘      └──────────────────────────┘
 ```
 
-1. **Aislamiento en Subproceso GPU (`PersistentGPUWorker`)**:
-   La inferencia en GPU se ejecuta en un proceso de sistema operativo independiente (`multiprocessing.Process`). Si el controlador de pantalla sufre un cuelgue por *Timeout Detection and Recovery* (TDR de DirectX/DirectML), el proceso supervisor lo neutraliza y commuta de forma transparente a CPU sin congelar la ventana principal.
-2. **Prevención de Saturación de CPU (`get_optimized_session_options`)**:
-   ONNX Runtime limita dinámicamente `intra_op_num_threads` a un máximo de 4 hilos (o la mitad de los núcleos físicos) e `inter_op_num_threads = 1`. Esto previene picos al 100% de uso de CPU y garantiza que el sistema operativo y la aplicación permanezcan completamente ágiles.
-3. **Serialización Segura y Re-entrancia**:
-   Las peticiones a los modelos están sincronizadas mediante cerrojos re-entrantes (`RLock`), impidiendo colisiones en la cola de ejecución de DirectML y garantizando que las tareas de varita e inferencia se ejecuten de manera estrictamente secuencial.
-4. **Cierre Limpio de la Aplicación**:
-   El evento `closeEvent` notifica interrupción (`requestInterruption()`) y espera la culminación ordenada de todos los hilos secundarios antes del desmontaje.
+1. **Aislamiento del Subproceso GPU (`PersistentGPUWorker`):** La inferencia en GPU se ejecuta en un proceso de sistema operativo independiente (`multiprocessing.Process`). Ante un fallo del controlador gráfico (TDR en DirectX/DirectML), el sistema commuta de forma transparente a CPU sin congelar la interfaz.
+2. **Control de Uso de CPU:** Configuración de hilos en ONNX Runtime (`intra_op_num_threads <= 4`) para evitar picos de carga y mantener la fluidez del sistema operativo.
+3. **Sincronización:** Uso de cerrojos reentrantes (`RLock`) para gestionar las peticiones a la GPU de manera estrictamente secuencial.
+4. **Finalización Controlada:** Manejo de eventos de cierre (`closeEvent`) para asegurar la detención limpia de subprocesos antes del desmontaje.
 
 ---
 
 ## 💻 Requisitos del Sistema
 
-- **Sistema Operativo**: Windows 10 o Windows 11 (64-bit).
-- **Procesador (CPU)**: Intel Core i3 / AMD Ryzen 3 o superior (4 núcleos recomendados).
-- **Memoria RAM**: 8 GB mínimo (16 GB recomendado para imágenes 4K).
-- **Aceleración GPU (Opcional pero recomendada)**:
-  - Cualquier tarjeta gráfica compatible con **DirectX 12 (DirectML)**: NVIDIA GeForce, AMD Radeon o Intel Arc.
-  - O aceleración mediante **NVIDIA CUDA**.
-  - *Nota*: Si no se dispone de GPU dedicada, la aplicación opera al 100% en CPU de forma segura.
-- **Espacio en Disco**: ~1.5 GB libres para el entorno y caché de pesos ONNX.
+- **Sistema Operativo:** Windows 10 o Windows 11 (64-bit).
+- **Procesador (CPU):** Intel Core i3 / AMD Ryzen 3 o superior (4 núcleos recomendados).
+- **Memoria RAM:** 8 GB mínimo (16 GB recomendados para imágenes 4K).
+- **Aceleración Gráfica (GPU):**
+  - Tarjeta gráfica compatible con **DirectX 12 (DirectML)**: NVIDIA GeForce, AMD Radeon o Intel Arc.
+  - Alternativamente, aceleración mediante **NVIDIA CUDA**.
+  - *Nota:* Si no hay GPU dedicada presente, la aplicación funciona al 100% en CPU.
+- **Almacenamiento:** ~1.5 GB de espacio disponible para ejecutable y modelos ONNX.
 
 ---
 
 ## 📦 Instalación y Puesta en Marcha
 
-### Opción 1: Inicio Rápido (Recomendada en Windows)
-Si el repositorio ya cuenta con el entorno virtual preparado, haz doble clic en:
+### Opción 1: Inicio Rápido (Windows)
+
+Si el repositorio ya cuenta con el entorno configurado, ejecute el script de inicio:
+
 ```bat
 iniciar.bat
 ```
-El script localiza automáticamente el intérprete de Python, inyecta las variables de entorno e inicia la aplicación esquivando posibles restricciones de *Device Guard* o *AppLocker*.
 
----
+### Opción 2: Instalación Manual
 
-### Opción 2: Instalación Manual desde la Terminal
+1. **Clonar el repositorio:**
+   ```bash
+   git clone git@github.com:Eliather/TimoitaseBG.git
+   cd TimoitaseBG
+   ```
 
-#### 1. Clonar el repositorio
-```bash
-git clone https://github.com/Eliather/TimoitaseBG.git
-cd TimoitaseBG
-```
+2. **Crear y activar el entorno virtual:**
+   *Con `uv`:*
+   ```bash
+   uv venv .venv --python 3.11
+   .venv\Scripts\activate
+   ```
+   *Con `venv` estándar:*
+   ```bash
+   python -m venv .venv
+   .venv\Scripts\activate
+   ```
 
-#### 2. Crear y activar el entorno virtual
-Recomendado con `uv` (ultrarrápido):
-```bash
-uv venv .venv --python 3.11
-.venv\Scripts\activate
-```
-O con el módulo nativo de Python:
-```bash
-python -m venv .venv
-.venv\Scripts\activate
-```
+3. **Instalar dependencias:**
+   ```bash
+   uv pip install -r requirements.txt
+   # O alternativamente:
+   pip install -r requirements.txt
+   ```
 
-#### 3. Instalar las dependencias requeridas
-```bash
-uv pip install -r requirements.txt
-# O con pip estándar:
-pip install -r requirements.txt
-```
-
-#### 4. Ejecutar la aplicación
-```bash
-python app/main.py
-```
-
-*Los pesos de los modelos de IA se descargarán de forma automática, progresiva y bajo demanda desde Hugging Face la primera vez que utilices cada herramienta correspondiente.*
+4. **Ejecutar la aplicación:**
+   ```bash
+   python app/main.py
+   ```
 
 ---
 
 ## 🧪 Pruebas Automatizadas
 
-TimoitaseBG cuenta con una suite integral de **75 pruebas unitarias y de integración** que validan la seguridad de hilos, los modelos de inferencia, la interfaz gráfica y las utilidades del lienzo:
+El proyecto cuenta con una suite integral de **75 pruebas unitarias y de integración**:
 
 ```bash
-# Ejecutar la suite completa de pruebas
+# Ejecutar todas las pruebas
 pytest -v
 
-# Ejecutar pruebas específicas de seguridad y modelos
+# Ejecutar pruebas específicas de estabilidad y modelos
 pytest tests/test_thread_and_resource_safety.py tests/test_sam_selection.py tests/test_yolo_detection.py tests/test_rmbg2.py -v
 ```
 
@@ -258,51 +244,39 @@ pytest tests/test_thread_and_resource_safety.py tests/test_sam_selection.py test
 
 ## 🛠️ Compilación a Ejecutable (.exe)
 
-Para compilar la aplicación en un ejecutable binario autónomo para Windows mediante **PyInstaller**:
+Para generar la distribución binaria independiente para Windows mediante **PyInstaller**:
 
 ```bash
 uv pip install pyinstaller
 pyinstaller build.spec
 ```
-El ejecutable resultante se generará en la carpeta `dist/TimoitaseBG/TimoitaseBG.exe`.
+
+El binario resultante se ubicará en: `dist/TimoitaseBG/TimoitaseBG.exe`.
 
 ---
 
-## 📚 Créditos, Licencias de Modelos y Citas Académicas
+## 📚 Atribución, Licencias de Modelos y Citas Académicas
 
-TimoitaseBG hace uso de modelos de aprendizaje profundo y librerías de código abierto desarrollados por la comunidad de investigación internacional. En cumplimiento de las licencias de software y buenas prácticas de atribución académica, se reconoce y acredita formalmente a los autores originales:
+TimoitaseBG hace uso de modelos y librerías de código abierto de la comunidad científica e industrial:
 
-### Tabla de Atribución de Modelos
+### Tabla de Atribución de Componentes
 
-| Modelo / Componente | Autores / Organización | Licencia | Propósito en TimoitaseBG | Referencia / Repositorio |
+| Componente / Modelo | Autores / Organización | Licencia Original | Función en TimoitaseBG | Referencia |
 | :--- | :--- | :--- | :--- | :--- |
-| **RMBG-2.0** | [BRIA AI](https://bria.ai/) & ZhengPeng7 | [CC BY-NC 4.0](https://creativecommons.org/licenses/by-nc/4.0/) | Eliminación de fondo de máxima resolución (1024×1024) y pelo fino | [Hugging Face](https://huggingface.co/briaai/RMBG-2.0) • [Paper](https://arxiv.org/abs/2411.14444) |
-| **BiRefNet** | Zheng et al. (BiRefNet) | [Apache 2.0](https://www.apache.org/licenses/LICENSE-2.0) | Arquitectura de segmentación dicotómica bilateral | [GitHub](https://github.com/ZhengPeng7/BiRefNet) |
-| **MobileSAM** | Zhang et al. (Kyung Hee Univ.) | [Apache 2.0](https://www.apache.org/licenses/LICENSE-2.0) | Varita mágica por IA interactiva en tiempo real | [GitHub](https://github.com/ChaoningZhang/MobileSAM) • [Acly ONNX](https://huggingface.co/Acly/MobileSAM) |
-| **Segment Anything (SAM)** | Meta AI Research | [Apache 2.0](https://www.apache.org/licenses/LICENSE-2.0) | Modelo fundacional de segmentación de objetos | [GitHub](https://github.com/facebookresearch/segment-anything) |
-| **YOLO11-seg** | Ultralytics Inc. (Glenn Jocher et al.) | [AGPL-3.0](https://github.com/ultralytics/ultralytics/blob/main/LICENSE) | Detección y segmentación multiobjeto instantánea | [Ultralytics](https://github.com/ultralytics/ultralytics) |
-| **InSPyReNet** | Kim et al. (POSTECH) | [MIT](https://opensource.org/licenses/MIT) | Eliminación de fondo con pirámide inversa de salience | [GitHub](https://github.com/TaehunKim/InSPyReNet) |
-| **Real-ESRGAN** | Wang et al. (ARC Lab, Tencent PCG) | [BSD 3-Clause](https://opensource.org/licenses/BSD-3-Clause) | Super-resolución, denoise y restauración de anime | [GitHub](https://github.com/xinntao/Real-ESRGAN) |
-| **IS-Net (DIS5K)** | Qin et al. (DIS5K) | [Apache 2.0](https://www.apache.org/licenses/LICENSE-2.0) | Modelo de segmentación especializado en arte 2D | [GitHub](https://github.com/xuebinqin/DIS) |
-| **U^2-Net** | Qin et al. (Univ. of Alberta) | [Apache 2.0](https://www.apache.org/licenses/LICENSE-2.0) | Segmentación de silueta humana y ropa | [GitHub](https://github.com/xuebinqin/U-2-Net) |
-| **ViTMatte** | Yao et al. (HUST & Kuaishou) | [Apache 2.0](https://www.apache.org/licenses/LICENSE-2.0) | Refinamiento de bordes y matting con Vision Transformers | [GitHub](https://github.com/hustvl/ViTMatte) |
-| **Lucide Icons** | Lucide Project | [ISC License](https://lucide.dev/license) | Iconografía vectorial SVG escalable | [Lucide.dev](https://lucide.dev/) |
-| **PySide6 / Qt** | The Qt Company | [LGPLv3](https://www.gnu.org/licenses/lgpl-3.0.html) | Interfaz gráfica nativa multiplataforma | [Qt.io](https://www.qt.io/) |
+| **RMBG-2.0** | BRIA AI & ZhengPeng7 | CC BY-NC 4.0 | Eliminación de fondo a 1024×1024 | Hugging Face / Paper |
+| **BiRefNet** | Zheng et al. | Apache 2.0 | Arquitectura de segmentación dicotómica | GitHub |
+| **MobileSAM** | Zhang et al. (Kyung Hee Univ.) | Apache 2.0 | Varita mágica por IA | GitHub |
+| **Segment Anything (SAM)** | Meta AI Research | Apache 2.0 | Modelo base de segmentación | GitHub |
+| **YOLO11-seg** | Ultralytics Inc. | AGPL-3.0 | Detección y segmentación multiobjeto | GitHub |
+| **InSPyReNet** | Kim et al. (POSTECH) | MIT | Eliminación de fondo con pirámide inversa | GitHub |
+| **Real-ESRGAN** | Wang et al. (Tencent PCG) | BSD 3-Clause | Super-resolución y restauración | GitHub |
+| **IS-Net (DIS5K)** | Qin et al. | Apache 2.0 | Segmentación para ilustración 2D | GitHub |
+| **U^2-Net** | Qin et al. (Univ. of Alberta) | Apache 2.0 | Segmentación humana y de prendas | GitHub |
+| **ViTMatte** | Yao et al. (HUST & Kuaishou) | Apache 2.0 | Refinamiento de bordes con Transformers | GitHub |
+| **Lucide Icons** | Lucide Project | ISC License | Iconografía vectorial SVG | Lucide.dev |
+| **PySide6 / Qt** | The Qt Company | LGPLv3 | Interfaz gráfica nativa | Qt.io |
 
----
-
-### Aviso Legal sobre el Uso de Modelos
-
-> [!IMPORTANT]
-> - **BRIA RMBG-2.0**: Distribuido bajo licencia **Creative Commons Attribution-NonCommercial 4.0 (CC BY-NC 4.0)**. Está permitido su uso personal, educativo y de investigación. Para aplicaciones comerciales directas, se debe obtener una licencia comercial correspondiente con [BRIA AI](https://bria.ai/).
-> - **Ultralytics YOLO11**: Distribuido bajo licencia **GNU Affero General Public License v3.0 (AGPL-3.0)**. Ultralytics requiere que el software que integre o distribuya este modelo cumpla con las disposiciones de la licencia AGPL-3.0 o cuente con una licencia comercial de Ultralytics.
-> - **Modelos con Licencias Apache 2.0, MIT y BSD 3-Clause**: Permiten su integración manteniendo los avisos de derechos de autor y licencias originales correspondientes.
-
----
-
-### Citas Académicas
-
-Si utilizas TimoitaseBG o sus modelos integrados en proyectos académicos o de investigación, te sugerimos citar las publicaciones originales:
+### Citas Académicas (BibTeX)
 
 ```bibtex
 @article{bria_rmbg_2_0,
@@ -323,8 +297,7 @@ Si utilizas TimoitaseBG o sus modelos integrados en proyectos académicos o de i
   author={Glenn Jocher and Jing Qiu},
   title={Ultralytics YOLO11},
   version={11.0.0},
-  year={2024},
-  url={https://github.com/ultralytics/ultralytics}
+  year={2024}
 }
 
 @InProceedings{wang2021realesrgan,
@@ -353,7 +326,7 @@ Si utilizas TimoitaseBG o sus modelos integrados en proyectos académicos o de i
 
 ## 📄 Licencia del Software
 
-Este proyecto es software libre y de código abierto distribuido bajo los términos de la **Licencia Pública General Affero de GNU versión 3.0 (GNU AGPLv3)**. Consulta el archivo [LICENSE](file:///c:/Users/danie/Documents/Trabajos/Cosas/TimoitaseBG/LICENSE) para el texto completo oficial.
+Este programa es software libre y de código abierto distribuido bajo los términos de la **GNU Affero General Public License Version 3 (GNU AGPLv3)**. Para más detalles, consulte el archivo [LICENSE](LICENSE).
 
 ```text
 TimoitaseBG - Copyright (C) 2026 Eliather
@@ -369,11 +342,12 @@ MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
 GNU Affero General Public License for more details.
 
 You should have received a copy of the GNU Affero General Public License
-along with this program. If not, see <https://www.gnu.org/licenses/>.
+along with this program.
 ```
 
-### 🤝 Compatibilidad Total con el Ecosistema y Modelos de IA
-Al publicarse bajo la licencia **GNU AGPLv3**:
-- **Ultralytics YOLO11-seg**: Cumple al 100% y de forma nativa con los requerimientos de la licencia **GNU AGPL-3.0** de Ultralytics, eliminando cualquier incompatibilidad o conflicto de derechos de autor.
-- **Librerías y Modelos Permisivos**: Es plenamente compatible con las dependencias bajo **LGPLv3** (PySide6 / Qt6), **Apache 2.0** (MobileSAM, Segment Anything, IS-Net, U2-Net, ViTMatte), **BSD 3-Clause** (Real-ESRGAN) y **MIT** (InSPyReNet, ONNX Runtime, Lucide Icons).
-- **Libertad y Transparencia**: Asegura que las mejoras, optimizaciones y bifurcaciones de TimoitaseBG se mantengan como software libre, abierto y auditable para beneficio de toda la comunidad artística y tecnológica.
+### Compatibilidad con Licencias de Terceros
+
+La adopción de **GNU AGPLv3** garantiza:
+- **Cumplimiento Nativo con YOLO11-seg:** Alineación al 100% con los requerimientos de la licencia AGPL-3.0 de Ultralytics.
+- **Integración con Componentes Permisivos:** Compatibilidad total con librerías bajo **LGPLv3** (PySide6 / Qt6), **Apache 2.0** (MobileSAM, SAM, IS-Net, U2-Net, ViTMatte), **BSD 3-Clause** (Real-ESRGAN) e **ISC** (Lucide Icons).
+- **Software Libre y Transparente:** Asegura que cualquier derivado o mejora conserve las libertades de auditoría y distribución abierta para la comunidad.
