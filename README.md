@@ -7,6 +7,7 @@
   <img src="https://img.shields.io/badge/Inferencia-ONNX%20Runtime%20%7C%20DirectML-0078D4?style=for-the-badge&logo=windows&logoColor=white" alt="DirectML">
   <img src="https://img.shields.io/badge/Aceleraci%C3%B3n-GPU%20%26%20CPU-059669?style=for-the-badge" alt="Aceleración">
   <img src="https://img.shields.io/badge/Tests-75%2F75%20Pasados-10B981?style=for-the-badge" alt="Tests">
+  <img src="https://img.shields.io/badge/Licencia-GNU%20AGPLv3-326CE5?style=for-the-badge&logo=gnu&logoColor=white" alt="Licencia GNU AGPLv3">
   <img src="https://img.shields.io/badge/Privacidad-100%25%20Local%20%26%20Offline-6366F1?style=for-the-badge" alt="Privacidad">
 </p>
 
@@ -352,6 +353,27 @@ Si utilizas TimoitaseBG o sus modelos integrados en proyectos académicos o de i
 
 ## 📄 Licencia del Software
 
-**TimoitaseBG**: Copyright © 2026 **Eliather**. Todos los derechos reservados.
+Este proyecto es software libre y de código abierto distribuido bajo los términos de la **Licencia Pública General Affero de GNU versión 3.0 (GNU AGPLv3)**. Consulta el archivo [LICENSE](file:///c:/Users/danie/Documents/Trabajos/Cosas/TimoitaseBG/LICENSE) para el texto completo oficial.
 
-El código fuente principal, la arquitectura de la interfaz y las extensiones desarrolladas en este repositorio están protegidos. El uso, copia o redistribución de este software debe respetar los términos de las licencias de las dependencias y modelos de terceros detallados en la sección de [Créditos](#-créditos-licencias-de-modelos-y-citas-académicas).
+```text
+TimoitaseBG - Copyright (C) 2026 Eliather
+
+This program is free software: you can redistribute it and/or modify
+it under the terms of the GNU Affero General Public License as published by
+the Free Software Foundation, either version 3 of the License, or
+(at your option) any later version.
+
+This program is distributed in the hope that it will be useful,
+but WITHOUT ANY WARRANTY; without even the implied warranty of
+MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+GNU Affero General Public License for more details.
+
+You should have received a copy of the GNU Affero General Public License
+along with this program. If not, see <https://www.gnu.org/licenses/>.
+```
+
+### 🤝 Compatibilidad Total con el Ecosistema y Modelos de IA
+Al publicarse bajo la licencia **GNU AGPLv3**:
+- **Ultralytics YOLO11-seg**: Cumple al 100% y de forma nativa con los requerimientos de la licencia **GNU AGPL-3.0** de Ultralytics, eliminando cualquier incompatibilidad o conflicto de derechos de autor.
+- **Librerías y Modelos Permisivos**: Es plenamente compatible con las dependencias bajo **LGPLv3** (PySide6 / Qt6), **Apache 2.0** (MobileSAM, Segment Anything, IS-Net, U2-Net, ViTMatte), **BSD 3-Clause** (Real-ESRGAN) y **MIT** (InSPyReNet, ONNX Runtime, Lucide Icons).
+- **Libertad y Transparencia**: Asegura que las mejoras, optimizaciones y bifurcaciones de TimoitaseBG se mantengan como software libre, abierto y auditable para beneficio de toda la comunidad artística y tecnológica.
