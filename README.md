@@ -1,17 +1,20 @@
 # TimoitaseBG
 
 <p align="center">
-  <a href="https://github.com/Eliather/TimoitaseBG/releases">
-    <img src="https://img.shields.io/badge/Versi%C3%B3n-v1.0.0-FF4F79?style=for-the-badge&logo=github" alt="Versión">
-  </a>
-  <a href="https://github.com/Eliather/TimoitaseBG/releases">
-    <img src="https://img.shields.io/badge/Descargas-100%2B-28A745?style=for-the-badge&logo=github" alt="Descargas">
+  <a href="https://github.com/Eliather/TimoitaseBG/tags">
+    <img src="https://img.shields.io/github/v/tag/Eliather/TimoitaseBG?style=for-the-badge&logo=github&label=Versi%C3%B3n&color=FF4F79&sort=semver" alt="Versión">
   </a>
   <a href="https://github.com/Eliather/TimoitaseBG/stargazers">
-    <img src="https://img.shields.io/badge/Estrellas-50%2B-FFD700?style=for-the-badge&logo=github" alt="Estrellas">
+    <img src="https://img.shields.io/github/stars/Eliather/TimoitaseBG?style=for-the-badge&logo=github&label=Estrellas&color=FFD700" alt="Estrellas">
   </a>
-  <a href="https://www.gnu.org/licenses/agpl-3.0.html">
-    <img src="https://img.shields.io/badge/Licencia-GNU%20AGPLv3-326CE5?style=for-the-badge&logo=gnu&logoColor=white" alt="Licencia GNU AGPLv3">
+  <a href="https://github.com/Eliather/TimoitaseBG/network/members">
+    <img src="https://img.shields.io/github/forks/Eliather/TimoitaseBG?style=for-the-badge&logo=github&label=Forks&color=28A745" alt="Forks">
+  </a>
+  <a href="https://github.com/Eliather/TimoitaseBG/blob/main/LICENSE">
+    <img src="https://img.shields.io/github/license/Eliather/TimoitaseBG?style=for-the-badge&logo=gnu&logoColor=white&label=Licencia&color=326CE5" alt="Licencia GNU AGPLv3">
+  </a>
+  <a href="https://github.com/Eliather/TimoitaseBG/commits/main">
+    <img src="https://img.shields.io/github/last-commit/Eliather/TimoitaseBG?style=for-the-badge&logo=git&logoColor=white&label=%C3%9Altimo%20Commit&color=6366F1" alt="Último Commit">
   </a>
 </p>
 
