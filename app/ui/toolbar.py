@@ -233,29 +233,62 @@ class GpuToggle(QWidget):
     def _update_presentation(self):
         if self._is_blocked:
             self.lbl_icon.setPixmap(get_pixmap("alert-triangle", size=14, color="#DC2626"))
-            self.lbl_text.setText("CPU")
+            self.lbl_text.setText("CPU (Seguro)")
             self.lbl_text.setStyleSheet("color: #DC2626; font-weight: 700; font-size: 11px; border: none; background: transparent;")
+            self.setStyleSheet("""
+                #gpuToggleWidget {
+                    background-color: #FEF2F2;
+                    border: 1px solid #FECACA;
+                    border-radius: 14px;
+                    padding: 0 4px;
+                }
+            """)
             self.setToolTip("GPU bloqueada por fallo previo. La app funciona en CPU de forma segura.")
         elif not self.switch.isEnabled():
             self.lbl_icon.setPixmap(get_pixmap("cpu", size=14, color="#94A3B8"))
             self.lbl_text.setText("CPU")
             self.lbl_text.setStyleSheet("color: #94A3B8; font-weight: 600; font-size: 11px; border: none; background: transparent;")
+            self.setStyleSheet("""
+                #gpuToggleWidget {
+                    background-color: #F1F5F9;
+                    border: 1px solid #E2E8F0;
+                    border-radius: 14px;
+                    padding: 0 4px;
+                }
+            """)
             self.setToolTip("GPU no disponible en este equipo. Modo CPU activo.")
         elif self.switch.isChecked():
             self.lbl_icon.setPixmap(get_pixmap("zap", size=14, color="#059669"))
-            self.lbl_text.setText("GPU")
+            self.lbl_text.setText("⚡ GPU Activa")
             self.lbl_text.setStyleSheet("color: #059669; font-weight: 700; font-size: 11px; border: none; background: transparent;")
+            self.setStyleSheet("""
+                #gpuToggleWidget {
+                    background-color: #ECFDF5;
+                    border: 1px solid #A7F3D0;
+                    border-radius: 14px;
+                    padding: 0 4px;
+                }
+            """)
             try:
-                from app.config import get_gpu_name
-                name = get_gpu_name() or "DirectML"
-                clean = name.replace("NVIDIA ", "").replace(" Laptop GPU", "")
+                from app.config import get_gpu_name, detect_device
+                detected = detect_device()
+                name = get_gpu_name() or (detected if "GPU" in detected else "GPU")
+                clean = name.replace("NVIDIA ", "").replace("AMD ", "").replace(" Laptop GPU", "").replace("Advanced Micro Devices, Inc. ", "")
                 self.setToolTip(f"Aceleración GPU activa ({clean}). Clic para pasar a CPU.")
             except Exception:
                 self.setToolTip("Aceleración GPU activa. Clic para pasar a CPU.")
         else:
             self.lbl_icon.setPixmap(get_pixmap("cpu", size=14, color="#64748B"))
-            self.lbl_text.setText("CPU")
+            self.lbl_text.setText("CPU Activo")
             self.lbl_text.setStyleSheet("color: #64748B; font-weight: 600; font-size: 11px; border: none; background: transparent;")
+            self.setStyleSheet("""
+                #gpuToggleWidget {
+                    background-color: #F1F5F9;
+                    border: 1px solid #CBD5E1;
+                    border-radius: 14px;
+                    padding: 0 4px;
+                }
+            """)
             self.setToolTip("Modo CPU activo (0 MB VRAM). Clic para activar GPU.")
 
 
@@ -331,6 +364,7 @@ class ToolSidebar(QWidget):
 
     def __init__(self, parent=None):
         super().__init__(parent)
+        self.setObjectName("SidePanel")
         self.setFixedWidth(380)
         self._selected_is_none: bool = False
         self._selected_color_rgb: Tuple[int, int, int] = (255, 255, 255)
@@ -365,10 +399,10 @@ class ToolSidebar(QWidget):
         text_layout.setSpacing(2)
 
         title_label = QLabel(tr("sidebar_title"))
-        title_label.setObjectName("sidebarHeader")
+        title_label.setObjectName("SectionTitle")
         title_label.setStyleSheet("background: transparent;")
         subtitle_label = QLabel(tr("sidebar_subtitle"))
-        subtitle_label.setObjectName("sidebarSubheader")
+        subtitle_label.setObjectName("SubTitle")
         subtitle_label.setStyleSheet("background: transparent;")
         text_layout.addWidget(title_label)
         text_layout.addWidget(subtitle_label)
@@ -392,37 +426,37 @@ class ToolSidebar(QWidget):
         self.tool_tabs_row.setSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Fixed)
         tabs_layout = QHBoxLayout(self.tool_tabs_row)
         tabs_layout.setContentsMargins(16, 2, 16, 8)
-        tabs_layout.setSpacing(8)
+        tabs_layout.setSpacing(6)
 
         self.rail_group = QButtonGroup(self)
         self.rail_group.setExclusive(True)
 
         self.btn_rail_bg = QPushButton(tr("sidebar_tab_bg"))
-        self.btn_rail_bg.setObjectName("toolRailButton")
+        self.btn_rail_bg.setObjectName("ToolTab")
         self.btn_rail_bg.setCheckable(True)
         self.btn_rail_bg.setChecked(True)
-        self.btn_rail_bg.setFixedHeight(58)
+        self.btn_rail_bg.setFixedHeight(44)
         self.rail_group.addButton(self.btn_rail_bg, 0)
         tabs_layout.addWidget(self.btn_rail_bg)
 
         self.btn_rail_restore = QPushButton(tr("sidebar_tab_restore"))
-        self.btn_rail_restore.setObjectName("toolRailButton")
+        self.btn_rail_restore.setObjectName("ToolTab")
         self.btn_rail_restore.setCheckable(True)
-        self.btn_rail_restore.setFixedHeight(58)
+        self.btn_rail_restore.setFixedHeight(44)
         self.rail_group.addButton(self.btn_rail_restore, 1)
         tabs_layout.addWidget(self.btn_rail_restore)
 
         self.btn_rail_brush = QPushButton(tr("sidebar_tab_brush"))
-        self.btn_rail_brush.setObjectName("toolRailButton")
+        self.btn_rail_brush.setObjectName("ToolTab")
         self.btn_rail_brush.setCheckable(True)
-        self.btn_rail_brush.setFixedHeight(58)
+        self.btn_rail_brush.setFixedHeight(44)
         self.rail_group.addButton(self.btn_rail_brush, 2)
         tabs_layout.addWidget(self.btn_rail_brush)
 
         self.btn_rail_batch = QPushButton(tr("sidebar_tab_batch"))
-        self.btn_rail_batch.setObjectName("toolRailButton")
+        self.btn_rail_batch.setObjectName("ToolTab")
         self.btn_rail_batch.setCheckable(True)
-        self.btn_rail_batch.setFixedHeight(58)
+        self.btn_rail_batch.setFixedHeight(44)
         self.rail_group.addButton(self.btn_rail_batch, 3)
         tabs_layout.addWidget(self.btn_rail_batch)
 
@@ -510,6 +544,7 @@ class ToolSidebar(QWidget):
             self.btn_autocrop.setIcon(get_icon("crop", color=fg_color, active_color=accent_color, disabled_color=dis_color, size=16))
             self.btn_autocrop.setIconSize(QSize(16, 16))
         if hasattr(self, "btn_swatch_custom"):
+            self.btn_swatch_custom.setText("")
             self.btn_swatch_custom.setIcon(get_icon("palette", color=fg_color, active_color=accent_color, disabled_color=dis_color, size=18))
             self.btn_swatch_custom.setIconSize(QSize(18, 18))
 
@@ -611,39 +646,48 @@ class ToolSidebar(QWidget):
     def _setup_bg_panel(self):
         layout = QVBoxLayout(self.panel_bg)
         layout.setContentsMargins(0, 0, 0, 0)
-        layout.setSpacing(10)
+        layout.setSpacing(12)
+
+        # --- TARJETA 1: Segmentación ---
+        self.seg_card = QFrame()
+        self.seg_card.setObjectName("Card")
+        seg_layout = QVBoxLayout(self.seg_card)
+        seg_layout.setContentsMargins(14, 14, 14, 14)
+        seg_layout.setSpacing(10)
 
         header_model = self._create_section_header(
             tr("header_model"),
             tr("model_desc")
         )
-        layout.addLayout(header_model)
+        seg_layout.addLayout(header_model)
 
         self.combo_bg_model = QComboBox()
         self.combo_bg_model.setFixedHeight(38)
         for model_id, model_label in BG_REMOVER_MODELS:
             self.combo_bg_model.addItem(tr(f"model_{model_id}"), model_id)
         self.combo_bg_model.setCurrentIndex(0)
-        layout.addWidget(self.combo_bg_model)
+        seg_layout.addWidget(self.combo_bg_model)
 
         self.chk_clothing_protection = QCheckBox(tr("chk_clothing"))
         self.chk_clothing_protection.setChecked(True)
         self.chk_clothing_protection.setToolTip(tr("chk_clothing_tooltip"))
-        layout.addWidget(self.chk_clothing_protection)
+        seg_layout.addWidget(self.chk_clothing_protection)
+
+        seg_layout.addSpacing(4)
 
         self.btn_remove_bg = QPushButton(tr("btn_remove_now"))
-        self.btn_remove_bg.setObjectName("primaryActionButton")
+        self.btn_remove_bg.setObjectName("ActionBtn")
         self.btn_remove_bg.setFixedHeight(40)
         self.btn_remove_bg.clicked.connect(self._on_remove_bg_clicked)
-        layout.addWidget(self.btn_remove_bg)
+        seg_layout.addWidget(self.btn_remove_bg)
 
-        # ---------------------------------------------------------
-        # Sección: Detección Multiobjeto con IA (YOLO11-seg)
-        # ---------------------------------------------------------
+        layout.addWidget(self.seg_card)
+
+        # --- TARJETA 2: Detección YOLO11 ---
         self.box_subjects = QGroupBox(tr("header_detected_subjects"))
-        self.box_subjects.setObjectName("detectedSubjectsBox")
+        self.box_subjects.setObjectName("Card")
         box_subj_layout = QVBoxLayout(self.box_subjects)
-        box_subj_layout.setContentsMargins(10, 12, 10, 10)
+        box_subj_layout.setContentsMargins(14, 14, 14, 14)
         box_subj_layout.setSpacing(8)
 
         self.btn_detect_subjects = QPushButton(tr("btn_detect_subjects"))
@@ -653,7 +697,7 @@ class ToolSidebar(QWidget):
         box_subj_layout.addWidget(self.btn_detect_subjects)
 
         self.lbl_detect_status = QLabel(tr("detect_status_idle"))
-        self.lbl_detect_status.setObjectName("shortcutDesc")
+        self.lbl_detect_status.setObjectName("SubTitle")
         self.lbl_detect_status.setWordWrap(True)
         box_subj_layout.addWidget(self.lbl_detect_status)
 
@@ -687,16 +731,9 @@ class ToolSidebar(QWidget):
 
         layout.addWidget(self.box_subjects)
 
-        # ---------------------------------------------------------
-        # Sección: Recorte Automático al Contenido (Auto-crop)
-        # ---------------------------------------------------------
-        sep1 = QFrame()
-        sep1.setObjectName("panelSeparator")
-        sep1.setFrameShape(QFrame.Shape.HLine)
-        layout.addWidget(sep1)
-
+        # --- SECCIÓN: Ajuste de Lienzo y Fondo ---
         lbl_crop = QLabel(tr("header_crop"))
-        lbl_crop.setObjectName("fieldLabel")
+        lbl_crop.setObjectName("FieldLabel")
         layout.addWidget(lbl_crop)
 
         self.btn_autocrop = QPushButton(tr("btn_autocrop_now"))
@@ -707,21 +744,13 @@ class ToolSidebar(QWidget):
         self.btn_autocrop.clicked.connect(self.autoCropRequested.emit)
         layout.addWidget(self.btn_autocrop)
 
-        # ---------------------------------------------------------
-        # Sección: Reemplazar Fondo por Color Sólido
-        # ---------------------------------------------------------
-        sep2 = QFrame()
-        sep2.setObjectName("panelSeparator")
-        sep2.setFrameShape(QFrame.Shape.HLine)
-        layout.addWidget(sep2)
-
         lbl_bg_section = QLabel(tr("header_bg"))
-        lbl_bg_section.setObjectName("fieldLabel")
+        lbl_bg_section.setObjectName("FieldLabel")
         layout.addWidget(lbl_bg_section)
 
         # Fila de muestras de color (Swatches)
         swatches_row = QHBoxLayout()
-        swatches_row.setSpacing(6)
+        swatches_row.setSpacing(8)
 
         self.swatch_group = QButtonGroup(self)
         self.swatch_group.setExclusive(True)
@@ -730,7 +759,7 @@ class ToolSidebar(QWidget):
         self.btn_swatch_none = QPushButton("∅")
         self.btn_swatch_none.setObjectName("swatchNoneButton")
         self.btn_swatch_none.setCheckable(True)
-        self.btn_swatch_none.setFixedSize(36, 32)
+        self.btn_swatch_none.setFixedSize(36, 36)
         self.btn_swatch_none.setToolTip(tr("swatch_transparent"))
         self.btn_swatch_none.setEnabled(False)
         self.swatch_group.addButton(self.btn_swatch_none)
@@ -741,7 +770,7 @@ class ToolSidebar(QWidget):
         self.btn_swatch_white.setObjectName("swatchWhiteButton")
         self.btn_swatch_white.setCheckable(True)
         self.btn_swatch_white.setChecked(True)
-        self.btn_swatch_white.setFixedSize(36, 32)
+        self.btn_swatch_white.setFixedSize(36, 36)
         self.btn_swatch_white.setToolTip(tr("swatch_white"))
         self.btn_swatch_white.setEnabled(False)
         self.swatch_group.addButton(self.btn_swatch_white)
@@ -751,7 +780,7 @@ class ToolSidebar(QWidget):
         self.btn_swatch_black = QPushButton()
         self.btn_swatch_black.setObjectName("swatchBlackButton")
         self.btn_swatch_black.setCheckable(True)
-        self.btn_swatch_black.setFixedSize(36, 32)
+        self.btn_swatch_black.setFixedSize(36, 36)
         self.btn_swatch_black.setToolTip(tr("swatch_black"))
         self.btn_swatch_black.setEnabled(False)
         self.swatch_group.addButton(self.btn_swatch_black)
@@ -761,7 +790,7 @@ class ToolSidebar(QWidget):
         self.btn_swatch_gray = QPushButton()
         self.btn_swatch_gray.setObjectName("swatchGrayButton")
         self.btn_swatch_gray.setCheckable(True)
-        self.btn_swatch_gray.setFixedSize(36, 32)
+        self.btn_swatch_gray.setFixedSize(36, 36)
         self.btn_swatch_gray.setToolTip(tr("swatch_gray"))
         self.btn_swatch_gray.setEnabled(False)
         self.swatch_group.addButton(self.btn_swatch_gray)
@@ -771,7 +800,7 @@ class ToolSidebar(QWidget):
         self.btn_swatch_custom = QPushButton()
         self.btn_swatch_custom.setObjectName("swatchCustomButton")
         self.btn_swatch_custom.setCheckable(True)
-        self.btn_swatch_custom.setFixedSize(36, 32)
+        self.btn_swatch_custom.setFixedSize(36, 36)
         self.btn_swatch_custom.setToolTip(tr("swatch_custom"))
         self.btn_swatch_custom.setEnabled(False)
         self.swatch_group.addButton(self.btn_swatch_custom)
@@ -816,30 +845,39 @@ class ToolSidebar(QWidget):
         layout.setContentsMargins(0, 0, 0, 0)
         layout.setSpacing(10)
 
+        restore_card = QFrame()
+        restore_card.setObjectName("Card")
+        res_layout = QVBoxLayout(restore_card)
+        res_layout.setContentsMargins(14, 14, 14, 14)
+        res_layout.setSpacing(10)
+
         header_scale = self._create_section_header(
             tr("header_scale"),
             tr("scale_desc")
         )
-        layout.addLayout(header_scale)
+        res_layout.addLayout(header_scale)
 
         self.combo_restore_scale = QComboBox()
         self.combo_restore_scale.setFixedHeight(38)
         for scale_id, scale_label in RESTORE_SCALES:
             self.combo_restore_scale.addItem(tr(f"scale_{scale_id}"), scale_id)
         self.combo_restore_scale.setCurrentIndex(0)
-        layout.addWidget(self.combo_restore_scale)
+        res_layout.addWidget(self.combo_restore_scale)
 
         self.chk_tiling = QCheckBox(tr("chk_tiling"))
         self.chk_tiling.setChecked(True)
         self.chk_tiling.setToolTip(tr("chk_tiling_tooltip"))
-        layout.addWidget(self.chk_tiling)
+        res_layout.addWidget(self.chk_tiling)
+
+        res_layout.addSpacing(4)
 
         self.btn_restore = QPushButton(tr("btn_scale_now"))
-        self.btn_restore.setObjectName("primaryActionButton")
+        self.btn_restore.setObjectName("ActionBtn")
         self.btn_restore.setFixedHeight(40)
         self.btn_restore.clicked.connect(self._on_restore_clicked)
-        layout.addWidget(self.btn_restore)
+        res_layout.addWidget(self.btn_restore)
 
+        layout.addWidget(restore_card)
         layout.addStretch()
 
     # -------------------------------------------------------------
@@ -1175,62 +1213,66 @@ class ToolSidebar(QWidget):
         layout.setContentsMargins(0, 0, 0, 0)
         layout.setSpacing(10)
 
+        batch_card = QFrame()
+        batch_card.setObjectName("Card")
+        b_layout = QVBoxLayout(batch_card)
+        b_layout.setContentsMargins(14, 14, 14, 14)
+        b_layout.setSpacing(10)
+
         header_batch = self._create_section_header(
             tr("header_batch"),
             tr("batch_desc")
         )
-        layout.addLayout(header_batch)
+        b_layout.addLayout(header_batch)
 
         # Seleccionar carpeta de entrada
         self.btn_batch_input = QPushButton(tr("btn_batch_input"))
         self.btn_batch_input.setFixedHeight(36)
         self.btn_batch_input.clicked.connect(self._on_batch_input_clicked)
-        layout.addWidget(self.btn_batch_input)
+        b_layout.addWidget(self.btn_batch_input)
         
         self.lbl_batch_input = QLabel(tr("batch_no_folder"))
-        self.lbl_batch_input.setObjectName("shortcutDesc")
+        self.lbl_batch_input.setObjectName("SubTitle")
         self.lbl_batch_input.setWordWrap(True)
-        layout.addWidget(self.lbl_batch_input)
+        b_layout.addWidget(self.lbl_batch_input)
 
         # Seleccionar carpeta de salida
         self.btn_batch_output = QPushButton(tr("btn_batch_output"))
         self.btn_batch_output.setFixedHeight(36)
         self.btn_batch_output.clicked.connect(self._on_batch_output_clicked)
-        layout.addWidget(self.btn_batch_output)
+        b_layout.addWidget(self.btn_batch_output)
 
         self.lbl_batch_output = QLabel(tr("batch_no_folder"))
-        self.lbl_batch_output.setObjectName("shortcutDesc")
+        self.lbl_batch_output.setObjectName("SubTitle")
         self.lbl_batch_output.setWordWrap(True)
-        layout.addWidget(self.lbl_batch_output)
-
-        sep1 = QFrame()
-        sep1.setObjectName("panelSeparator")
-        sep1.setFrameShape(QFrame.Shape.HLine)
-        layout.addWidget(sep1)
+        b_layout.addWidget(self.lbl_batch_output)
 
         # Opciones de modelo
         lbl_model = QLabel(tr("lbl_batch_model"))
-        lbl_model.setObjectName("fieldLabel")
-        layout.addWidget(lbl_model)
+        lbl_model.setObjectName("FieldLabel")
+        b_layout.addWidget(lbl_model)
 
         self.combo_batch_model = QComboBox()
         self.combo_batch_model.setFixedHeight(38)
         for model_id, model_label in BG_REMOVER_MODELS:
             self.combo_batch_model.addItem(tr(f"model_{model_id}"), model_id)
-        layout.addWidget(self.combo_batch_model)
+        b_layout.addWidget(self.combo_batch_model)
 
         self.chk_batch_clothing = QCheckBox(tr("chk_batch_clothing"))
         self.chk_batch_clothing.setChecked(True)
-        layout.addWidget(self.chk_batch_clothing)
+        b_layout.addWidget(self.chk_batch_clothing)
+
+        b_layout.addSpacing(4)
 
         # Botón Iniciar
         self.btn_run_batch = QPushButton(tr("btn_run_batch"))
-        self.btn_run_batch.setObjectName("primaryActionButton")
+        self.btn_run_batch.setObjectName("ActionBtn")
         self.btn_run_batch.setFixedHeight(40)
         self.btn_run_batch.setEnabled(False)
         self.btn_run_batch.clicked.connect(self._on_run_batch_clicked)
-        layout.addWidget(self.btn_run_batch)
+        b_layout.addWidget(self.btn_run_batch)
 
+        layout.addWidget(batch_card)
         layout.addStretch()
 
         self._batch_input_dir = ""

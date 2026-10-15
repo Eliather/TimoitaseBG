@@ -5,7 +5,7 @@ from typing import Optional, Tuple
 from pathlib import Path
 from PIL import Image
 
-from PySide6.QtCore import Qt, QSize, Signal, Slot
+from PySide6.QtCore import Qt, QSize, Signal, Slot, QTimer
 from PySide6.QtGui import QIcon, QKeySequence, QShortcut, QAction, QGuiApplication
 from PySide6.QtWidgets import (
     QComboBox,
@@ -38,7 +38,7 @@ import numpy as np
 import logging
 
 logger = logging.getLogger("TimoitaseBG.MainWindow")
-from app.core.image_state import ImageState
+from app.core.image_state import ImageState, SequenceSession
 from app.core.image_utils import qimage_to_pil, autocrop_image, apply_solid_background
 from app.core.bg_remover import get_bg_remover
 from app.core.restorer import get_image_restorer
@@ -167,6 +167,11 @@ class MainWindow(QMainWindow):
         self.image_state = ImageState()
         self.current_filepath: Optional[Path] = None
 
+        # Soporte para secuencias GIF animadas con edición por fotograma (SequenceSession)
+        self.sequence_session: Optional[SequenceSession] = None
+        self.gif_timer = QTimer(self)
+        self.gif_timer.timeout.connect(self._on_gif_timer_tick)
+
         # Dispositivo detectado
         self.device = detect_device()
 
@@ -267,6 +272,8 @@ class MainWindow(QMainWindow):
 
         # Canvas (texto central cuando no hay imagen)
         if hasattr(self, "canvas"):
+            if hasattr(self.canvas, "retranslate_ui"):
+                self.canvas.retranslate_ui()
             self.canvas.update()
 
     def _load_stylesheet(self):
@@ -298,11 +305,11 @@ class MainWindow(QMainWindow):
             self.btn_theme.setText("")
 
         if hasattr(self, "btn_open"):
-            self.btn_open.setIcon(get_icon("folder-open", color=fg_color, active_color=accent_color, disabled_color=dis_color, size=16))
+            self.btn_open.setIcon(get_icon("folder-open", color="#FFFFFF", active_color="#FFFFFF", disabled_color="#FECDD3", size=16))
             self.btn_open.setIconSize(QSize(16, 16))
 
         if hasattr(self, "btn_save"):
-            self.btn_save.setIcon(get_icon("save", color=fg_color, active_color=accent_color, disabled_color=dis_color, size=16))
+            self.btn_save.setIcon(get_icon("save", color="#FFFFFF", active_color="#FFFFFF", disabled_color="#FECDD3", size=16))
             self.btn_save.setIconSize(QSize(16, 16))
 
         if hasattr(self, "btn_undo"):
@@ -348,6 +355,39 @@ class MainWindow(QMainWindow):
 
         if hasattr(self, "sidebar") and hasattr(self.sidebar, "update_theme_icons"):
             self.sidebar.update_theme_icons(self.is_dark_theme)
+
+        if hasattr(self, "canvas") and hasattr(self.canvas, "update_theme"):
+            self.canvas.update_theme(self.is_dark_theme)
+
+        if hasattr(self, "version_badge"):
+            if self.is_dark_theme:
+                self.version_badge.setStyleSheet("""
+                    background-color: #334155; color: #94A3B8; 
+                    padding: 2px 6px; border-radius: 4px; font-size: 11px; font-weight: 600;
+                """)
+            else:
+                self.version_badge.setStyleSheet("""
+                    background-color: #F1F5F9; color: #64748B; 
+                    padding: 2px 6px; border-radius: 4px; font-size: 11px; font-weight: 600;
+                """)
+
+        if hasattr(self, "btn_gif_first"):
+            self.btn_gif_first.setIcon(get_icon("skip-back", color=fg_color, active_color=accent_color, disabled_color=dis_color, size=15))
+            self.btn_gif_first.setIconSize(QSize(15, 15))
+        if hasattr(self, "btn_gif_prev"):
+            self.btn_gif_prev.setIcon(get_icon("chevron-left", color=fg_color, active_color=accent_color, disabled_color=dis_color, size=16))
+            self.btn_gif_prev.setIconSize(QSize(16, 16))
+        if hasattr(self, "btn_gif_play"):
+            is_active = hasattr(self, "gif_timer") and self.gif_timer.isActive()
+            icon_name = "pause" if is_active else "play"
+            self.btn_gif_play.setIcon(get_icon(icon_name, color="#FFFFFF", active_color="#FFFFFF", size=14))
+            self.btn_gif_play.setIconSize(QSize(14, 14))
+        if hasattr(self, "btn_gif_next"):
+            self.btn_gif_next.setIcon(get_icon("chevron-right", color=fg_color, active_color=accent_color, disabled_color=dis_color, size=16))
+            self.btn_gif_next.setIconSize(QSize(16, 16))
+        if hasattr(self, "btn_gif_last"):
+            self.btn_gif_last.setIcon(get_icon("skip-forward", color=fg_color, active_color=accent_color, disabled_color=dis_color, size=15))
+            self.btn_gif_last.setIconSize(QSize(15, 15))
                 
     def _init_ui(self):
         central_widget = QWidget(self)
@@ -362,6 +402,7 @@ class MainWindow(QMainWindow):
         self.canvas.maskChanged.connect(self._on_mask_changed)
         self.canvas.zoomChanged.connect(self._on_zoom_changed)
         self.canvas.fileDropped.connect(self.open_image_file)
+        self.canvas.browseRequested.connect(self.prompt_open_image)
         self.canvas.imageEditedDirectly.connect(self._on_image_edited_directly)
 
         self.sidebar = ToolSidebar()
@@ -399,13 +440,23 @@ class MainWindow(QMainWindow):
         top_bar = self._create_top_bar()
         root_layout.addWidget(top_bar)
 
-        # 3. Área central: Canvas + Sidebar
+        # 3. Área central: Canvas (con HUD de paginación GIF) + Sidebar
         main_content = QWidget()
         content_layout = QHBoxLayout(main_content)
         content_layout.setContentsMargins(0, 0, 0, 0)
         content_layout.setSpacing(0)
 
-        content_layout.addWidget(self.canvas, stretch=1)
+        canvas_container = QWidget()
+        canvas_vbox = QVBoxLayout(canvas_container)
+        canvas_vbox.setContentsMargins(0, 0, 0, 0)
+        canvas_vbox.setSpacing(0)
+        canvas_vbox.addWidget(self.canvas, stretch=1)
+
+        self.gif_bar = self._create_gif_pagination_bar()
+        self.gif_bar.setVisible(False)
+        canvas_vbox.addWidget(self.gif_bar)
+
+        content_layout.addWidget(canvas_container, stretch=1)
         content_layout.addWidget(self.sidebar)
 
         root_layout.addWidget(main_content, stretch=1)
@@ -419,32 +470,40 @@ class MainWindow(QMainWindow):
     # -------------------------------------------------------------
     def _create_top_bar(self) -> QWidget:
         top_bar = CustomTopBar(self)
-        top_bar.setObjectName("topBar")
+        top_bar.setObjectName("TopBar")
+        top_bar.setFixedHeight(58)
         layout = QHBoxLayout(top_bar)
-        layout.setContentsMargins(10, 8, 10, 8)
-        layout.setSpacing(8)
+        layout.setContentsMargins(16, 0, 16, 0)
+        layout.setSpacing(10)
 
-        # Título
-        from app.config import DEFAULT_WINDOW_TITLE
-        title_label = QLabel(DEFAULT_WINDOW_TITLE)
-        title_label.setObjectName("appNameLabel")
+        # Marca y versión
+        from app.config import APP_NAME, APP_VERSION
+        title_label = QLabel(APP_NAME)
+        title_label.setObjectName("AppTitle")
         layout.addWidget(title_label)
 
-        layout.addSpacing(12)
+        self.version_badge = QLabel(f"v{APP_VERSION}")
+        self.version_badge.setObjectName("appVersionBadge")
+        self.version_badge.setStyleSheet("""
+            background-color: #F1F5F9; color: #64748B; 
+            padding: 2px 6px; border-radius: 4px; font-size: 11px; font-weight: 600;
+        """)
+        layout.addWidget(self.version_badge, alignment=Qt.AlignmentFlag.AlignVCenter)
+
+        layout.addSpacing(6)
 
         self.btn_theme = QPushButton()
         self.btn_theme.setObjectName("compactIconButton")
-        self.btn_theme.setFixedSize(30, 30)
+        self.btn_theme.setFixedSize(34, 34)
         self.btn_theme.setToolTip(tr("tooltip_theme"))
         self.btn_theme.clicked.connect(self._toggle_theme)
         layout.addWidget(self.btn_theme)
 
-        layout.addSpacing(12)
-
         self.combo_lang = QComboBox()
         self.combo_lang.setObjectName("langSelector")
         self.combo_lang.setToolTip(tr("tooltip_lang"))
-        self.combo_lang.setFixedHeight(30)
+        self.combo_lang.setFixedHeight(34)
+        self.combo_lang.setFixedWidth(110)
         for code, name in get_available_languages():
             self.combo_lang.addItem(name, code)
         
@@ -456,27 +515,27 @@ class MainWindow(QMainWindow):
         self.combo_lang.currentIndexChanged.connect(self._on_lang_changed)
         layout.addWidget(self.combo_lang)
 
-        layout.addSpacing(12)
+        layout.addSpacing(6)
 
         # Botón Abrir Imagen
         self.btn_open = QPushButton(tr("btn_open"))
-        self.btn_open.setObjectName("actionButton")
-        self.btn_open.setFixedHeight(32)
+        self.btn_open.setObjectName("PrimaryBtn")
+        self.btn_open.setFixedHeight(34)
         self.btn_open.setToolTip(tr("tooltip_open"))
         self.btn_open.clicked.connect(self.prompt_open_image)
         layout.addWidget(self.btn_open)
 
         # Botón Guardar Como
         self.btn_save = QPushButton(tr("btn_save"))
-        self.btn_save.setObjectName("actionButton")
-        self.btn_save.setFixedHeight(32)
+        self.btn_save.setObjectName("PrimaryBtn")
+        self.btn_save.setFixedHeight(34)
         self.btn_save.setToolTip(tr("tooltip_save"))
         self.btn_save.clicked.connect(self.prompt_save_image)
         layout.addWidget(self.btn_save)
 
-        layout.addWidget(self._create_separator())
+        layout.addSpacing(4)
 
-        # Botones compactos de historial con tooltip
+        # Botones de historial
         self.btn_undo = QPushButton()
         self.btn_undo.setObjectName("compactIconButton")
         self.btn_undo.setFixedSize(34, 34)
@@ -503,50 +562,51 @@ class MainWindow(QMainWindow):
         # Controles de Zoom
         self.btn_zoom_out = QPushButton()
         self.btn_zoom_out.setObjectName("zoomButton")
-        self.btn_zoom_out.setFixedSize(30, 30)
+        self.btn_zoom_out.setFixedSize(32, 32)
         self.btn_zoom_out.setToolTip(tr("tooltip_zoom_out"))
         self.btn_zoom_out.clicked.connect(lambda: self.canvas.set_zoom_delta(1.0 / 1.2))
         layout.addWidget(self.btn_zoom_out)
 
         self.lbl_zoom = QLabel("100%")
         self.lbl_zoom.setObjectName("zoomLabel")
-        self.lbl_zoom.setFixedWidth(50)
+        self.lbl_zoom.setFixedWidth(52)
+        self.lbl_zoom.setStyleSheet("font-weight: 600; color: #475569; padding: 0 4px;")
         self.lbl_zoom.setAlignment(Qt.AlignmentFlag.AlignCenter)
         layout.addWidget(self.lbl_zoom)
 
         self.btn_zoom_in = QPushButton()
         self.btn_zoom_in.setObjectName("zoomButton")
-        self.btn_zoom_in.setFixedSize(30, 30)
+        self.btn_zoom_in.setFixedSize(32, 32)
         self.btn_zoom_in.setToolTip(tr("tooltip_zoom_in"))
         self.btn_zoom_in.clicked.connect(lambda: self.canvas.set_zoom_delta(1.2))
         layout.addWidget(self.btn_zoom_in)
 
         self.btn_fit = QPushButton(tr("btn_zoom_fit"))
         self.btn_fit.setObjectName("zoomButton")
-        self.btn_fit.setFixedHeight(30)
+        self.btn_fit.setFixedHeight(32)
         self.btn_fit.setToolTip(tr("tooltip_zoom_fit"))
         self.btn_fit.clicked.connect(self.canvas.fit_to_view)
         layout.addWidget(self.btn_fit)
 
         self.btn_zoom_100 = QPushButton("1:1")
         self.btn_zoom_100.setObjectName("zoomButton")
-        self.btn_zoom_100.setFixedHeight(30)
+        self.btn_zoom_100.setFixedHeight(32)
         self.btn_zoom_100.setToolTip(tr("tooltip_zoom_100"))
         self.btn_zoom_100.clicked.connect(self.canvas.reset_zoom_100)
         layout.addWidget(self.btn_zoom_100)
 
-        layout.addWidget(self._create_separator())
+        layout.addSpacing(6)
 
         # Botón Modo Comparar (Antes / Después con cortina)
         self.btn_compare = QPushButton(tr("btn_compare"))
-        self.btn_compare.setObjectName("actionButton")
+        self.btn_compare.setObjectName("PrimaryBtn")
         self.btn_compare.setCheckable(True)
-        self.btn_compare.setFixedHeight(32)
+        self.btn_compare.setFixedHeight(34)
         self.btn_compare.setToolTip(tr("tooltip_compare"))
         self.btn_compare.clicked.connect(self._on_toggle_compare)
         layout.addWidget(self.btn_compare)
 
-        layout.addSpacing(15)
+        layout.addSpacing(14)
 
         # Botones de ventana (estilo macOS)
         self.btn_min = QPushButton("")
@@ -576,31 +636,33 @@ class MainWindow(QMainWindow):
     # Barra Inferior de Estado
     # -------------------------------------------------------------
     def _create_status_bar(self) -> QWidget:
-        bar = QWidget()
-        bar.setObjectName("statusBar")
+        bar = QFrame()
+        bar.setObjectName("BottomBar")
+        bar.setFixedHeight(44)
         layout = QHBoxLayout(bar)
-        layout.setContentsMargins(16, 6, 16, 6)
-        layout.setSpacing(12)
+        layout.setContentsMargins(16, 0, 16, 0)
+        layout.setSpacing(10)
 
         # Botón de Atajos Rápidos (a la izquierda)
         self.btn_shortcuts = QPushButton(tr("btn_shortcuts"))
         self.btn_shortcuts.setObjectName("statusShortcutsButton")
         self.btn_shortcuts.setCursor(Qt.CursorShape.PointingHandCursor)
         self.btn_shortcuts.setToolTip(tr("tooltip_shortcuts"))
+        self.btn_shortcuts.setStyleSheet("padding: 4px 10px; font-size: 12px;")
         self.btn_shortcuts.clicked.connect(self.show_shortcuts_modal)
-        layout.addWidget(self.btn_shortcuts)
-
-        layout.addWidget(self._create_separator())
+        layout.addWidget(self.btn_shortcuts, alignment=Qt.AlignmentFlag.AlignVCenter)
 
         # Estado del documento / imagen
         self.lbl_status = QLabel(tr("status_ready"))
         self.lbl_status.setObjectName("statusText")
+        self.lbl_status.setStyleSheet("color: #64748B; font-size: 12px; margin-left: 8px; background: transparent;")
         self._current_status_i18n = ("status_ready", {})
-        layout.addWidget(self.lbl_status)
+        layout.addWidget(self.lbl_status, alignment=Qt.AlignmentFlag.AlignVCenter)
 
         self.lbl_img_info = QLabel("")
         self.lbl_img_info.setObjectName("imageInfoText")
-        layout.addWidget(self.lbl_img_info)
+        self.lbl_img_info.setStyleSheet("color: #94A3B8; font-size: 11px; margin-left: 12px; background: transparent;")
+        layout.addWidget(self.lbl_img_info, alignment=Qt.AlignmentFlag.AlignVCenter)
 
         layout.addStretch()
 
@@ -609,21 +671,22 @@ class MainWindow(QMainWindow):
         self.progress_bar.setFixedWidth(160)
         self.progress_bar.setRange(0, 0) # Indeterminado por defecto
         self.progress_bar.setVisible(False)
-        layout.addWidget(self.progress_bar)
+        layout.addWidget(self.progress_bar, alignment=Qt.AlignmentFlag.AlignVCenter)
 
         # Botón de Donaciones Ko-fi
         self.btn_kofi = QPushButton(tr("btn_kofi"))
-        self.btn_kofi.setObjectName("kofiButton")
+        self.btn_kofi.setObjectName("PrimaryBtn")
+        self.btn_kofi.setStyleSheet("padding: 5px 14px; border-radius: 14px; font-size: 12px;")
         self.btn_kofi.setCursor(Qt.CursorShape.PointingHandCursor)
         self.btn_kofi.setToolTip(tr("tooltip_kofi"))
         import webbrowser
         self.btn_kofi.clicked.connect(lambda: webbrowser.open("https://ko-fi.com/eliather"))
-        layout.addWidget(self.btn_kofi)
+        layout.addWidget(self.btn_kofi, alignment=Qt.AlignmentFlag.AlignVCenter)
 
-        # Añadir grip de redimensionamiento en la esquina inferior derecha
+        # Grip de redimensionamiento
         from PySide6.QtWidgets import QSizeGrip
         self.size_grip = QSizeGrip(self)
-        layout.addWidget(self.size_grip, 0, Qt.AlignmentFlag.AlignBottom | Qt.AlignmentFlag.AlignRight)
+        layout.addWidget(self.size_grip, 0, Qt.AlignmentFlag.AlignVCenter | Qt.AlignmentFlag.AlignRight)
 
         return bar
 
@@ -669,6 +732,132 @@ class MainWindow(QMainWindow):
         QShortcut(QKeySequence("Ctrl+A"), self, self.canvas.select_all)
         QShortcut(QKeySequence("Ctrl+Shift+I"), self, self.canvas.invert_selection)
 
+        # Navegación y reproducción en GIFs animados
+        QShortcut(QKeySequence(Qt.Key.Key_Space), self, self._toggle_gif_playback)
+        QShortcut(QKeySequence(Qt.Key.Key_Left), self, lambda: self._navigate_gif_frame(self.sequence_session.current_index - 1 if self.sequence_session else 0))
+        QShortcut(QKeySequence(Qt.Key.Key_Right), self, lambda: self._navigate_gif_frame(self.sequence_session.current_index + 1 if self.sequence_session else 0))
+        QShortcut(QKeySequence(Qt.Key.Key_Home), self, lambda: self._navigate_gif_frame(0))
+        QShortcut(QKeySequence(Qt.Key.Key_End), self, lambda: self._navigate_gif_frame(self.sequence_session.total_frames - 1 if self.sequence_session else 0))
+
+    def _create_gif_pagination_bar(self) -> QWidget:
+        """Crea la barra de navegación y reproducción por fotogramas para secuencias GIF."""
+        bar = QFrame(self)
+        bar.setObjectName("gifPaginationBar")
+        bar.setFixedHeight(46)
+        bar_layout = QHBoxLayout(bar)
+        bar_layout.setContentsMargins(16, 4, 16, 4)
+        bar_layout.setSpacing(8)
+
+        is_dark = getattr(self, "is_dark_theme", True)
+        fg_color = "#F8FAFC" if is_dark else "#0F172A"
+        accent_color = "#38BDF8" if is_dark else "#0284C7"
+        dis_color = "#475569" if is_dark else "#CBD5E1"
+
+        self.btn_gif_first = QPushButton()
+        self.btn_gif_first.setObjectName("gifNavBtn")
+        self.btn_gif_first.setFixedSize(32, 32)
+        self.btn_gif_first.setIcon(get_icon("skip-back", color=fg_color, active_color=accent_color, disabled_color=dis_color, size=15))
+        self.btn_gif_first.setIconSize(QSize(15, 15))
+        self.btn_gif_first.setToolTip("Primer fotograma (Home)")
+        self.btn_gif_first.clicked.connect(lambda: self._navigate_gif_frame(0))
+
+        self.btn_gif_prev = QPushButton()
+        self.btn_gif_prev.setObjectName("gifNavBtn")
+        self.btn_gif_prev.setFixedSize(32, 32)
+        self.btn_gif_prev.setIcon(get_icon("chevron-left", color=fg_color, active_color=accent_color, disabled_color=dis_color, size=16))
+        self.btn_gif_prev.setIconSize(QSize(16, 16))
+        self.btn_gif_prev.setToolTip("Fotograma anterior (←)")
+        self.btn_gif_prev.clicked.connect(lambda: self._navigate_gif_frame(self.sequence_session.current_index - 1 if self.sequence_session else 0))
+
+        self.btn_gif_play = QPushButton("Play")
+        self.btn_gif_play.setObjectName("gifPlayBtn")
+        self.btn_gif_play.setFixedHeight(32)
+        self.btn_gif_play.setMinimumWidth(82)
+        self.btn_gif_play.setIcon(get_icon("play", color="#FFFFFF", active_color="#FFFFFF", size=14))
+        self.btn_gif_play.setIconSize(QSize(14, 14))
+        self.btn_gif_play.setToolTip("Reproducir / Pausar animación (Espacio)")
+        self.btn_gif_play.clicked.connect(self._toggle_gif_playback)
+
+        self.btn_gif_next = QPushButton()
+        self.btn_gif_next.setObjectName("gifNavBtn")
+        self.btn_gif_next.setFixedSize(32, 32)
+        self.btn_gif_next.setIcon(get_icon("chevron-right", color=fg_color, active_color=accent_color, disabled_color=dis_color, size=16))
+        self.btn_gif_next.setIconSize(QSize(16, 16))
+        self.btn_gif_next.setToolTip("Fotograma siguiente (→)")
+        self.btn_gif_next.clicked.connect(lambda: self._navigate_gif_frame(self.sequence_session.current_index + 1 if self.sequence_session else 0))
+
+        self.btn_gif_last = QPushButton()
+        self.btn_gif_last.setObjectName("gifNavBtn")
+        self.btn_gif_last.setFixedSize(32, 32)
+        self.btn_gif_last.setIcon(get_icon("skip-forward", color=fg_color, active_color=accent_color, disabled_color=dis_color, size=15))
+        self.btn_gif_last.setIconSize(QSize(15, 15))
+        self.btn_gif_last.setToolTip("Último fotograma (End)")
+        self.btn_gif_last.clicked.connect(lambda: self._navigate_gif_frame(self.sequence_session.total_frames - 1 if self.sequence_session else 0))
+
+        self.lbl_gif_pagination = QLabel("Fotograma 1 / 1")
+        self.lbl_gif_pagination.setObjectName("gifPaginationLabel")
+        self.lbl_gif_pagination.setAlignment(Qt.AlignmentFlag.AlignCenter)
+
+        bar_layout.addStretch()
+        bar_layout.addWidget(self.btn_gif_first)
+        bar_layout.addWidget(self.btn_gif_prev)
+        bar_layout.addWidget(self.btn_gif_play)
+        bar_layout.addWidget(self.btn_gif_next)
+        bar_layout.addWidget(self.btn_gif_last)
+        bar_layout.addSpacing(12)
+        bar_layout.addWidget(self.lbl_gif_pagination)
+        bar_layout.addStretch()
+
+        return bar
+
+    def _navigate_gif_frame(self, new_index: int):
+        """Navega a un fotograma específico y conmuta el ImageState activo."""
+        if not self.sequence_session or self.sequence_session.total_frames <= 0:
+            return
+        total = self.sequence_session.total_frames
+        self.sequence_session.current_index = max(0, min(new_index, total - 1))
+
+        # Conmutar el state activo de MainWindow al ImageState del fotograma seleccionado
+        self.image_state = self.sequence_session.active_state
+        curr_img = self.image_state.current_image
+        if curr_img:
+            self.canvas.set_image(curr_img, reset_zoom=False)
+            self.canvas.set_original_image(self.image_state.current_brush_reference)
+            self._update_image_info_label(curr_img)
+        self._update_action_states()
+
+        cur_dur = self.sequence_session.durations[self.sequence_session.current_index] if self.sequence_session.durations else 80
+        self.lbl_gif_pagination.setText(f"Fotograma {self.sequence_session.current_index + 1} / {total} ({cur_dur} ms)")
+        if hasattr(self, "btn_gif_first"):
+            self.btn_gif_first.setEnabled(self.sequence_session.current_index > 0)
+            self.btn_gif_prev.setEnabled(self.sequence_session.current_index > 0)
+            self.btn_gif_next.setEnabled(self.sequence_session.current_index < total - 1)
+            self.btn_gif_last.setEnabled(self.sequence_session.current_index < total - 1)
+
+    def _toggle_gif_playback(self):
+        """Alterna entre reproducción en bucle y pausa para el GIF animado."""
+        if not self.sequence_session or self.sequence_session.total_frames <= 1:
+            return
+        if self.gif_timer.isActive():
+            self.gif_timer.stop()
+            self.btn_gif_play.setText("Play")
+            self.btn_gif_play.setIcon(get_icon("play", color="#FFFFFF", active_color="#FFFFFF", size=14))
+        else:
+            dur = self.sequence_session.durations[self.sequence_session.current_index] if self.sequence_session.durations else 80
+            self.gif_timer.start(dur)
+            self.btn_gif_play.setText("Pausa")
+            self.btn_gif_play.setIcon(get_icon("pause", color="#FFFFFF", active_color="#FFFFFF", size=14))
+
+    def _on_gif_timer_tick(self):
+        """Avanza al siguiente fotograma respetando la duración exacta en milisegundos."""
+        if not self.sequence_session or self.sequence_session.total_frames <= 0:
+            self.gif_timer.stop()
+            return
+        nxt = (self.sequence_session.current_index + 1) % self.sequence_session.total_frames
+        self._navigate_gif_frame(nxt)
+        dur = self.sequence_session.durations[nxt] if self.sequence_session.durations else 80
+        self.gif_timer.setInterval(dur)
+
     def perform_delete_selection(self):
         """Borra los píxeles seleccionados con la varita (Supr / botón 'Borrar selección')."""
         if not self.canvas.has_selection():
@@ -682,12 +871,12 @@ class MainWindow(QMainWindow):
     # Lógica de Apertura, Pegado y Guardado
     # -------------------------------------------------------------
     def prompt_open_image(self):
-        """Abre un diálogo para seleccionar archivo de imagen."""
+        """Abre un diálogo para seleccionar archivo de imagen o GIF animado."""
         path, _ = QFileDialog.getOpenFileName(
             self,
             "Seleccionar Imagen",
             "",
-            "Imágenes (*.png *.jpg *.jpeg *.webp *.bmp);;Todos los archivos (*.*)",
+            "Imágenes (*.png *.jpg *.jpeg *.webp *.bmp *.gif);;Todos los archivos (*.*)",
         )
         if path:
             self.open_image_file(path)
@@ -721,12 +910,32 @@ class MainWindow(QMainWindow):
         self._update_action_states()
 
     def open_image_file(self, file_path: str):
-        """Carga una imagen desde archivo en el estado y canvas."""
+        """Carga una imagen estática o un GIF animado desde archivo en el estado y canvas."""
         try:
             path = Path(file_path)
             if not path.exists():
                 return
 
+            if path.suffix.lower() == ".gif":
+                from app.core.gif_processor import extract_gif_frames
+                frames, durations, loop = extract_gif_frames(path)
+                if len(frames) > 1:
+                    if self.gif_timer.isActive():
+                        self.gif_timer.stop()
+                    self.sequence_session = SequenceSession(frames, durations, loop)
+                    self.current_filepath = path
+                    if hasattr(self, "gif_bar"):
+                        self.gif_bar.setVisible(True)
+                    self._navigate_gif_frame(0)
+                    self._set_status_raw(f"GIF animado cargado: {path.name} ({len(frames)} fotogramas)")
+                    return
+
+            # Si es imagen estática (o GIF de 1 solo fotograma)
+            if self.gif_timer.isActive():
+                self.gif_timer.stop()
+            self.sequence_session = None
+            if hasattr(self, "gif_bar"):
+                self.gif_bar.setVisible(False)
             pil_img = Image.open(path)
             self.load_new_pil_image(pil_img, source_name=path.name, filepath=path)
         except Exception as e:
@@ -737,7 +946,7 @@ class MainWindow(QMainWindow):
         Pega una imagen desde el portapapeles con Ctrl+V.
         Detecta estrictamente contenido de imagen:
         - Imagen directa en el portapapeles (bitmap / QImage de navegador, capturador, editor).
-        - Archivo de imagen copiado desde el Explorador de Windows (.png, .jpg, .jpeg, .webp, .bmp).
+        - Archivo de imagen copiado desde el Explorador de Windows (.png, .jpg, .jpeg, .webp, .bmp, .gif).
         Si el portapapeles contiene texto plano, URL de texto o archivos no imagen, no realiza ninguna acción.
         """
         clipboard = QGuiApplication.clipboard()
@@ -748,6 +957,11 @@ class MainWindow(QMainWindow):
             qimg = clipboard.image()
             if not qimg.isNull() and qimg.width() > 0 and qimg.height() > 0:
                 try:
+                    if self.gif_timer.isActive():
+                        self.gif_timer.stop()
+                    self.sequence_session = None
+                    if hasattr(self, "gif_bar"):
+                        self.gif_bar.setVisible(False)
                     pil_img = qimage_to_pil(qimg)
                     self.load_new_pil_image(pil_img, source_name="Imagen desde portapapeles", filepath=None)
                     return
@@ -759,7 +973,7 @@ class MainWindow(QMainWindow):
             urls = mime_data.urls()
             if urls:
                 local_path = Path(urls[0].toLocalFile())
-                valid_extensions = {".png", ".jpg", ".jpeg", ".webp", ".bmp"}
+                valid_extensions = {".png", ".jpg", ".jpeg", ".webp", ".bmp", ".gif"}
                 if local_path.is_file() and local_path.suffix.lower() in valid_extensions:
                     self.open_image_file(str(local_path))
                     return
@@ -768,21 +982,24 @@ class MainWindow(QMainWindow):
         self._set_status("status_no_clipboard")
 
     def prompt_save_image(self):
-        """Guarda la imagen procesada en disco."""
+        """Guarda la imagen procesada o secuencia GIF animada en disco."""
         if not self.image_state.has_image:
             FramelessPopup(self, tr("popup_no_image_title"), tr("popup_no_image_msg")).exec()
             return
 
-        default_name = "anime_processed.png"
+        is_animated_gif = bool(self.sequence_session and self.sequence_session.total_frames > 1)
+        default_ext = ".gif" if is_animated_gif else ".png"
+        default_name = f"anime_processed{default_ext}"
         if self.current_filepath:
-            default_name = f"{self.current_filepath.stem}_edit.png"
+            default_name = f"{self.current_filepath.stem}_edit{default_ext}"
 
-        path, selected_filter = QFileDialog.getSaveFileName(
-            self,
-            "Guardar Imagen Como",
-            default_name,
-            "PNG transparente (*.png);;JPEG (*.jpg *.jpeg);;WEBP (*.webp)",
+        filters = (
+            "GIF Animado (*.gif);;PNG transparente (*.png);;WEBP (*.webp);;JPEG (*.jpg *.jpeg)"
+            if is_animated_gif
+            else "PNG transparente (*.png);;GIF (*.gif);;JPEG (*.jpg *.jpeg);;WEBP (*.webp)"
         )
+
+        path, _ = QFileDialog.getSaveFileName(self, "Guardar Imagen Como", default_name, filters)
         if not path:
             return
 
@@ -791,12 +1008,22 @@ class MainWindow(QMainWindow):
             if not img:
                 return
 
-            if self.canvas.bg_color_rgb is not None:
-                img = apply_solid_background(img, self.canvas.bg_color_rgb)
-
             ext = Path(path).suffix.lower()
-            if ext in (".jpg", ".jpeg"):
-                # Si se guarda en JPG, convertir a RGB rellenando fondo blanco
+            if ext == ".gif":
+                from app.core.gif_processor import save_animated_gif
+                frames_to_save = self.sequence_session.get_all_current_frames() if is_animated_gif else [img]
+                durations = self.sequence_session.durations if is_animated_gif else [100]
+                loop = self.sequence_session.loop if is_animated_gif else 0
+                save_animated_gif(
+                    frames_rgba=frames_to_save,
+                    output_path=Path(path),
+                    durations=durations,
+                    loop=loop,
+                    bg_color_rgb=self.canvas.bg_color_rgb,
+                )
+            elif ext in (".jpg", ".jpeg"):
+                if self.canvas.bg_color_rgb is not None:
+                    img = apply_solid_background(img, self.canvas.bg_color_rgb)
                 if img.mode == "RGBA":
                     bg = Image.new("RGB", img.size, (255, 255, 255))
                     bg.paste(img, mask=img.split()[3])
@@ -804,9 +1031,12 @@ class MainWindow(QMainWindow):
                 else:
                     img.convert("RGB").save(path, quality=95)
             elif ext == ".webp":
+                if self.canvas.bg_color_rgb is not None:
+                    img = apply_solid_background(img, self.canvas.bg_color_rgb)
                 img.save(path, quality=95)
             else:
-                # PNG por defecto
+                if self.canvas.bg_color_rgb is not None:
+                    img = apply_solid_background(img, self.canvas.bg_color_rgb)
                 img.save(path)
 
             self._set_status("status_saved", name=Path(path).name)
@@ -947,7 +1177,34 @@ class MainWindow(QMainWindow):
             return
         if enable_clothing_protection is None:
             enable_clothing_protection = getattr(self.sidebar, "is_clothing_protection_enabled", lambda: True)()
+
+        # Si el archivo actual es un GIF animado multicapa, procesar toda la secuencia
+        if self.sequence_session and self.sequence_session.total_frames > 1:
+            if self.gif_timer.isActive():
+                self.gif_timer.stop()
+                self.btn_gif_play.setText("Play")
+                self.btn_gif_play.setIcon(get_icon("play", color="#FFFFFF", active_color="#FFFFFF", size=14))
+
+            from app.core.workers import GifWorkerThread
+            frames = self.sequence_session.get_all_current_frames()
+            self.set_processing(True, f"Procesando GIF ({len(frames)} frames) con {model_id}")
+            self.progress_bar.setRange(0, len(frames))
+            self.progress_bar.setValue(0)
+
+            self.active_worker = GifWorkerThread(
+                frames=frames,
+                model_name=model_id,
+                enable_clothing_protection=enable_clothing_protection,
+            )
+            self.active_worker.progress.connect(lambda cur, tot: self.progress_bar.setValue(cur))
+            self.active_worker.progressText.connect(self._set_status_raw)
+            self.active_worker.finishedGif.connect(self._on_gif_worker_finished)
+            self.active_worker.failed.connect(self._on_worker_failed)
+            self.active_worker.start()
+            return
+
         current_img = self.image_state.current_image
+        self.progress_bar.setRange(0, 0)
         self.set_processing(True, f"Quitando fondo con {model_id}")
         self.active_worker = WorkerThread(
             get_bg_remover().remove_background,
@@ -959,6 +1216,16 @@ class MainWindow(QMainWindow):
         self.active_worker.finishedResult.connect(self._on_worker_finished)
         self.active_worker.failed.connect(self._on_worker_failed)
         self.active_worker.start()
+
+    def _on_gif_worker_finished(self, processed_frames: list, description: str):
+        self.progress_bar.setRange(0, 0)
+        self.set_processing(False, f"{description} completado.")
+        if processed_frames:
+            durations = self.sequence_session.durations if self.sequence_session else [80] * len(processed_frames)
+            loop = self.sequence_session.loop if self.sequence_session else 0
+            cur_idx = self.sequence_session.current_index if self.sequence_session else 0
+            self.sequence_session = SequenceSession(processed_frames, durations, loop)
+            self._navigate_gif_frame(min(cur_idx, len(processed_frames) - 1))
 
     def start_restore(self, scale_mode: str, use_tiling: bool):
         if not self.image_state.has_image:
@@ -1097,17 +1364,24 @@ class MainWindow(QMainWindow):
         self._on_device_mode_changed(new_mode)
 
     def _on_device_mode_changed(self, is_gpu: bool):
-        """Aplica el cambio de modo de dispositivo solicitado por el usuario."""
+        """Aplica el cambio de modo de dispositivo solicitado por el usuario y libera VRAM residual."""
         from app.core.gpu_manager import get_gpu_manager
+        from app.core.sam_manager import get_sam_manager
+
         gpu_mgr = get_gpu_manager()
         success = gpu_mgr.set_gpu_enabled(is_gpu)
+
+        # Liberar sesiones de MobileSAM para que respeten el nuevo proveedor (GPU o CPU)
+        get_sam_manager().unload_sessions()
 
         self.update_device_badge()
 
         if is_gpu and success:
-            from app.config import get_gpu_name
-            gpu_name = get_gpu_name() or "DirectML"
-            clean_name = gpu_name.replace("NVIDIA ", "").replace(" Laptop GPU", "")
+            import sys
+            from app.config import get_gpu_name, detect_device
+            detected = detect_device()
+            gpu_name = get_gpu_name() or (detected if "GPU" in detected else "GPU")
+            clean_name = gpu_name.replace("NVIDIA ", "").replace("AMD ", "").replace(" Laptop GPU", "").replace("Advanced Micro Devices, Inc. ", "")
             self._set_status_raw(f"Aceleración por GPU activada ({clean_name}).")
         elif not is_gpu:
             self._set_status_raw("Modo CPU activado (GPU liberada de VRAM).")
@@ -1276,6 +1550,8 @@ class MainWindow(QMainWindow):
         self.sidebar.set_detected_subjects(subjects)
         if subjects:
             self._set_status_raw(f"YOLO11: {len(subjects)} sujeto(s) detectado(s). Selecciona un chip para aislar.")
+            # Precalcular embedding de MobileSAM en segundo plano para aislamiento HD instantáneo
+            self._ensure_sam_embedding_async()
         else:
             self._set_status("detect_none_found")
 
@@ -1283,31 +1559,99 @@ class MainWindow(QMainWindow):
         self.sidebar.set_detecting_subjects_state(False)
         self._set_status_raw(f"Error YOLO: {err_msg}")
 
+    def _refine_yolo_subject_mask(self, subject) -> Optional[np.ndarray]:
+        """
+        Convierte la máscara gruesa de YOLO11-seg (160x160) en una máscara alfa de alta definición (uint8 0-255)
+        combinando MobileSAM (si está disponible) y Guided Filter perimetral guiado por los píxeles RGB reales.
+        """
+        if not self.image_state.has_image or subject is None:
+            return None
+
+        pil_img = self.image_state.current_image
+        orig_w, orig_h = pil_img.size
+        coarse_bool = subject.mask
+        if coarse_bool.shape != (orig_h, orig_w):
+            return None
+
+        base_prob = coarse_bool.astype(np.float32)
+
+        # 1. Si MobileSAM tiene el embedding listo, obtener predicción semántica con BBox + Punto Interior
+        from app.core.sam_manager import get_sam_manager
+        sam_mgr = get_sam_manager()
+        if sam_mgr.has_embedding():
+            sam_prob = sam_mgr.predict_mask_from_yolo_subject(
+                bbox=subject.bbox,
+                coarse_mask=coarse_bool,
+                orig_img_size=(orig_w, orig_h),
+            )
+            if sam_prob is not None:
+                sam_bin = sam_prob > 0.5
+                inter = np.logical_and(sam_bin, coarse_bool).sum()
+                union = np.logical_or(sam_bin, coarse_bool).sum()
+                if union > 0 and (inter / union) >= 0.40:
+                    base_prob = sam_prob
+
+        # 2. Aplicar Guided Filter de alta resolución en el ROI del Bounding Box para ajustar el borde al píxel
+        try:
+            import cv2
+            from app.core.bg_remover import apply_guided_filter
+
+            bgr = cv2.cvtColor(np.array(pil_img.convert("RGB"), dtype=np.uint8), cv2.COLOR_RGB2BGR)
+            x1, y1, x2, y2 = [int(v) for v in subject.bbox]
+            pad = 24
+            rx1, ry1 = max(0, x1 - pad), max(0, y1 - pad)
+            rx2, ry2 = min(orig_w, x2 + pad), min(orig_h, y2 + pad)
+
+            if rx2 > rx1 and ry2 > ry1:
+                crop_guide = bgr[ry1:ry2, rx1:rx2]
+                crop_prob = base_prob[ry1:ry2, rx1:rx2]
+                crop_refined = apply_guided_filter(
+                    guide_bgr=crop_guide,
+                    prob_mask=crop_prob,
+                    radius=6,
+                    eps=1e-4,
+                    band_dilation=12,
+                )
+                base_prob = base_prob.copy()
+                base_prob[ry1:ry2, rx1:rx2] = crop_refined
+        except Exception as e:
+            logger.warning(f"Guided filter en aislamiento YOLO omitido: {e}")
+
+        return np.clip(np.round(base_prob * 255.0), 0, 255).astype(np.uint8)
+
     def perform_isolate_subject(self, subject):
-        """Aísla el sujeto detectado, dejando transparente todo el resto."""
+        """Aísla el sujeto detectado con refinamiento de bordes HD, dejando transparente el resto."""
         if not self.image_state.has_image or subject is None:
             return
-        curr = self.image_state.current_image.convert("RGBA")
-        curr_arr = np.array(curr)
-        mask_bool = subject.mask  # (H, W) bool
-        if mask_bool.shape != curr_arr.shape[:2]:
+
+        high_res_mask = self._refine_yolo_subject_mask(subject)
+        if high_res_mask is None:
             return
 
-        # Multiplicar canal alfa por la máscara del sujeto
-        curr_arr[..., 3] = np.where(mask_bool, curr_arr[..., 3], 0)
+        curr = self.image_state.current_image.convert("RGBA")
+        curr_arr = np.array(curr, dtype=np.uint8)
+
+        # Conservar transparencias previas y aplicar gradiente subpíxel en bordes
+        curr_arr[..., 3] = np.minimum(curr_arr[..., 3], high_res_mask)
         isolated_img = Image.fromarray(curr_arr, "RGBA")
         self.push_new_image_state(isolated_img, f"Aislar {subject.class_name.capitalize()}")
 
     def perform_select_subject(self, subject):
-        """Carga la máscara del sujeto detectado en la selección de hormigas marchantes."""
+        """Carga la máscara refinada del sujeto detectado en la selección de hormigas marchantes."""
         if not self.image_state.has_image or subject is None:
             return
-        mask_u8 = (subject.mask.astype(np.uint8) * 255)
-        self.canvas._set_selection(mask_u8)
+
+        high_res_mask = self._refine_yolo_subject_mask(subject)
+        if high_res_mask is None:
+            high_res_mask = (subject.mask.astype(np.uint8) * 255)
+
+        self.canvas._set_selection(high_res_mask)
         self._set_status_raw(f"Seleccionado: {subject.class_name.capitalize()}")
 
     def closeEvent(self, event):
         """Asegura que todos los hilos en segundo plano finalicen limpiamente antes de cerrar la ventana."""
+        if hasattr(self, "gif_timer") and self.gif_timer.isActive():
+            self.gif_timer.stop()
         for attr in ("active_worker", "batch_worker", "sam_worker", "yolo_worker"):
             worker = getattr(self, attr, None)
             if worker is not None and worker.isRunning():
@@ -1317,4 +1661,5 @@ class MainWindow(QMainWindow):
             super().closeEvent(event)
         except Exception:
             if hasattr(event, "accept"):
+                event.accept()
                 event.accept()

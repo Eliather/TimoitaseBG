@@ -63,7 +63,7 @@ class BatchWorkerThread(QThread):
             output_path.mkdir(parents=True, exist_ok=True)
 
             # Encontrar imágenes
-            valid_exts = {".png", ".jpg", ".jpeg", ".webp", ".bmp"}
+            valid_exts = {".png", ".jpg", ".jpeg", ".webp", ".bmp", ".gif"}
             files = [f for f in input_path.iterdir() if f.is_file() and f.suffix.lower() in valid_exts]
             total = len(files)
             
@@ -82,20 +82,19 @@ class BatchWorkerThread(QThread):
                 self.progress.emit(i, total)
                 
                 try:
-                    img = Image.open(f)
-                    # Convertimos a RGBA de inmediato para homogeneizar
-                    if img.mode != "RGBA":
-                        img = img.convert("RGBA")
-                        
+                    with Image.open(f) as raw_img:
+                        img = raw_img.convert("RGBA")
+
                     res = remover.remove_background(
-                        img, 
-                        model_name=self.model_name, 
-                        enable_clothing_protection=self.enable_clothing_protection
+                        img,
+                        model_name=self.model_name,
+                        enable_clothing_protection=self.enable_clothing_protection,
                     )
-                    
-                    # Guardar archivo
+
                     out_file = output_path / f"{f.stem}_bgrm.png"
                     res.save(out_file)
+                    res.close()
+                    img.close()
                     success_count += 1
                 except Exception as e:
                     print(f"Error procesando {f.name}: {e}")
@@ -164,5 +163,85 @@ class YoloDetectionWorker(QThread):
             import traceback
             traceback.print_exc()
             self.failed.emit(str(e))
+
+
+class GifWorkerThread(QThread):
+    """
+    QThread para eliminar el fondo de todos los fotogramas de un GIF animado
+    con estabilización temporal de bordes (anti-flicker).
+    """
+    progress = Signal(int, int)             # (frame_actual, total_frames)
+    progressText = Signal(str)
+    finishedGif = Signal(list, str)         # (frames_rgba_procesados, descripcion)
+    failed = Signal(str)
+
+    def __init__(
+        self,
+        frames: List[Image.Image],
+        model_name: str,
+        enable_clothing_protection: bool = True,
+        temporal_smoothing: float = 0.22,
+    ):
+        super().__init__()
+        self.frames = frames
+        self.model_name = model_name
+        self.enable_clothing_protection = enable_clothing_protection
+        self.temporal_smoothing = temporal_smoothing
+
+    def run(self):
+        import numpy as np
+        from app.core.bg_remover import get_bg_remover
+        import traceback
+
+        try:
+            self.setPriority(QThread.Priority.LowPriority)
+            remover = get_bg_remover()
+            total = len(self.frames)
+            processed_frames: List[Image.Image] = []
+            prev_alpha: Optional[np.ndarray] = None
+
+            for idx, frame in enumerate(self.frames):
+                if self.isInterruptionRequested():
+                    return
+
+                self.progressText.emit(
+                    f"⏳ Quitando fondo al GIF ({idx + 1}/{total} fotogramas) con {self.model_name}..."
+                )
+                self.progress.emit(idx + 1, total)
+
+                out_rgba = remover.remove_background(
+                    frame,
+                    model_name=self.model_name,
+                    enable_clothing_protection=self.enable_clothing_protection,
+                )
+
+                # Estabilización temporal ligera entre fotogramas adyacentes para evitar parpadeo en bordes
+                if self.temporal_smoothing > 0.0:
+                    arr = np.array(out_rgba.convert("RGBA"), dtype=np.uint8)
+                    curr_alpha = arr[:, :, 3].astype(np.float32)
+                    if prev_alpha is not None and prev_alpha.shape == curr_alpha.shape:
+                        # Solo suavizar donde los fotogramas sean similares (evita ghosting en movimientos rápidos)
+                        diff = np.abs(curr_alpha - prev_alpha)
+                        blend_mask = diff < 45.0
+                        w = self.temporal_smoothing
+                        curr_alpha = np.where(
+                            blend_mask,
+                            (1.0 - w) * curr_alpha + w * prev_alpha,
+                            curr_alpha,
+                        )
+                        arr[:, :, 3] = np.clip(np.round(curr_alpha), 0, 255).astype(np.uint8)
+                        out_rgba = Image.fromarray(arr, mode="RGBA")
+                    prev_alpha = curr_alpha
+
+                processed_frames.append(out_rgba)
+
+            self.finishedGif.emit(
+                processed_frames,
+                f"GIF sin fondo ({total} frames • {self.model_name})",
+            )
+        except Exception as e:
+            traceback.print_exc()
+            self.failed.emit(str(e))
+
 
 

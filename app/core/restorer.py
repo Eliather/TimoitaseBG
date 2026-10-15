@@ -88,6 +88,13 @@ class ImageRestorer:
         import multiprocessing
         
         orig_w, orig_h = image.size
+
+        # Gráficos integrados (APUs AMD Ryzen / Intel iGPU con VRAM compartida):
+        # Forzar use_tiling=True para evitar colapsar la memoria compartida del sistema.
+        from app.config import is_integrated_gpu
+        if is_integrated_gpu():
+            use_tiling = True
+
         # Protección Automática Anti-Saturación de VRAM:
         # Límite seguro para GPU: aprox 2.07 megapíxeles (ej. 1920x1080 o 1440x1440).
         # Imágenes mayores a este límite fuerzan fallback automático a CPU
@@ -138,6 +145,11 @@ class ImageRestorer:
         force_cpu: bool = True,
     ) -> Image.Image:
         orig_w, orig_h = image.size
+
+        # Gráficos integrados: forzar uso de tiling por seguridad de memoria compartida
+        from app.config import is_integrated_gpu
+        if is_integrated_gpu():
+            use_tiling = True
 
         # Pre-auditoría de seguridad de tiles antes de procesar o transformar arrays
         if use_tiling:

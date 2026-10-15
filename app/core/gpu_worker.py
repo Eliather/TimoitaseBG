@@ -26,24 +26,43 @@ logger = logging.getLogger("TimoitaseBG.GPUWorker")
 
 def get_worker_gpu_providers(preferred_device_id: Optional[int] = None):
     """
-    Retorna los proveedores GPU para ONNX Runtime en el worker aislado.
-    Prioriza CUDA o DirectML con el device_id indicado o detectado de forma segura.
+    Retorna los proveedores GPU para ONNX Runtime en el worker aislado,
+    añadiendo soporte multiplataforma para NVIDIA (CUDA), AMD (ROCm / DirectML),
+    Qualcomm QNN (NPU en Windows ARM64), Apple Silicon/macOS (CoreML) e Intel.
     """
     try:
-        if preferred_device_id is None:
-            from app.config import get_best_dml_device_id
-            preferred_device_id = get_best_dml_device_id()
         import onnxruntime as ort
         avail = ort.get_available_providers()
         selected = []
+
+        # 1. Soporte NVIDIA CUDA (Linux / Windows / Jetson)
         if "CUDAExecutionProvider" in avail:
             selected.append("CUDAExecutionProvider")
+
+        # 2. Soporte AMD ROCm (Principalmente Linux)
+        if "ROCMExecutionProvider" in avail:
+            selected.append(("ROCMExecutionProvider", {"device_id": preferred_device_id or 0}))
+
+        # 3. Soporte Qualcomm QNN (NPU Hexagon en Windows ARM64)
+        if "QNNExecutionProvider" in avail:
+            selected.append("QNNExecutionProvider")
+
+        # 4. Soporte Apple Silicon / macOS CoreML
+        if "CoreMLExecutionProvider" in avail:
+            selected.append("CoreMLExecutionProvider")
+
+        # 5. Soporte Windows DirectML (Compatible universal con AMD Radeon, Intel Arc/Iris, NVIDIA y Qualcomm Adreno)
         if "DmlExecutionProvider" in avail:
-            selected.append(("DmlExecutionProvider", {"device_id": preferred_device_id}))
+            if preferred_device_id is None:
+                from app.config import get_best_dml_device_id
+                preferred_device_id = get_best_dml_device_id()
+            device_id = preferred_device_id if preferred_device_id is not None else 0
+            selected.append(("DmlExecutionProvider", {"device_id": device_id}))
+
         selected.append("CPUExecutionProvider")
         return selected
     except Exception as e:
-        logger.warning(f"Error detectando providers en worker: {e}. Usando CPU...")
+        logger.warning(f"Error detectando providers multiplataforma en worker: {e}. Usando CPU...")
         return ["CPUExecutionProvider"]
 
 
@@ -92,11 +111,15 @@ class PersistentGPUWorker:
         """Compatibilidad con get_bg_session: redirige a la sesión de InSPyReNet."""
         return self.get_inspyrenet_session(providers=providers)
 
-    def get_inspyrenet_session(self, providers=None):
+    def get_inspyrenet_session(self, providers=None, force_cpu: bool = False):
         """Obtiene o inicializa una sesión ONNX para InSPyReNet en GPU Worker."""
+        if force_cpu:
+            self._cached_sessions.pop("inspyrenet", None)
+            providers = ["CPUExecutionProvider"]
+
         if "inspyrenet" not in self._cached_sessions:
-            if self._cached_sessions:
-                logger.info("Liberando sesiones previas para cargar inspyrenet...")
+            if self._cached_sessions or self._restorer_instance is not None:
+                logger.info("Liberando sesiones previas de VRAM para cargar inspyrenet...")
                 self._clear_rembg_sessions()
 
             from app.core.model_fetcher import ensure_model_file
@@ -105,12 +128,40 @@ class PersistentGPUWorker:
             eff_providers = self._get_providers(providers)
             sess_options = get_optimized_session_options() or ort.SessionOptions()
             logger.info(f"Cargando sesión inspyrenet con providers: {eff_providers}...")
-            self._cached_sessions["inspyrenet"] = ort.InferenceSession(str(model_path), sess_options, providers=eff_providers)
+            try:
+                self._cached_sessions["inspyrenet"] = ort.InferenceSession(
+                    str(model_path), sess_options, providers=eff_providers
+                )
+            except Exception as e:
+                logger.warning(
+                    f"Fallo al cargar sesión inspyrenet con proveedores GPU/CoreML/QNN ({eff_providers}): {e}. "
+                    f"Conmutando limpiamente a DML/CPUExecutionProvider..."
+                )
+                fallback_success = False
+                if any(p == "QNNExecutionProvider" for p in eff_providers) and "DmlExecutionProvider" in ort.get_available_providers():
+                    try:
+                        dml_provs = [("DmlExecutionProvider", {"device_id": self.device_id or 0}), "CPUExecutionProvider"]
+                        logger.info("Reintentando sesión inspyrenet con DirectML tras fallo en QNN...")
+                        self._cached_sessions["inspyrenet"] = ort.InferenceSession(
+                            str(model_path), sess_options, providers=dml_provs
+                        )
+                        fallback_success = True
+                    except Exception as dml_err:
+                        logger.warning(f"Fallback DirectML también falló ({dml_err}). Usando CPU...")
+                if not fallback_success:
+                    self._cached_sessions["inspyrenet"] = ort.InferenceSession(
+                        str(model_path), sess_options, providers=["CPUExecutionProvider"]
+                    )
         return self._cached_sessions["inspyrenet"]
 
-    def get_rmbg2_session(self, providers=None):
+    def get_rmbg2_session(self, providers=None, force_cpu: bool = False):
+        if force_cpu:
+            self._cached_sessions.pop("rmbg2", None)
+            providers = ["CPUExecutionProvider"]
+
         if "rmbg2" not in self._cached_sessions:
-            if self._cached_sessions:
+            if self._cached_sessions or self._restorer_instance is not None:
+                logger.info("Liberando sesiones previas de VRAM para cargar RMBG-2.0...")
                 self._clear_rembg_sessions()
 
             from app.core.model_fetcher import ensure_model_file
@@ -119,7 +170,30 @@ class PersistentGPUWorker:
             eff_providers = self._get_providers(providers)
             sess_options = get_optimized_session_options() or ort.SessionOptions()
             logger.info(f"Cargando sesión RMBG-2.0 con providers: {eff_providers}...")
-            self._cached_sessions["rmbg2"] = ort.InferenceSession(str(model_path), sess_options, providers=eff_providers)
+            try:
+                self._cached_sessions["rmbg2"] = ort.InferenceSession(
+                    str(model_path), sess_options, providers=eff_providers
+                )
+            except Exception as e:
+                logger.warning(
+                    f"Fallo al cargar sesión RMBG-2.0 con proveedores GPU/CoreML/QNN ({eff_providers}): {e}. "
+                    f"Conmutando limpiamente a DML/CPUExecutionProvider..."
+                )
+                fallback_success = False
+                if any(p == "QNNExecutionProvider" for p in eff_providers) and "DmlExecutionProvider" in ort.get_available_providers():
+                    try:
+                        dml_provs = [("DmlExecutionProvider", {"device_id": self.device_id or 0}), "CPUExecutionProvider"]
+                        logger.info("Reintentando sesión RMBG-2.0 con DirectML tras fallo en QNN...")
+                        self._cached_sessions["rmbg2"] = ort.InferenceSession(
+                            str(model_path), sess_options, providers=dml_provs
+                        )
+                        fallback_success = True
+                    except Exception as dml_err:
+                        logger.warning(f"Fallback DirectML también falló ({dml_err}). Usando CPU...")
+                if not fallback_success:
+                    self._cached_sessions["rmbg2"] = ort.InferenceSession(
+                        str(model_path), sess_options, providers=["CPUExecutionProvider"]
+                    )
         return self._cached_sessions["rmbg2"]
 
     def remove_background(
@@ -154,19 +228,45 @@ class PersistentGPUWorker:
             session = self.get_rmbg2_session(providers=providers)
             tensor, crop_box, orig_size = _preprocess_rmbg2(input_img)
             input_name = session.get_inputs()[0].name
-            out = session.run(None, {input_name: tensor})[0]
+            try:
+                out = session.run(None, {input_name: tensor})[0]
+            except Exception as run_err:
+                logger.warning(
+                    f"Fallo durante la inferencia de RMBG-2.0 ({run_err}). "
+                    f"Reintentando ejecución en CPUExecutionProvider..."
+                )
+                session = self.get_rmbg2_session(force_cpu=True)
+                out = session.run(None, {input_name: tensor})[0]
             final_alpha = _postprocess_rmbg2_mask(out, crop_box, orig_size)
 
         elif model_name in ("isnet-anime", "birefnet-general", "u2net_human_seg"):
             import rembg
             logger.info(f"[GPUWorker:{os.getpid()}] Ejecutando {model_name} en GPU con providers: {eff_providers}...")
             if model_name not in self._cached_sessions:
-                if self._cached_sessions:
+                if self._cached_sessions or self._restorer_instance is not None:
                     self._clear_rembg_sessions()
-                self._cached_sessions[model_name] = rembg.new_session(model_name, providers=eff_providers)
+                try:
+                    self._cached_sessions[model_name] = rembg.new_session(model_name, providers=eff_providers)
+                except Exception as e:
+                    logger.warning(
+                        f"Fallo al cargar sesión rembg '{model_name}' con proveedores GPU/CoreML/QNN: {e}. "
+                        f"Conmutando a CPUExecutionProvider..."
+                    )
+                    self._cached_sessions[model_name] = rembg.new_session(
+                        model_name, providers=["CPUExecutionProvider"]
+                    )
 
             session = self._cached_sessions[model_name]
-            out = rembg.remove(input_img, session=session)
+            try:
+                out = rembg.remove(input_img, session=session)
+            except Exception as run_err:
+                logger.warning(
+                    f"Fallo en inferencia rembg '{model_name}' con acelerador ({run_err}). "
+                    f"Reintentando en CPUExecutionProvider..."
+                )
+                session = rembg.new_session(model_name, providers=["CPUExecutionProvider"])
+                self._cached_sessions[model_name] = session
+                out = rembg.remove(input_img, session=session)
             final_alpha = np.array(out.split()[-1], dtype=np.uint8)
 
         else:
@@ -181,24 +281,48 @@ class PersistentGPUWorker:
             session = self.get_inspyrenet_session(providers=providers)
             tensor, orig_size = _preprocess_inspyrenet(input_img)
             input_name = session.get_inputs()[0].name
-            out = session.run(None, {input_name: tensor})[0]
+            try:
+                out = session.run(None, {input_name: tensor})[0]
+            except Exception as run_err:
+                logger.warning(
+                    f"Fallo durante la inferencia de InSPyReNet ({run_err}). "
+                    f"Reintentando ejecución en CPUExecutionProvider..."
+                )
+                session = self.get_inspyrenet_session(force_cpu=True)
+                out = session.run(None, {input_name: tensor})[0]
             raw_mask = _postprocess_inspyrenet_mask(out, orig_size)
             cleaned_rgb, final_alpha = postprocess_inspyrenet(input_img, raw_mask)
             input_img = Image.fromarray(cleaned_rgb, mode="RGB")
 
-        # Fusión con Detector Semántico de Ropa y Sujetos (evita agujeros en playeras blancas)
-        if enable_clothing_protection and model_name != "u2net_human_seg":
+        # Fusión Core-Only con Detector Semántico de Ropa (omite isnet-anime por sesgo de dominio 2D)
+        if enable_clothing_protection and model_name not in ("u2net_human_seg", "isnet-anime"):
             try:
                 import rembg
+                from app.core.bg_remover import fuse_clothing_protection_core_only
+
                 human_sess_key = "u2net_human_seg"
                 if human_sess_key not in self._cached_sessions:
-                    self._cached_sessions[human_sess_key] = rembg.new_session(human_sess_key, providers=eff_providers)
+                    try:
+                        self._cached_sessions[human_sess_key] = rembg.new_session(
+                            human_sess_key, providers=eff_providers
+                        )
+                    except Exception as e:
+                        logger.warning(
+                            f"Fallo al cargar protección u2net_human_seg con GPU/CoreML/QNN: {e}. "
+                            f"Conmutando a CPUExecutionProvider..."
+                        )
+                        self._cached_sessions[human_sess_key] = rembg.new_session(
+                            human_sess_key, providers=["CPUExecutionProvider"]
+                        )
                 human_sess = self._cached_sessions[human_sess_key]
                 human_out = rembg.remove(input_img, session=human_sess)
                 human_alpha = np.array(human_out.split()[-1], dtype=np.uint8)
                 if np.any(human_alpha > 50):
-                    # Proteger áreas de prendas de vestir confirmadas por el detector semántico
-                    final_alpha = np.maximum(final_alpha, human_alpha)
+                    final_alpha = fuse_clothing_protection_core_only(
+                        main_alpha=final_alpha,
+                        clothing_alpha=human_alpha,
+                        inner_erosion_px=12,
+                    )
             except Exception as e:
                 logger.warning(f"Protección de ropa u2net_human_seg omitida en GPU: {e}")
 
@@ -221,27 +345,73 @@ class PersistentGPUWorker:
     ) -> Image.Image:
         """
         Ejecuta restauración Real-ESRGAN en el proceso aislado de GPU.
+        Libera previamente las sesiones de segmentación para evitar picos de VRAM (>4GB).
         """
         from app.core.restorer import ImageRestorer
 
         if self._restorer_instance is None:
+            if self._cached_sessions:
+                logger.info("Worker: Liberando sesiones de segmentación para cargar Real-ESRGAN...")
+                self._clear_rembg_sessions()
+
             self._restorer_instance = ImageRestorer()
             eff_providers = self._get_providers(providers)
-            # Configurar sesión con providers en worker
             import onnxruntime as ort
             from app.core.model_fetcher import ensure_model_file
             model_path = ensure_model_file(ImageRestorer.MODEL_FILENAME)
             sess_options = get_optimized_session_options() or ort.SessionOptions()
             logger.info(f"Worker: Inicializando Real-ESRGAN con providers: {eff_providers}...")
-            self._restorer_instance._session = ort.InferenceSession(str(model_path), sess_options, providers=eff_providers)
+            try:
+                self._restorer_instance._session = ort.InferenceSession(
+                    str(model_path), sess_options, providers=eff_providers
+                )
+            except Exception as e:
+                logger.warning(
+                    f"Fallo al cargar Real-ESRGAN con proveedores GPU/CoreML/QNN ({eff_providers}): {e}. "
+                    f"Conmutando limpiamente a DML/CPUExecutionProvider..."
+                )
+                fallback_success = False
+                if any(p == "QNNExecutionProvider" for p in eff_providers) and "DmlExecutionProvider" in ort.get_available_providers():
+                    try:
+                        dml_provs = [("DmlExecutionProvider", {"device_id": self.device_id or 0}), "CPUExecutionProvider"]
+                        self._restorer_instance._session = ort.InferenceSession(
+                            str(model_path), sess_options, providers=dml_provs
+                        )
+                        fallback_success = True
+                    except Exception:
+                        pass
+                if not fallback_success:
+                    self._restorer_instance._session = ort.InferenceSession(
+                        str(model_path), sess_options, providers=["CPUExecutionProvider"]
+                    )
 
-        return self._restorer_instance.restore_image(
-            image,
-            scale_mode=scale_mode,
-            use_tiling=use_tiling,
-            tile_size=tile_size,
-            tile_pad=tile_pad,
-        )
+        try:
+            return self._restorer_instance.restore_image(
+                image,
+                scale_mode=scale_mode,
+                use_tiling=use_tiling,
+                tile_size=tile_size,
+                tile_pad=tile_pad,
+            )
+        except Exception as restorer_err:
+            logger.warning(
+                f"Fallo en ejecución de Real-ESRGAN con acelerador hardware ({restorer_err}). "
+                f"Conmutando automáticamente a CPUExecutionProvider..."
+            )
+            import onnxruntime as ort
+            from app.core.model_fetcher import ensure_model_file
+            model_path = ensure_model_file(ImageRestorer.MODEL_FILENAME)
+            sess_options = get_optimized_session_options() or ort.SessionOptions()
+            self._restorer_instance._session = ort.InferenceSession(
+                str(model_path), sess_options, providers=["CPUExecutionProvider"]
+            )
+            return self._restorer_instance.restore_image(
+                image,
+                scale_mode=scale_mode,
+                use_tiling=use_tiling,
+                tile_size=tile_size,
+                tile_pad=tile_pad,
+            )
 
 
 def gpu_worker_process_loop(request_queue, response_queue, preferred_device_id: Optional[int] = None):

@@ -97,7 +97,7 @@ class GPUWorkerManager:
             if self._process is None or not self._process.is_alive():
                 self._cleanup_process()
                 preferred_device_id = config.get_best_dml_device_id()
-                logger.info(f"Iniciando nuevo proceso persistente GPU Worker (DirectML device_id={preferred_device_id})...")
+                logger.info(f"Iniciando nuevo proceso persistente GPU Worker (device_id={preferred_device_id})...")
                 self._request_queue = multiprocessing.Queue()
                 self._response_queue = multiprocessing.Queue()
                 self._process = multiprocessing.Process(
@@ -121,11 +121,13 @@ class GPUWorkerManager:
 
     def kill_worker(self) -> bool:
         """
-        Termina y mata forzadamente el proceso worker actual.
+        Termina y mata forzadamente el proceso worker actual de forma multiplataforma (Linux / Windows).
         Secuencia:
         1. terminate() -> join(timeout=1.5)
         2. kill() -> join(timeout=1.0)
-        3. Capa extra en Windows: taskkill /F /T /PID -> join(timeout=1.0)
+        3. Respaldo por sistema operativo:
+           - En Windows: taskkill /F /T /PID -> join(timeout=1.0)
+           - En Linux / macOS: SIGKILL a grupo de procesos (os.killpg) o PID -> join(timeout=1.0)
         4. Si sigue vivo: NO dar por limpio, registrar log CRÍTICO y notificar reinicio.
         Retorna True si el proceso murió, False si quedó huérfano.
         """
@@ -136,31 +138,50 @@ class GPUWorkerManager:
         logger.warning(f"Iniciando secuencia de terminación para GPU Worker (PID {pid})...")
 
         try:
-            # 1. Intento ordenado con terminate()
+            # 1. Intento ordenado con terminate() / SIGTERM
             self._process.terminate()
             self._process.join(timeout=1.5)
 
-            # 2. Si no respondió, forzar con kill()
+            # 2. Si sigue vivo, forzar con kill() / SIGKILL
             if self._process.is_alive():
                 logger.warning(f"GPU Worker (PID {pid}) no respondió a terminate(). Aplicando kill()...")
                 self._process.kill()
                 self._process.join(timeout=1.0)
 
-            # 3. Capa extra en Windows con taskkill /F /T (árbol de procesos completo)
+            # 3. Respaldo por sistema operativo si el proceso persiste
             if self._process.is_alive():
-                logger.warning(
-                    f"GPU Worker (PID {pid}) continúa activo tras kill(). Ejecutando taskkill /F /T /PID {pid}..."
-                )
-                try:
-                    import subprocess
-                    subprocess.run(
-                        ["taskkill", "/F", "/T", "/PID", str(pid)],
-                        stdout=subprocess.DEVNULL,
-                        stderr=subprocess.DEVNULL,
-                        timeout=3.0,
+                import platform
+                if platform.system() == "Windows":
+                    logger.warning(
+                        f"GPU Worker (PID {pid}) continúa activo tras kill(). Ejecutando taskkill /F /T /PID {pid}..."
                     )
-                except Exception as tk_err:
-                    logger.warning(f"Error ejecutando taskkill: {tk_err}")
+                    try:
+                        import subprocess
+                        subprocess.run(
+                            ["taskkill", "/F", "/T", "/PID", str(pid)],
+                            stdout=subprocess.DEVNULL,
+                            stderr=subprocess.DEVNULL,
+                            timeout=3.0,
+                        )
+                    except Exception as tk_err:
+                        logger.warning(f"Error ejecutando taskkill: {tk_err}")
+                else:
+                    # En Linux / macOS: matar grupo de procesos o PID por seguridad
+                    logger.warning(
+                        f"GPU Worker (PID {pid}) continúa activo tras kill(). Enviando SIGKILL al proceso o grupo de procesos..."
+                    )
+                    import os, signal
+                    sig = getattr(signal, "SIGKILL", signal.SIGTERM)
+                    try:
+                        if hasattr(os, "killpg") and hasattr(os, "getpgid"):
+                            os.killpg(os.getpgid(pid), sig)
+                        else:
+                            os.kill(pid, sig)
+                    except Exception:
+                        try:
+                            os.kill(pid, sig)
+                        except Exception as k_err:
+                            logger.warning(f"Error enviando señal forzada: {k_err}")
                 self._process.join(timeout=1.0)
 
         except Exception as e:
@@ -170,7 +191,7 @@ class GPUWorkerManager:
         if self._process.is_alive():
             logger.critical(
                 f"CRÍTICO: El subproceso GPU Worker (PID {pid}) NO pudo ser terminado por el sistema operativo. "
-                f"El proceso ha quedado en estado huérfano (posible bloqueo irrecuperable en driver D3D12/GPU). "
+                f"El proceso ha quedado en estado huérfano (posible bloqueo irrecuperable en driver/GPU). "
                 f"NO se marca el proceso como limpio."
             )
             self._has_orphaned_worker = True
@@ -236,7 +257,7 @@ class GPUWorkerManager:
 
         if command == "remove_background":
             model_name = payload.get("model_name", "")
-            if payload.get("enable_clothing_protection", False):
+            if payload.get("enable_clothing_protection", False) and model_name not in ("u2net_human_seg", "isnet-anime"):
                 base_timeout += 15.0
             if model_name in ("ensemble", "birefnet-general"):
                 base_timeout += 20.0

@@ -68,19 +68,25 @@ class SAMManager:
                 self._init_sessions(enc_path, dec_path)
 
     def _init_sessions(self, enc_path: Path, dec_path: Path):
-        """Inicializa las sesiones de ONNX Runtime con proveedores optimizados."""
+        """Inicializa las sesiones de ONNX Runtime respetando el estado de GPUWorkerManager."""
         import onnxruntime as ort
+        from app.core.gpu_manager import get_gpu_manager
 
-        providers = get_inference_providers()
+        gpu_mgr = get_gpu_manager()
+        if gpu_mgr.is_gpu_enabled() and not gpu_mgr.has_orphaned_worker():
+            providers = get_inference_providers()
+        else:
+            providers = ["CPUExecutionProvider"]
+
         sess_options = get_optimized_session_options() or ort.SessionOptions()
 
-        logger.info(f"Cargando MobileSAM Encoder desde {enc_path.name}...")
+        logger.info(f"Cargando MobileSAM Encoder desde {enc_path.name} (providers={providers})...")
         try:
             self.encoder_session = ort.InferenceSession(
                 str(enc_path), sess_options, providers=providers
             )
         except Exception as e:
-            logger.warning(f"Fallo al cargar Encoder con DirectML, usando CPU: {e}")
+            logger.warning(f"Fallo al cargar Encoder con GPU, usando CPU: {e}")
             self.encoder_session = ort.InferenceSession(
                 str(enc_path), sess_options, providers=["CPUExecutionProvider"]
             )
@@ -91,10 +97,22 @@ class SAMManager:
                 str(dec_path), sess_options, providers=providers
             )
         except Exception as e:
-            logger.warning(f"Fallo al cargar Decoder con DirectML, usando CPU: {e}")
+            logger.warning(f"Fallo al cargar Decoder con GPU, usando CPU: {e}")
             self.decoder_session = ort.InferenceSession(
                 str(dec_path), sess_options, providers=["CPUExecutionProvider"]
             )
+
+    def unload_sessions(self):
+        """Libera las sesiones ONNX de MobileSAM de la VRAM cuando se cambia el modo de dispositivo."""
+        import gc
+        with self._lock:
+            self.encoder_session = None
+            self.decoder_session = None
+            self.cached_embedding = None
+            self.current_image_id = None
+            self.orig_size = (0, 0)
+            self.scaled_size = (0, 0)
+        gc.collect()
 
     def has_embedding(self) -> bool:
         """Indica si la imagen activa ya tiene su embedding calculado."""
@@ -247,6 +265,90 @@ class SAMManager:
             except Exception as e:
                 logger.error(f"Error en inferencia del Decoder de MobileSAM: {e}")
                 return None
+
+    def predict_mask_from_yolo_subject(
+        self,
+        bbox: Tuple[int, int, int, int],
+        coarse_mask: np.ndarray,
+        orig_img_size: Optional[Tuple[int, int]] = None,
+    ) -> Optional[np.ndarray]:
+        """
+        Refina un sujeto detectado por YOLO11-seg usando MobileSAM.
+        Combina el punto interior más profundo de la máscara de YOLO (label 1)
+        con el Bounding Box del sujeto (labels 2 y 3) para lograr precisión de alta resolución.
+        """
+        with self._lock:
+            if self.cached_embedding is None or self.decoder_session is None:
+                return None
+
+            orig_w, orig_h = orig_img_size or self.orig_size
+            scale = self.scale_factor or (1024.0 / max(orig_w, orig_h))
+
+            # 1. Calcular el polo de inaccesibilidad (punto más profundo garantizado dentro del sujeto)
+            mask_u8 = (coarse_mask > 0).astype(np.uint8)
+            if np.any(mask_u8):
+                dist_map = cv2.distanceTransform(mask_u8, cv2.DIST_L2, 5)
+                _, _, _, max_loc = cv2.minMaxLoc(dist_map)
+                cx, cy = max_loc
+            else:
+                cx = (bbox[0] + bbox[2]) // 2
+                cy = (bbox[1] + bbox[3]) // 2
+
+            x1, y1, x2, y2 = bbox
+            point_coords = np.array(
+                [[
+                    [float(cx) * scale, float(cy) * scale],
+                    [float(x1) * scale, float(y1) * scale],
+                    [float(x2) * scale, float(y2) * scale],
+                ]],
+                dtype=np.float32,
+            )
+            point_labels = np.array([[1.0, 2.0, 3.0]], dtype=np.float32)
+
+            mask_input = np.zeros((1, 1, 256, 256), dtype=np.float32)
+            has_mask_input = np.array([0.0], dtype=np.float32)
+            orig_im_size = np.array([1024.0, 1024.0], dtype=np.float32)
+
+            decoder_inputs = {}
+            for inp in self.decoder_session.get_inputs():
+                name = inp.name
+                if "image_embedding" in name:
+                    decoder_inputs[name] = self.cached_embedding
+                elif "point_coord" in name:
+                    decoder_inputs[name] = point_coords
+                elif "point_label" in name:
+                    decoder_inputs[name] = point_labels
+                elif "mask_input" in name and "has" not in name:
+                    decoder_inputs[name] = mask_input
+                elif "has_mask_input" in name:
+                    decoder_inputs[name] = has_mask_input
+                elif "orig_im_size" in name:
+                    decoder_inputs[name] = orig_im_size
+
+            try:
+                outputs = self.decoder_session.run(None, decoder_inputs)
+                raw_mask = outputs[0]
+                if raw_mask.ndim == 4:
+                    mask_2d = raw_mask[0, 0]
+                elif raw_mask.ndim == 3:
+                    mask_2d = raw_mask[0]
+                else:
+                    mask_2d = np.squeeze(raw_mask)
+
+                new_w, new_h = self.scaled_size
+                if new_w > 0 and new_h > 0 and mask_2d.shape[0] >= new_h and mask_2d.shape[1] >= new_w:
+                    crop_mask = mask_2d[:new_h, :new_w]
+                else:
+                    crop_mask = mask_2d
+
+                prob_resized = cv2.resize(crop_mask, (orig_w, orig_h), interpolation=cv2.INTER_LINEAR)
+                prob_norm = 1.0 / (1.0 + np.exp(-np.clip(prob_resized, -15.0, 15.0)))
+                return prob_norm
+            except Exception as e:
+                logger.warning(f"Fallo en predict_mask_from_yolo_subject con BBox, intentando punto simple: {e}")
+
+        bool_mask = self.predict_mask_at_point(cx, cy, orig_img_size=(orig_w, orig_h))
+        return bool_mask.astype(np.float32) if bool_mask is not None else None
 
 
 # Instancia singleton global

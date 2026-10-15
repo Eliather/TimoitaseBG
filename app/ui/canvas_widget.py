@@ -40,6 +40,7 @@ class CanvasWidget(QWidget):
     maskChanged = Signal(bool)  # Emite True si hay trazos dibujados, False si está limpia
     zoomChanged = Signal(float) # Emite el porcentaje de zoom actual
     fileDropped = Signal(str)   # Emite la ruta de archivo si el usuario arrastra una imagen
+    browseRequested = Signal()  # Emite cuando el usuario hace clic en la zona vacía para explorar
     imageEditedDirectly = Signal(str)  # Descripción de la edición para el historial
     selectionChanged = Signal(int, int)  # (píxeles seleccionados, píxeles totales)
 
@@ -110,6 +111,13 @@ class CanvasWidget(QWidget):
         self.comparison_split_ratio: float = 0.5
         self.is_dragging_split: bool = False
 
+        # Drop Zone widget estilizado para el lienzo vacío
+        from app.ui.drop_zone import DropZoneWidget
+        self.drop_zone = DropZoneWidget(self)
+        self.drop_zone.fileDropped.connect(self.fileDropped.emit)
+        self.drop_zone.clicked.connect(self.browseRequested.emit)
+        self.drop_zone.show()
+
     def set_comparison_mode(self, enabled: bool, before_image: Optional[Image.Image] = None):
         """Activa o desactiva la vista comparativa antes/después con cortina."""
         self.comparison_mode = enabled
@@ -142,9 +150,15 @@ class CanvasWidget(QWidget):
         if pil_img is None:
             self.current_qimage = None
             self.clear_selection()
+            if hasattr(self, "drop_zone"):
+                self.drop_zone.show()
+                self._center_drop_zone()
             self.update()
             self.maskChanged.emit(False)
             return
+
+        if hasattr(self, "drop_zone"):
+            self.drop_zone.hide()
 
         prev_w = self.current_qimage.width() if self.current_qimage else 0
         prev_h = self.current_qimage.height() if self.current_qimage else 0
@@ -631,7 +645,22 @@ class CanvasWidget(QWidget):
     def resizeEvent(self, event):
         super().resizeEvent(event)
         self._clamp_pan_offset()
+        self._center_drop_zone()
+        sb_thick = 12
+        margin = 4
+        self.v_scrollbar.setGeometry(self.width() - sb_thick - margin, margin, sb_thick, self.height() - (margin * 2) - sb_thick)
+        self.h_scrollbar.setGeometry(margin, self.height() - sb_thick - margin, self.width() - (margin * 2) - sb_thick, sb_thick)
+        self._update_scrollbars()
         self.update()
+
+    def _center_drop_zone(self):
+        if hasattr(self, "drop_zone"):
+            dw = self.drop_zone.width()
+            dh = self.drop_zone.height()
+            self.drop_zone.move(
+                int((self.width() - dw) / 2),
+                int((self.height() - dh) / 2),
+            )
 
     def mouseDoubleClickEvent(self, event: QMouseEvent):
         """Doble clic para re-encajar la imagen en la vista (fit_to_view)."""
@@ -889,9 +918,12 @@ class CanvasWidget(QWidget):
 
         # 1. Fondo general de la ventana (se deja que el QSS lo maneje)
 
-        # Si no hay imagen cargada, mostrar pantalla de bienvenida / dropzone
+        # Si no hay imagen cargada, la drop_zone se encarga de mostrar la tarjeta interactiva
         if not self.current_qimage:
-            self._draw_empty_state(painter)
+            if hasattr(self, "drop_zone"):
+                if not self.drop_zone.isVisible():
+                    self.drop_zone.show()
+                self._center_drop_zone()
             return
 
         img_rect = self.get_image_rect_in_widget()
@@ -1212,13 +1244,15 @@ class CanvasWidget(QWidget):
             }
         """
 
-    def resizeEvent(self, event):
-        super().resizeEvent(event)
-        sb_thick = 12
-        margin = 4
-        self.v_scrollbar.setGeometry(self.width() - sb_thick - margin, margin, sb_thick, self.height() - (margin * 2) - sb_thick)
-        self.h_scrollbar.setGeometry(margin, self.height() - sb_thick - margin, self.width() - (margin * 2) - sb_thick, sb_thick)
-        self._update_scrollbars()
+    def retranslate_ui(self):
+        """Actualiza los textos del lienzo al cambiar idioma."""
+        if hasattr(self, "drop_zone"):
+            self.drop_zone.retranslate_ui()
+
+    def update_theme(self, is_dark: bool):
+        """Actualiza el aspecto de los componentes del lienzo con el tema."""
+        if hasattr(self, "drop_zone"):
+            self.drop_zone.update_theme(is_dark)
 
     def _update_scrollbars(self):
         if not self.current_qimage or self.width() <= 0 or self.height() <= 0:

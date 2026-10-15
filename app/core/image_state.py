@@ -175,3 +175,29 @@ class ImageState:
         if not self.has_image:
             return "Sin imagen"
         return f"Paso {self._current_index + 1}/{len(self._history)}: {self.current_description}"
+
+
+class SequenceSession:
+    """Administra múltiples estados ImageState para fotogramas de un GIF animado."""
+
+    def __init__(self, frames: List[Image.Image], durations: Optional[List[int]] = None, loop: int = 0):
+        self.states: List[ImageState] = []
+        for frame in frames:
+            st = ImageState()
+            st.load_new_image(frame)
+            self.states.append(st)
+        self.durations = durations or [80] * len(frames)
+        self.loop = loop
+        self.current_index = 0
+
+    @property
+    def active_state(self) -> ImageState:
+        return self.states[self.current_index]
+
+    @property
+    def total_frames(self) -> int:
+        return len(self.states)
+
+    def get_all_current_frames(self) -> List[Image.Image]:
+        return [st.current_image for st in self.states if st.current_image is not None]
+

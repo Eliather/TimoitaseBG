@@ -471,6 +471,62 @@ def postprocess_mask(
     return np.clip(alpha_continuous * 255.0, 0, 255).astype(np.uint8)
 
 
+def fuse_clothing_protection_core_only(
+    main_alpha: np.ndarray,
+    clothing_alpha: np.ndarray,
+    inner_erosion_px: int = 12,
+    cloth_confidence_thresh: int = 75,
+) -> np.ndarray:
+    """
+    Fusiona la máscara de ropa (U2-Net 320x320) con la máscara principal (1024x1024)
+    restringiendo la inyección al núcleo interior. Evita perforaciones en prendas claras
+    (tanto huecos cerrados como 'bahías' abiertas en cuellos/mangas) sin contaminar jamás
+    el borde subpíxel exterior con halos de baja resolución.
+    """
+    if main_alpha is None or clothing_alpha is None:
+        return main_alpha
+
+    h, w = main_alpha.shape[:2]
+    if clothing_alpha.shape[:2] != (h, w):
+        clothing_alpha = cv2.resize(clothing_alpha, (w, h), interpolation=cv2.INTER_LINEAR)
+
+    # Escalar el radio de erosión proporcionalmente a la resolución real de la imagen
+    scale_factor = max(1.0, min(h, w) / 1024.0)
+    eff_erosion = max(6, int(round(inner_erosion_px * scale_factor)))
+
+    ksize = 2 * eff_erosion + 1
+    kernel = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (ksize, ksize))
+
+    # 1. Erosionar la propia máscara de ropa para destruir su halo exterior de baja resolución
+    eroded_clothing = cv2.erode(clothing_alpha, kernel)
+
+    # 2. Calcular silueta cerrada del modelo principal para proteger huecos internos
+    main_binary = (main_alpha > 30).astype(np.uint8)
+    if np.any(main_binary):
+        close_k = max(15, int(round(25 * scale_factor)) | 1)
+        close_kernel = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (close_k, close_k))
+        main_closed = cv2.morphologyEx(main_binary, cv2.MORPH_CLOSE, close_kernel)
+        main_solid = scipy.ndimage.binary_fill_holes(main_closed).astype(np.uint8)
+        safe_main_core = cv2.erode(main_solid, kernel)
+    else:
+        safe_main_core = np.zeros_like(main_alpha, dtype=np.uint8)
+
+    # 3. Inyectar únicamente donde el núcleo erosionado de ropa sea confiable
+    valid_clothing = (eroded_clothing >= cloth_confidence_thresh) | (
+        (clothing_alpha >= cloth_confidence_thresh) & (safe_main_core > 0)
+    )
+
+    if not np.any(valid_clothing):
+        return main_alpha
+
+    # 4. Transición suave interna para no dejar escalones duros dentro de la prenda
+    injection_alpha = np.where(valid_clothing, eroded_clothing, 0).astype(np.uint8)
+    blur_k = max(5, int(round(7 * scale_factor)) | 1)
+    injection_alpha = cv2.GaussianBlur(injection_alpha, (blur_k, blur_k), sigmaX=2.0)
+
+    return np.maximum(main_alpha, injection_alpha)
+
+
 def generate_trimap(
     alpha_mask: Union[np.ndarray, Image.Image],
     erode_px: int = 15,
@@ -686,6 +742,18 @@ class BackgroundRemover:
         out = session.run(None, {input_name: tensor})[0]
         return _postprocess_inspyrenet_mask(out, orig_size)
 
+    def _get_rembg_cpu_session(self, model_name: str):
+        """Obtiene o reutiliza en caché una sesión de rembg en CPU para evitar recargas en lotes."""
+        cache_key = f"rembg_cpu_{model_name}"
+        if cache_key not in self._sessions:
+            with self._lock:
+                if cache_key not in self._sessions:
+                    import rembg
+                    self._sessions[cache_key] = rembg.new_session(
+                        model_name, providers=["CPUExecutionProvider"]
+                    )
+        return self._sessions[cache_key]
+
     def _remove_background_cpu_local(
         self,
         image: Image.Image,
@@ -709,7 +777,7 @@ class BackgroundRemover:
         elif model_name in ("isnet-anime", "birefnet-general", "u2net_human_seg"):
             import rembg
             logger.info(f"[CPU Fallback/Local] Ejecutando {model_name} en CPU...")
-            sess = rembg.new_session(model_name, providers=["CPUExecutionProvider"])
+            sess = self._get_rembg_cpu_session(model_name)
             out = rembg.remove(input_img, session=sess)
             final_alpha = np.array(out.split()[-1], dtype=np.uint8)
         else:
@@ -719,15 +787,19 @@ class BackgroundRemover:
             cleaned_rgb, final_alpha = postprocess_inspyrenet(input_img, raw_mask)
             input_img = Image.fromarray(cleaned_rgb, mode="RGB")
 
-        # Fusión con Detector Semántico de Ropa y Sujetos (evita huecos en prendas blancas)
-        if enable_clothing_protection and model_name != "u2net_human_seg":
+        # Fusión Core-Only con Detector Semántico de Ropa (se omite en isnet-anime y u2net_human_seg)
+        if enable_clothing_protection and model_name not in ("u2net_human_seg", "isnet-anime"):
             try:
                 import rembg
-                human_sess = rembg.new_session("u2net_human_seg", providers=["CPUExecutionProvider"])
+                human_sess = self._get_rembg_cpu_session("u2net_human_seg")
                 human_out = rembg.remove(input_img, session=human_sess)
                 human_alpha = np.array(human_out.split()[-1], dtype=np.uint8)
                 if np.any(human_alpha > 50):
-                    final_alpha = np.maximum(final_alpha, human_alpha)
+                    final_alpha = fuse_clothing_protection_core_only(
+                        main_alpha=final_alpha,
+                        clothing_alpha=human_alpha,
+                        inner_erosion_px=12,
+                    )
             except Exception as e:
                 logger.warning(f"Protección de ropa u2net_human_seg omitida en CPU: {e}")
 

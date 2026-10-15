@@ -2,7 +2,15 @@
 TimoitaseBG - Punto de entrada de la aplicación.
 """
 import sys
+import multiprocessing
 from pathlib import Path
+
+# Forzar 'spawn' en Linux y macOS para evitar deadlocks de hilos con ONNX Runtime y Qt
+if sys.platform != "win32":
+    try:
+        multiprocessing.set_start_method("spawn", force=True)
+    except RuntimeError:
+        pass
 
 # Asegurar que la raíz del proyecto esté en sys.path
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
@@ -29,7 +37,11 @@ def load_stylesheet() -> str:
 
 
 def main():
-    import multiprocessing
+    if sys.platform != "win32":
+        try:
+            multiprocessing.set_start_method("spawn", force=True)
+        except RuntimeError:
+            pass
     multiprocessing.freeze_support()
 
     # Inicializar la aplicación Qt
@@ -51,4 +63,9 @@ def main():
 
 
 if __name__ == "__main__":
+    if sys.platform != "win32":
+        try:
+            multiprocessing.set_start_method("spawn", force=True)
+        except RuntimeError:
+            pass
     main()

@@ -52,6 +52,14 @@ LUCIDE_SVG_PATHS = {
     "sel-subtract": '<rect x="3" y="3" width="11" height="11" rx="1.5"/><rect x="10" y="10" width="11" height="11" rx="1.5"/><line x1="13" y1="15.5" x2="18" y2="15.5"/>',
     "sel-intersect": '<rect x="3" y="3" width="11" height="11" rx="1.5" stroke-dasharray="2 2"/><rect x="10" y="10" width="11" height="11" rx="1.5" stroke-dasharray="2 2"/><rect x="10" y="10" width="4" height="4" fill="currentColor"/>',
 
+    # Reproducción y Controles de Medios (GIFs)
+    "play": '<polygon points="6 3 20 12 6 21 6 3" fill="currentColor"/>',
+    "pause": '<rect x="6" y="4" width="4" height="16" rx="1" fill="currentColor"/><rect x="14" y="4" width="4" height="16" rx="1" fill="currentColor"/>',
+    "skip-back": '<polygon points="19 20 9 12 19 4 19 20" fill="currentColor"/><line x1="5" x2="5" y1="19" y2="5"/>',
+    "skip-forward": '<polygon points="5 4 15 12 5 20 5 4" fill="currentColor"/><line x1="19" x2="19" y1="5" y2="19"/>',
+    "chevron-left": '<path d="m15 18-6-6 6-6"/>',
+    "chevron-right": '<path d="m9 18 6-6-6-6"/>',
+
     # Botones auxiliares de selección
     "invert": '<circle cx="12" cy="12" r="10"/><path d="M12 2a10 10 0 0 1 0 20Z" fill="currentColor"/>',
     "select-all": '<rect x="3" y="3" width="18" height="18" rx="2" stroke-dasharray="3 3"/>',

@@ -21,28 +21,36 @@
 <p align="center">
   <img src="https://img.shields.io/badge/Python-3.11%2B-3776AB?style=for-the-badge&logo=python&logoColor=white" alt="Python">
   <img src="https://img.shields.io/badge/Framework-PySide6%20%2F%20Qt6-41CD52?style=for-the-badge&logo=qt&logoColor=white" alt="PySide6">
-  <img src="https://img.shields.io/badge/Inferencia-ONNX%20Runtime%20%7C%20DirectML-0078D4?style=for-the-badge&logo=windows&logoColor=white" alt="DirectML">
-  <img src="https://img.shields.io/badge/Privacidad-100%25%20Local%20%26%20Offline-6366F1?style=for-the-badge" alt="Privacidad">
+  <img src="https://img.shields.io/badge/Multiplataforma-Windows%20%7C%20macOS%20%7C%20Linux%20%7C%20ARM64-0078D4?style=for-the-badge&logo=linux&logoColor=white" alt="Multiplataforma">
+  <img src="https://img.shields.io/badge/Aceleraci%C3%B3n-CUDA%20%7C%20ROCm%20%7C%20CoreML%20%7C%20DirectML%20%7C%20QNN-FF6F00?style=for-the-badge&logo=nvidia&logoColor=white" alt="Aceleración">
+  <img src="https://img.shields.io/badge/Privacidad-100%25%20Local%20%26%20Offline-6366F1?style=for-the-badge&logo=shield&logoColor=white" alt="Privacidad">
 </p>
 
 <p align="center">
-  <b>Estación de trabajo de escritorio local para eliminación de fondos, segmentación con IA y retoque digital de alta precisión.</b>
+  <b>Estación de trabajo de escritorio local y multiplataforma para eliminación de fondos, segmentación con IA y retoque digital de alta precisión.</b>
 </p>
 
 ---
 
-## 📌 Descripción General
+## Descripción General
 
-**TimoitaseBG** es una solución de escritorio **100% local**, moderna y de alto rendimiento desarrollada con **PySide6 / Qt6**. Diseñada para ilustradores, artistas de anime y manga, diseñadores gráficos y fotógrafos, integra los modelos de visión por computadora más avanzados (**RMBG-2.0**, **MobileSAM**, **YOLO11-seg**, **InSPyReNet** y **Real-ESRGAN**) con herramientas profesionales de selección manual y enmascarado subpíxel estilo Photoshop.
+**TimoitaseBG** es una solución de escritorio **100% local, multiplataforma**, moderna y de alto rendimiento desarrollada con **PySide6 / Qt6** y **ONNX Runtime**. Diseñada para ilustradores, artistas de anime y manga, diseñadores gráficos y fotógrafos, integra los modelos de visión por computadora más avanzados (**RMBG-2.0**, **MobileSAM**, **YOLO11-seg**, **InSPyReNet** y **Real-ESRGAN**) con herramientas profesionales de selección manual y enmascarado subpíxel estilo Photoshop.
+
+La aplicación ofrece compatibilidad nativa integral con una amplia gama de arquitecturas y aceleradores de hardware:
+- **Windows (x86_64 y ARM64):** NVIDIA CUDA, AMD Radeon / Intel Arc vía DirectML, y procesadores **Qualcomm Snapdragon X Elite / X Plus** con aceleración NPU Hexagon (**QNN**) y GPU Adreno (**DirectML ARM64**).
+- **macOS (Apple Silicon e Intel):** Aceleración nativa **CoreML** en GPUs y Apple Neural Engine de chips M1, M2, M3, M4 y M5, así como Macs Intel con gráficos integrados o GPUs dedicadas AMD Radeon Pro.
+- **Linux (x86_64 y ARM64 `aarch64`):** NVIDIA CUDA (Desktop y **NVIDIA Jetson Orin / Nano**), **AMD ROCm / MIOpen**, y microcomputadoras/SoCs ARM (**Raspberry Pi 5**, Rockchip) con aceleración vectorial NEON.
+- **Protección Automática para Memoria Unificada (UMA / APUs):** Reconocimiento inteligente de memoria compartida en APUs AMD Ryzen, Intel iGPU, Apple Silicon y SoCs ARM para activar procesamiento por bloques (*tiling*) y prevenir saturaciones de RAM.
 
 Todo el procesamiento se realiza de manera totalmente local en el equipo del usuario: sin dependencia de servicios en la nube, sin suscripciones periódicas y garantizando la privacidad absoluta de los datos e imágenes.
 
 ---
 
-## 📑 Tabla de Contenidos
+## Tabla de Contenidos
 
-1. [¿Por qué TimoitaseBG?](#-por-qué-timoitasebg)
-2. [Características Principales](#-características-principales)
+1. [¿Por qué TimoitaseBG?](#por-qué-timoitasebg)
+2. [Compatibilidad de Hardware y Aceleradores](#compatibilidad-de-hardware-y-aceleradores)
+3. [Características Principales](#características-principales)
    - [Eliminación de Fondos por IA](#1-eliminación-de-fondos-por-ia)
    - [Varita Mágica Híbrida (Color e IA)](#2-varita-mágica-híbrida-color-e-ia)
    - [Detección y Aislamiento Multiobjeto](#3-detección-y-aislamiento-multiobjeto-yolo11-seg)
@@ -51,27 +59,60 @@ Todo el procesamiento se realiza de manera totalmente local en el equipo del usu
    - [Lienzo Interactivo y Comparación](#6-lienzo-interactivo-y-comparación)
    - [Procesamiento por Lotes](#7-procesamiento-por-lotes)
    - [Diseño e Internacionalización](#8-diseño-e-internacionalización)
-3. [Arquitectura y Concurrencia](#-arquitectura-y-concurrencia)
-4. [Requisitos del Sistema](#-requisitos-del-sistema)
-5. [Instalación y Puesta en Marcha](#-instalación-y-puesta-en-marcha)
-6. [Pruebas Automatizadas](#-pruebas-automatizadas)
-7. [Compilación a Ejecutable (.exe)](#-compilación-a-ejecutable-exe)
-8. [Atribución, Licencias de Modelos y Citas Académicas](#-atribución-licencias-de-modelos-y-citas-académicas)
-9. [Licencia del Software](#-licencia-del-software)
+   - [Paginación y Edición por Fotograma en GIFs](#9-paginación-y-edición-por-fotograma-en-gifs)
+4. [Arquitectura y Concurrencia Defensiva](#arquitectura-y-concurrencia-defensiva)
+5. [Requisitos del Sistema](#requisitos-del-sistema)
+6. [Instalación y Puesta en Marcha](#instalación-y-puesta-en-marcha)
+   - [Windows (x86_64 y ARM64 Snapdragon)](#opción-a-windows-x86_64-y-arm64-snapdragon)
+   - [macOS (Apple Silicon e Intel)](#opción-b-macos-apple-silicon-e-intel)
+   - [Linux (x86_64, NVIDIA Jetson y Raspberry Pi)](#opción-c-linux-x86_64-nvidia-jetson-y-raspberry-pi-arm64)
+7. [Pruebas Automatizadas](#pruebas-automatizadas)
+8. [Compilación a Ejecutable (.exe)](#compilación-a-ejecutable-exe)
+9. [Atribución, Licencias de Modelos y Citas Académicas](#atribución-licencias-de-modelos-y-citas-académicas)
+10. [Licencia del Software](#licencia-del-software)
 
 ---
 
-## 💡 ¿Por qué TimoitaseBG?
+## ¿Por qué TimoitaseBG?
 
-- **🔒 Privacidad Garantizada:** Procesamiento local sin telemetría ni envío de información a servidores externos.
-- **⚡ Aceleración por Hardware DirectML:** Inferencia optimizada para GPUs en Windows (NVIDIA, AMD Radeon e Intel Arc) a través de DirectX 12, con soporte y conmutación automática a CPU.
-- **🛡️ Gestión Eficiente de Recursos:** Control de concurrencia y subprocesos para mantener la interfaz fluida a 60 FPS sin saturar la CPU.
-- **💎 Fidelidad Cromática del 100%:** Mantiene la paleta de colores RGB original sin compresión ni alteración cromática.
-- **🎨 Flujo de Trabajo No Destructivo:** Historial de deshacer/rehacer ilimitado con restauración de estado y soporte para portapapeles.
+- **Privacidad Absoluta:** Procesamiento local sin telemetría, analíticas ni envío de información a servidores externos.
+- **Aceleración Multiplataforma Nativa:** Soporte universal para aceleradores CUDA (NVIDIA), ROCm (AMD Linux), CoreML (Apple Silicon), DirectML (Windows x64 / ARM64) y QNN (Qualcomm Hexagon NPU).
+- **Aislamiento en Subproceso con Watchdog:** Supervisor continuo contra fallos de controlador gráfico (TDR en Windows, bloqueos CUDA/ROCm en Linux o desbordamientos de memoria) con conmutación instantánea a CPU.
+- **Gestión Inteligente de Memoria Unificada (UMA):** Ajuste automático de segmentación por bloques (*tiling*) en APUs AMD Ryzen, Intel Iris/UHD, Apple Silicon y SoCs ARM para evitar sobrecargar la memoria RAM compartida.
+- **Optimización para CPUs Heterogéneas (big.LITTLE):** Asignación controlada de hilos (`intra_op_num_threads <= 4`) y supresión de giro activo (*no-spinning*) en procesadores ARM para optimizar consumo energético y prevenir sobrecalentamiento.
+- **Fidelidad Cromática del 100%:** Conserva la paleta de colores RGB íntegra sin conversiones destructivas ni alteración en el canal alfa.
+- **Flujo de Trabajo No Destructivo:** Historial continuo de deshacer/rehacer con soporte multicanal y portapapeles bidireccional.
 
 ---
 
-## 🚀 Características Principales
+## Compatibilidad de Hardware y Aceleradores
+
+TimoitaseBG integra una capa de detección de hardware multiplataforma que sondea en tiempo de ejecución los buses del sistema (PCIe, SoC, WMI, sysctl, DirectML, CUDA, ROCm y CoreML), asignando el proveedor óptimo de ONNX Runtime con conmutación en caliente (*hot-swap fallback*) ante fallos:
+
+| Plataforma / OS | Arquitectura | Hardware / Acelerador | Proveedor ONNX Runtime | Manejo de Memoria |
+| :--- | :--- | :--- | :--- | :--- |
+| **Windows 10 / 11** | `x86_64` (AMD64) | NVIDIA GeForce / RTX | `CUDAExecutionProvider` / `DmlExecutionProvider` | VRAM Dedicada |
+| **Windows 10 / 11** | `x86_64` (AMD64) | AMD Radeon RX / Vega | `DmlExecutionProvider` (DirectX 12) | VRAM Dedicada |
+| **Windows 10 / 11** | `x86_64` (AMD64) | Intel Arc / Iris Xe | `DmlExecutionProvider` (DirectX 12) | VRAM Dedicada |
+| **Windows 10 / 11** | `x86_64` (AMD64) | **APU AMD Ryzen (Radeon Graphics)** | `DmlExecutionProvider` (DirectX 12) | Memoria Compartida (UMA) 🛡️ |
+| **Windows 10 / 11** | `x86_64` (AMD64) | **Intel Graphics (UHD / HD)** | `DmlExecutionProvider` (DirectX 12) | Memoria Compartida (UMA) 🛡️ |
+| **Windows on ARM** | `ARM64` | **Qualcomm Snapdragon X Elite / Plus** | `QNNExecutionProvider` (NPU Hexagon) | Memoria Unificada (UMA) 🛡️ |
+| **Windows on ARM** | `ARM64` | **GPU Qualcomm Adreno** | `DmlExecutionProvider` (DirectML ARM64) | Memoria Unificada (UMA) 🛡️ |
+| **macOS 12+** | `arm64` | **Apple Silicon (M1, M2, M3, M4, M5)** | `CoreMLExecutionProvider` (GPU + NPU) | Memoria Unificada (UMA) 🛡️ |
+| **macOS 12+** | `x86_64` | Mac Intel con AMD Radeon Pro | `CoreMLExecutionProvider` (GPU) | VRAM Dedicada |
+| **macOS 12+** | `x86_64` | Mac Intel con Iris / UHD | `CoreMLExecutionProvider` / CPU | Memoria Compartida (UMA) 🛡️ |
+| **Linux (Ubuntu, etc.)** | `x86_64` | NVIDIA GeForce / RTX / Tesla | `CUDAExecutionProvider` | VRAM Dedicada |
+| **Linux (Ubuntu, etc.)** | `x86_64` | **AMD Radeon (ROCm / MIOpen)** | `ROCMExecutionProvider` | VRAM Dedicada |
+| **Linux ARM64** | `aarch64` | **NVIDIA Jetson (Orin, Xavier, Nano)** | `CUDAExecutionProvider` (JetPack) | Memoria Unificada (UMA) 🛡️ |
+| **Linux ARM64** | `aarch64` | **Raspberry Pi 5 / Rockchip RK3588** | `CPUExecutionProvider` (Vectorial NEON) | Memoria Unificada (UMA) 🛡️ |
+| **Universal (Fallback)**| Cualquiera | Procesador Intel / AMD / ARM | `CPUExecutionProvider` (Multihilo) | Memoria RAM Sistema |
+
+> 🛡️ **Protección Automática de Memoria Unificada (UMA / APUs):**  
+> En arquitecturas de memoria compartida (APUs AMD Ryzen, gráficos Intel integrados, Apple Silicon, Qualcomm Snapdragon y SoCs ARM en Linux), la función `is_integrated_gpu()` retorna `True`, forzando el procesamiento por mosaicos (*tiling 512×512*) en Real-ESRGAN y liberando buffers entre fases para impedir saturaciones de la RAM del sistema.
+
+---
+
+## Características Principales
 
 ### 1. Eliminación de Fondos por IA
 
@@ -139,65 +180,76 @@ Motor dual de selección con dos modos de operación complementarios:
 - **Temas Visuales:** Modos oscuro y claro implementados mediante Qt Style Sheets (QSS).
 - **Soporte Multilingüe (i18n):** Español (`es`), Inglés (`en`), Ruso (`ru`) y Chino Simplificado (`zh`).
 
+### 9. Paginación y Edición por Fotograma en GIFs
+
+- **Navegación Cuadro a Cuadro:** Inspección y control de secuencias animadas mediante barra HUD inferior flotante (`SequenceSession`).
+- **Edición Individual Aislada:** Modificación directa de cualquier fotograma con pincel, borrador, varita MobileSAM o YOLO11 sin sobreescribir ni contaminar el resto de la animación.
+- **Reproducción Fluida en Lienzo:** Bucle interactivo (*Play / Pausa*) respetando la duración exacta de cada fotograma.
+- **Estabilización Temporal Anti-Flicker:** Suavizado dinámico de bordes en inferencia secuencial para eliminar la vibración (*jitter*) entre fotogramas consecutivos.
+- **Exportación Limpia de Paleta Indexada:** Conversión a paleta de 255 colores adaptativos con canal alfa de 1-bit sin halos oscuros en los contornos.
+
 ---
 
-## ⚙️ Arquitectura y Concurrencia
+## Arquitectura y Concurrencia Defensiva
 
-TimoitaseBG implementa una arquitectura defensiva dividida en subprocesos para garantizar la estabilidad continua del entorno:
+TimoitaseBG implementa una arquitectura defensiva dividida en subprocesos para garantizar la estabilidad continua del entorno en todas las plataformas:
 
 ```text
-┌────────────────────────────────────────────────────────┐
-│                   Proceso Principal                    │
-│     (Interfaz Gráfica PySide6 / Event Loop Qt)         │
-│  - Renderizado a 60 FPS                                │
-│  - CanvasWidget (Hormigas marchantes, zoom, pincel)    │
-│  - MainWindow & ToolSidebar                            │
-└───────────┬────────────────────────────────┬───────────┘
-            │                                │
-     (IPC Queue / Mutex)             (QThreads Controlados)
-            ▼                                ▼
-┌────────────────────────┐      ┌──────────────────────────┐
-│  GPU Worker Aislado    │      │ Workers de Fondo UI      │
-│  (Subproceso dedicado) │      │ - SamEmbeddingWorker     │
-│  - RMBG-2.0 / BiRefNet │      │ - YoloDetectionWorker    │
-│  - InSPyReNet          │      │ - BatchWorkerThread      │
-│  - Real-ESRGAN         │      │ Prioridad: LowPriority   │
-│  - Watchdog de Timeout │      │ CPU Thread Cap: <= 4     │
-│  - Fallback a CPU      │      │ Re-entrancia bloqueada   │
-└────────────────────────┘      └──────────────────────────┘
+┌─────────────────────────────────────────────────────────────────────────┐
+│                           Proceso Principal                             │
+│               (Interfaz Gráfica PySide6 / Event Loop Qt)                │
+│  - Renderizado nativo a 60 FPS (Hardware acelerado)                     │
+│  - CanvasWidget (Hormigas marchantes, zoom, pincel, selección)          │
+│  - MainWindow, SequenceSession (GIFs) & ToolSidebar                     │
+└────────────────────┬────────────────────────────────┬───────────────────┘
+                     │                                │
+              (IPC Queue / Mutex)             (QThreads Controlados)
+                     ▼                                ▼
+┌───────────────────────────────────────┐  ┌──────────────────────────────┐
+│       GPU Worker Aislado (IPC)        │  │     Workers de Fondo UI      │
+│         (Subproceso dedicado)         │  │ - SamEmbeddingWorker         │
+│  - Backends: CUDA | ROCm | CoreML |   │  │ - YoloDetectionWorker        │
+│    DirectML (x64/ARM64) | QNN (NPU)   │  │ - BatchWorkerThread          │
+│  - RMBG-2.0 / BiRefNet 1024×1024      │  │ Prioridad: LowPriority       │
+│  - InSPyReNet Swin-B                  │  │ CPU Thread Cap: <= 4         │
+│  - Real-ESRGAN x4plus (Tiling 512)    │  │ Afinidad ARM: allow_spin=0   │
+│  - Watchdog Supervisor & Auto-Kill    │  │ Re-entrancia bloqueada       │
+│  - Fallback Dinámico a CPU            │  │                              │
+└───────────────────────────────────────┘  └──────────────────────────────┘
 ```
 
-1. **Aislamiento del Subproceso GPU (`PersistentGPUWorker`):** La inferencia en GPU se ejecuta en un proceso de sistema operativo independiente (`multiprocessing.Process`). Ante un fallo del controlador gráfico (TDR en DirectX/DirectML), el sistema commuta de forma transparente a CPU sin congelar la interfaz.
-2. **Control de Uso de CPU:** Configuración de hilos en ONNX Runtime (`intra_op_num_threads <= 4`) para evitar picos de carga y mantener la fluidez del sistema operativo.
-3. **Sincronización:** Uso de cerrojos reentrantes (`RLock`) para gestionar las peticiones a la GPU de manera estrictamente secuencial.
-4. **Finalización Controlada:** Manejo de eventos de cierre (`closeEvent`) para asegurar la detención limpia de subprocesos antes del desmontaje.
+1. **Aislamiento del Subproceso GPU (`PersistentGPUWorker`):** La inferencia en GPU/NPU se ejecuta en un proceso de sistema operativo independiente (`multiprocessing.Process`). Ante un fallo del controlador gráfico (TDR en Windows DirectX/DirectML, kernel panics en Linux CUDA/ROCm, o excepciones de operadores no soportados en drivers ARM), el watchdog termina el subproceso colgado y conmuta de forma transparente a CPU sin congelar la interfaz ni perder el trabajo en curso.
+2. **Priorización y Conmutación en Cascada:**
+   `CUDA` ➔ `ROCm` ➔ `QNN` ➔ `CoreML` ➔ `DirectML` ➔ `CPU (NEON/AVX2)`.
+   Si un modelo falla al compilar operadores en NPU o GPU Adreno, conmuta automáticamente a DirectML o CPU en el mismo worker sin colapsar el sistema.
+3. **Control Térmico y Energético en CPUs Heterogéneas (big.LITTLE):** En procesadores ARM (Snapdragon, Apple Silicon, Raspberry Pi), ONNX Runtime restringe los hilos (`intra_op_num_threads <= 4`) y desactiva el giro activo (`session.intra_op.allow_spinning = 0`) para evitar que hilos intensivos caigan en núcleos lentos de eficiencia, previniendo drenaje de batería y estrangulamiento térmico (*thermal throttling*).
+4. **Sincronización:** Uso de cerrojos reentrantes (`RLock`) para gestionar las peticiones a la GPU de manera estrictamente secuencial y segura.
+5. **Finalización Controlada:** Manejo de eventos de cierre (`closeEvent`) para asegurar la detención limpia y liberación de VRAM antes de salir.
 
 ---
 
-## 💻 Requisitos del Sistema
+## Requisitos del Sistema
 
-- **Sistema Operativo:** Windows 10 o Windows 11 (64-bit).
-- **Procesador (CPU):** Intel Core i3 / AMD Ryzen 3 o superior (4 núcleos recomendados).
+- **Sistemas Operativos Soportados:**
+  - **Windows:** Windows 10 y Windows 11 (arquitecturas `x86_64` y `ARM64`).
+  - **macOS:** macOS 12 Monterey, macOS 13 Ventura, macOS 14 Sonoma y macOS 15 Sequoia (Nativo en `Apple Silicon` M1–M5 e Intel Mac `x86_64`).
+  - **Linux:** Distribuciones modernas (Ubuntu 22.04+, Debian 12+, Arch Linux, Fedora) en `x86_64` y `aarch64` / `armv8` (NVIDIA Jetson, Raspberry Pi 5).
+- **Procesador (CPU):** Intel Core i3 / AMD Ryzen 3 / Apple Silicon / Snapdragon X / ARMv8 o superior (4 núcleos recomendados).
 - **Memoria RAM:** 8 GB mínimo (16 GB recomendados para imágenes 4K).
-- **Aceleración Gráfica (GPU):**
-  - Tarjeta gráfica compatible con **DirectX 12 (DirectML)**: NVIDIA GeForce, AMD Radeon o Intel Arc.
-  - Alternativamente, aceleración mediante **NVIDIA CUDA**.
-  - *Nota:* Si no hay GPU dedicada presente, la aplicación funciona al 100% en CPU.
-- **Almacenamiento:** ~1.5 GB de espacio disponible para ejecutable y modelos ONNX.
+- **Aceleradores Soportados (Opcional, con fallback automático a CPU):**
+  - **NVIDIA:** GeForce GTX/RTX, Quadro, Tesla, o NVIDIA Jetson (CUDA 11.8+ / 12+).
+  - **AMD:** Radeon RX 400+, Vega, RDNA/RDNA2/RDNA3 (DirectML en Windows o ROCm en Linux).
+  - **Apple:** GPU de 8 a 40 núcleos y Neural Engine (M1–M5) mediante CoreML nativo.
+  - **Qualcomm:** Snapdragon X Elite / Plus con NPU Hexagon (QNN) y GPU Adreno (DirectML ARM64).
+  - **Intel:** Intel Arc Alchemist / Battlemage o gráficos integrados Iris Xe / UHD.
+  - **APUs y Gráficos Integrados:** Compatibilidad nativa total con auto-tiling para proteger la memoria compartida.
+- **Almacenamiento:** ~1.5 GB de espacio disponible para dependencias y modelos ONNX locales.
 
 ---
 
-## 📦 Instalación y Puesta en Marcha
+## Instalación y Puesta en Marcha
 
-### Opción 1: Inicio Rápido (Windows)
-
-Si el repositorio ya cuenta con el entorno configurado, ejecute el script de inicio:
-
-```bat
-iniciar.bat
-```
-
-### Opción 2: Instalación Manual
+### Opción A: Windows (x86_64 y ARM64 Snapdragon)
 
 1. **Clonar el repositorio:**
    ```bash
@@ -205,47 +257,94 @@ iniciar.bat
    cd TimoitaseBG
    ```
 
-2. **Crear y activar el entorno virtual:**
-   *Con `uv`:*
-   ```bash
-   uv venv .venv --python 3.11
-   .venv\Scripts\activate
+2. **Inicio Rápido (con script automático):**
+   ```bat
+   iniciar.bat
    ```
-   *Con `venv` estándar:*
+
+3. **O Instalación Manual:**
    ```bash
    python -m venv .venv
    .venv\Scripts\activate
+   pip install -r requirements.txt
+   # Opcional para Windows ARM64 (Snapdragon X Elite / Plus con NPU Hexagon):
+   # pip install onnxruntime-qnn
+   python app/main.py
    ```
 
-3. **Instalar dependencias:**
+### Opción B: macOS (Apple Silicon e Intel)
+
+En macOS, `onnxruntime` incluye soporte nativo para **CoreML** (`CoreMLExecutionProvider`) sin necesidad de paquetes externos:
+
+1. **Clonar e ingresar al repositorio:**
    ```bash
-   uv pip install -r requirements.txt
-   # O alternativamente:
+   git clone git@github.com:Eliather/TimoitaseBG.git
+   cd TimoitaseBG
+   ```
+
+2. **Crear y activar el entorno virtual:**
+   ```bash
+   python3 -m venv .venv
+   source .venv/bin/activate
+   ```
+
+3. **Instalar dependencias y ejecutar:**
+   ```bash
+   pip install -r requirements.txt
+   python app/main.py
+   ```
+
+### Opción C: Linux (x86_64, NVIDIA Jetson y Raspberry Pi ARM64)
+
+1. **Instalar dependencias del sistema (librerías multimedia para Qt y OpenCV):**
+   *En Ubuntu / Debian / Raspberry Pi OS:*
+   ```bash
+   sudo apt update
+   sudo apt install -y python3-venv python3-pip libgl1 libglib2.0-0 libegl1
+   ```
+
+2. **Clonar y preparar entorno virtual:**
+   ```bash
+   git clone git@github.com:Eliather/TimoitaseBG.git
+   cd TimoitaseBG
+   python3 -m venv .venv
+   source .venv/bin/activate
    pip install -r requirements.txt
    ```
 
-4. **Ejecutar la aplicación:**
+3. **Aceleración Específica por Hardware (Opcional):**
+   - **Para GPU NVIDIA en Linux (x86_64 o NVIDIA Jetson Orin/Nano aarch64):**
+     ```bash
+     pip install onnxruntime-gpu
+     ```
+   - **Para GPU AMD ROCm en Linux:**
+     ```bash
+     pip install onnxruntime-rocm --extra-index-url https://aiinfra.pkgs.visualstudio.com/PublicPackages/_packaging/onnxruntime-rocm-release/pypi/simple/
+     ```
+   - **Para Raspberry Pi 5 y SBCs ARM64:** El paquete oficial `onnxruntime` instala wheels compiladas para `manylinux_2_27_aarch64` con aceleración vectorial NEON integrada de fábrica.
+
+4. **Ejecutar:**
    ```bash
    python app/main.py
    ```
 
 ---
 
-## 🧪 Pruebas Automatizadas
+## Pruebas Automatizadas
 
-El proyecto cuenta con una suite integral de **75 pruebas unitarias y de integración**:
+El proyecto cuenta con una suite integral de pruebas unitarias y de integración, incluyendo validaciones simuladas multiplataforma (Windows ARM64, macOS Apple Silicon, Linux ROCm/ARM SoCs y APUs integradas):
 
 ```bash
-# Ejecutar todas las pruebas
-pytest -v
+# Ejecutar la suite de pruebas del Watchdog Aislado y Detección Multiplataforma:
+pytest tests/test_gpu_worker_watchdog.py -v
 
-# Ejecutar pruebas específicas de estabilidad y modelos
+# Ejecutar pruebas de Estabilidad de Hilos, Concurrencia y Modelos de Segmentación:
 pytest tests/test_thread_and_resource_safety.py tests/test_sam_selection.py tests/test_yolo_detection.py tests/test_rmbg2.py -v
 ```
 
 ---
 
-## 🛠️ Compilación a Ejecutable (.exe)
+## Compilación a Ejecutable (.exe)
 
 Para generar la distribución binaria independiente para Windows mediante **PyInstaller**:
 
@@ -258,7 +357,7 @@ El binario resultante se ubicará en: `dist/TimoitaseBG/TimoitaseBG.exe`.
 
 ---
 
-## 📚 Atribución, Licencias de Modelos y Citas Académicas
+## Atribución, Licencias de Modelos y Citas Académicas
 
 TimoitaseBG hace uso de modelos y librerías de código abierto de la comunidad científica e industrial:
 
@@ -327,7 +426,7 @@ TimoitaseBG hace uso de modelos y librerías de código abierto de la comunidad 
 
 ---
 
-## 📄 Licencia del Software
+## Licencia del Software
 
 Este programa es software libre y de código abierto distribuido bajo los términos de la **GNU Affero General Public License Version 3 (GNU AGPLv3)**. Para más detalles, consulte el archivo [LICENSE](LICENSE).
 

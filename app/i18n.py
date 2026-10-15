@@ -86,7 +86,7 @@ TRANSLATIONS = {
         "btn_ok": "Aceptar",
         
         "canvas_drop_title": "Arrastra una imagen aquí",
-        "canvas_drop_subtitle": "o usa el botón 'Abrir Imagen' o pega con Ctrl+V",
+        "canvas_drop_subtitle": "o haz clic para explorar • pega con Ctrl+V",
         "canvas_drop_formats": "Soporta PNG, JPG, JPEG, WEBP y BMP",
         
         "sidebar_title": "Herramientas",
@@ -288,7 +288,7 @@ TRANSLATIONS = {
         "btn_ok": "OK",
         
         "canvas_drop_title": "Drag an image here",
-        "canvas_drop_subtitle": "or use 'Open' button or paste with Ctrl+V",
+        "canvas_drop_subtitle": "or click to explore • paste with Ctrl+V",
         "canvas_drop_formats": "Supports PNG, JPG, JPEG, WEBP and BMP",
         
         "sidebar_title": "Tools",
