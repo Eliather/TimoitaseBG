@@ -34,7 +34,7 @@
 
 ## Descripción General
 
-**TimoitaseBG** es una solución de escritorio **100% local, multiplataforma**, moderna y de alto rendimiento desarrollada con **PySide6 / Qt6** y **ONNX Runtime**. Diseñada para ilustradores, artistas de anime y manga, diseñadores gráficos y fotógrafos, integra los modelos de visión por computadora más avanzados (**RMBG-2.0**, **MobileSAM**, **YOLO11-seg**, **InSPyReNet** y **Real-ESRGAN**) con herramientas profesionales de selección manual y enmascarado subpíxel estilo Photoshop.
+**TimoitaseBG** es una solución de escritorio **100% local, multiplataforma**, moderna y de alto rendimiento desarrollada con **PySide6 / Qt6** y **ONNX Runtime**. Diseñada para ilustradores, artistas de anime y manga, diseñadores gráficos y fotógrafos, integra los modelos de visión por computadora más avanzados (**BiRefNet**, **MobileSAM**, **YOLO11-seg**, **InSPyReNet**, **IS-Net Anime** y **Real-ESRGAN**) con herramientas profesionales de selección manual y enmascarado subpíxel estilo Photoshop.
 
 La aplicación ofrece compatibilidad nativa integral con una amplia gama de arquitecturas y aceleradores de hardware:
 - **Windows (x86_64 y ARM64):** NVIDIA CUDA, AMD Radeon / Intel Arc vía DirectML, y procesadores **Qualcomm Snapdragon X Elite / X Plus** con aceleración NPU Hexagon (**QNN**) y GPU Adreno (**DirectML ARM64**).
@@ -118,7 +118,7 @@ TimoitaseBG integra una capa de detección de hardware multiplataforma que sonde
 
 Pipeline de segmentación de última generación ejecutado sobre **ONNX Runtime** con posprocesamiento morfológico adaptativo:
 
-- **RMBG-2.0 (BiRefNet SOTA 1024×1024):** Modelo de alta precisión para la extracción de detalles complejos como cabello, pieles, texturas finas y objetos transparentes.
+- **BiRefNet (General High Definition 1024×1024 - MIT):** Arquitectura dicotómica SOTA de máxima precisión para la extracción de detalles complejos como cabello, pelaje, texturas finas y bordes translúcidos.
 - **InSPyReNet (Swin-B Plus Ultra):** Red neuronal piramidal para refinamiento subpíxel y corrección cromática en bordes (*despill*).
 - **IS-Net Anime:** Modelo especializado en arte digital 2D, manga, cómics y cel-shading.
 - **U2-Net Human:** Segmentación anatómica enfocada en el aislamiento integral de personas.
@@ -210,7 +210,7 @@ TimoitaseBG implementa una arquitectura defensiva dividida en subprocesos para g
 │         (Subproceso dedicado)         │  │ - SamEmbeddingWorker         │
 │  - Backends: CUDA | ROCm | CoreML |   │  │ - YoloDetectionWorker        │
 │    DirectML (x64/ARM64) | QNN (NPU)   │  │ - BatchWorkerThread          │
-│  - RMBG-2.0 / BiRefNet 1024×1024      │  │ Prioridad: LowPriority       │
+│  - BiRefNet General 1024×1024 (MIT)  │  │ Prioridad: LowPriority       │
 │  - InSPyReNet Swin-B                  │  │ CPU Thread Cap: <= 4         │
 │  - Real-ESRGAN x4plus (Tiling 512)    │  │ Afinidad ARM: allow_spin=0   │
 │  - Watchdog Supervisor & Auto-Kill    │  │ Re-entrancia bloqueada       │
@@ -339,7 +339,7 @@ El proyecto cuenta con una suite integral de pruebas unitarias y de integración
 pytest tests/test_gpu_worker_watchdog.py -v
 
 # Ejecutar pruebas de Estabilidad de Hilos, Concurrencia y Modelos de Segmentación:
-pytest tests/test_thread_and_resource_safety.py tests/test_sam_selection.py tests/test_yolo_detection.py tests/test_rmbg2.py -v
+pytest tests/test_thread_and_resource_safety.py tests/test_sam_selection.py tests/test_yolo_detection.py tests/test_birefnet.py -v
 ```
 
 ---
@@ -359,32 +359,34 @@ El binario resultante se ubicará en: `dist/TimoitaseBG/TimoitaseBG.exe`.
 
 ## Atribución, Licencias de Modelos y Citas Académicas
 
-TimoitaseBG hace uso de modelos y librerías de código abierto de la comunidad científica e industrial:
+TimoitaseBG hace uso de modelos y librerías de código abierto de la comunidad científica e industrial. Ningún modelo incluido impone restricciones no comerciales (`CC BY-NC`):
 
 ### Tabla de Atribución de Componentes
 
 | Componente / Modelo | Autores / Organización | Licencia Original | Función en TimoitaseBG | Referencia |
 | :--- | :--- | :--- | :--- | :--- |
-| **RMBG-2.0** | BRIA AI & ZhengPeng7 | CC BY-NC 4.0 | Eliminación de fondo a 1024×1024 | Hugging Face / Paper |
-| **BiRefNet** | Zheng et al. | Apache 2.0 | Arquitectura de segmentación dicotómica | GitHub |
-| **MobileSAM** | Zhang et al. (Kyung Hee Univ.) | Apache 2.0 | Varita mágica por IA | GitHub |
-| **Segment Anything (SAM)** | Meta AI Research | Apache 2.0 | Modelo base de segmentación | GitHub |
-| **YOLO11-seg** | Ultralytics Inc. | AGPL-3.0 | Detección y segmentación multiobjeto | GitHub |
-| **InSPyReNet** | Kim et al. (POSTECH) | MIT | Eliminación de fondo con pirámide inversa | GitHub |
-| **Real-ESRGAN** | Wang et al. (Tencent PCG) | BSD 3-Clause | Super-resolución y restauración | GitHub |
-| **IS-Net (DIS5K)** | Qin et al. | Apache 2.0 | Segmentación para ilustración 2D | GitHub |
-| **U^2-Net** | Qin et al. (Univ. of Alberta) | Apache 2.0 | Segmentación humana y de prendas | GitHub |
-| **ViTMatte** | Yao et al. (HUST & Kuaishou) | Apache 2.0 | Refinamiento de bordes con Transformers | GitHub |
-| **Lucide Icons** | Lucide Project | ISC License | Iconografía vectorial SVG | Lucide.dev |
-| **PySide6 / Qt** | The Qt Company | LGPLv3 | Interfaz gráfica nativa | Qt.io |
+| **BiRefNet** | Zheng et al. | **MIT License** | Eliminación dicotómica de fondos en alta resolución (1024×1024) | [GitHub](https://github.com/ZhengPeng7/BiRefNet) |
+| **InSPyReNet** | Kim et al. (POSTECH) | **MIT License** | Eliminación de fondo con pirámide inversa y anti-aliasing | [GitHub](https://github.com/plemeri/InSPyReNet) |
+| **IS-Net Anime** | SkyTNT / Qin et al. | **Apache 2.0** | Segmentación especializada en ilustración 2D, manga y cel-shading | [Hugging Face](https://huggingface.co/skytnt/anime-seg) |
+| **MobileSAM** | Zhang et al. (Kyung Hee Univ.) | **Apache 2.0** | Varita mágica por IA interactiva (<15 ms) | [GitHub](https://github.com/ChaoningZhang/MobileSAM) |
+| **Segment Anything (SAM)** | Meta AI Research | **Apache 2.0** | Modelo base y decodificador de máscaras | [GitHub](https://github.com/facebookresearch/segment-anything) |
+| **YOLO11-seg** | Ultralytics Inc. | **GNU AGPLv3** | Detección y segmentación multiobjeto (hasta 80 clases) | [GitHub](https://github.com/ultralytics/ultralytics) |
+| **Real-ESRGAN** | Wang et al. (Tencent PCG) | **BSD 3-Clause** | Super-resolución 2x/4x y restauración de nitidez | [GitHub](https://github.com/xinntao/Real-ESRGAN) |
+| **Detector de Ropa** | Levin Dabhi / Qin et al. | **MIT / Apache 2.0** | Filtro protector de prendas claras (`u2net_cloth_seg`) | [GitHub](https://github.com/levindabhi/cloth-segmentation) |
+| **U²-Net** | Qin et al. (Univ. of Alberta) | **Apache 2.0** | Segmentación semántica de personas | [GitHub](https://github.com/xuebinqin/U-2-Net) |
+| **ViTMatte** | Yao et al. (HUST & Kuaishou) | **Apache 2.0** | Refinamiento perimetral con Vision Transformers | [GitHub](https://github.com/hustvl/ViTMatte) |
+| **Lucide Icons** | Lucide Project | **ISC License** | Iconografía vectorial SVG | [Lucide.dev](https://lucide.dev) |
+| **PySide6 / Qt** | The Qt Company | **LGPLv3** | Interfaz gráfica nativa multiplataforma | [Qt.io](https://www.qt.io) |
+
+Para detalles exhaustivos, fuentes de descarga y hashes de verificación, consulte el archivo [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).
 
 ### Citas Académicas (BibTeX)
 
 ```bibtex
-@article{bria_rmbg_2_0,
-  title={BRIA RMBG-2.0: Background Removal Model with Bilateral Reference},
-  author={BRIA AI and Zheng, Peng},
-  journal={arXiv preprint arXiv:2411.14444},
+@article{zheng2024birefnet,
+  title={Bilateral Reference for High-Resolution Dichotomous Image Segmentation},
+  author={Zheng, Peng and Fan, Deng-Ping and Tian, Xiao-Bin and others},
+  journal={CAAI Artificial Intelligence Research},
   year={2024}
 }
 
@@ -447,9 +449,9 @@ You should have received a copy of the GNU Affero General Public License
 along with this program.
 ```
 
-### Compatibilidad con Licencias de Terceros
+### Relación con Licencias de Componentes y Modelos de Terceros
 
-La adopción de **GNU AGPLv3** garantiza:
-- **Cumplimiento Nativo con YOLO11-seg:** Alineación al 100% con los requerimientos de la licencia AGPL-3.0 de Ultralytics.
-- **Integración con Componentes Permisivos:** Compatibilidad total con librerías bajo **LGPLv3** (PySide6 / Qt6), **Apache 2.0** (MobileSAM, SAM, IS-Net, U2-Net, ViTMatte), **BSD 3-Clause** (Real-ESRGAN) e **ISC** (Lucide Icons).
-- **Software Libre y Transparente:** Asegura que cualquier derivado o mejora conserve las libertades de auditoría y distribución abierta para la comunidad.
+- **Licencia del Código Fuente:** El código de TimoitaseBG está licenciado bajo **GNU AGPLv3**. Cualquier persona o entidad es libre de usar, estudiar, modificar y redistribuir la aplicación (incluso para fines comerciales), bajo la condición de que las versiones modificadas o desplegadas en red compartan su código fuente bajo esta misma licencia.
+- **Independencia de Licencias de Modelos:** Cada modelo de inteligencia artificial de terceros conserva su propia licencia otorgada por sus respectivos autores (MIT, Apache 2.0, BSD 3-Clause, AGPL-3.0). La licencia AGPLv3 de TimoitaseBG cubre el código de la aplicación y la integración, no sustituye ni modifica las licencias originales de los pesos pre-entrenados.
+- **100% Libre de Restricciones Comerciales (Sin CC BY-NC):** Todos los modelos incorporados o descargados bajo demanda permiten el uso comercial y la libre redistribución. No existen obstáculos de licencias no comerciales para recibir donaciones, comercializar soluciones derivadas o utilizar la herramienta en flujos profesionales.
+- Para consultar los avisos completos, procedencia de datasets y términos individuales, consulte [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).

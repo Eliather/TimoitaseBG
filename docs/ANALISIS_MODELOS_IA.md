@@ -9,14 +9,14 @@
 ## 1. Resumen Ejecutivo de Problemas Detectados
 
 1. **Contaminación de Bordes por Unión Directa (`np.maximum`):**
-   En `app/core/gpu_worker.py` (líneas 190-204) y `app/core/bg_remover.py` (líneas 723-733), la máscara continua de alta resolución (`RMBG-2.0` o `InSPyReNet` a 1024×1024) se une directamente mediante `np.maximum(final_alpha, human_alpha)` con la máscara de baja resolución de `u2net_human_seg` (320×320). Cuando el borde redondeado de U2-Net sobresale 1-3 píxeles del contorno real, destruye el corte subpíxel del modelo principal y genera un halo exterior borroso.
+   En `app/core/gpu_worker.py` y `app/core/bg_remover.py`, la máscara continua de alta resolución (`BiRefNet` o `InSPyReNet` a 1024×1024) se une directamente mediante `np.maximum(final_alpha, human_alpha)` con la máscara de baja resolución de `u2net_human_seg` (320×320). Cuando el borde redondeado de U2-Net sobresale 1-3 píxeles del contorno real, destruye el corte subpíxel del modelo principal y genera un halo exterior borroso.
 2. **Sesgo de Dominio en Ilustración 2D (`isnet-anime`):**
    Ejecutar `u2net_human_seg` (entrenado en fotografías reales) sobre ilustraciones de anime o manga introduce falsos positivos en fondos estilizados y duplica innecesariamente el tiempo de inferencia.
 3. **Recorte Destructivo con Protomáscaras de YOLO11-seg (160×160):**
    En `app/ui/main_window.py` (`perform_isolate_subject` y `perform_select_subject`), se aplica directamente la máscara booleana cruda de YOLO11-seg (proveniente de protomáscaras de 160×160 escaladas linealmente), produciendo bordes escalonados y dentados.
 4. **Desconexión de Herramientas respecto a `gpu_manager.py` y Riesgo de OOM en VRAM:**
    - **MobileSAM (`sam_manager.py`):** Inicializa sesiones ONNX directamente en el proceso principal de la UI con `get_inference_providers()` sin consultar `get_gpu_manager().is_gpu_enabled()` ni `has_orphaned_worker()`. Además, al apagar la GPU desde la UI (`_on_device_mode_changed`), las sesiones de MobileSAM permanecen alojadas en VRAM.
-   - **Colisión de VRAM en `PersistentGPUWorker` (`gpu_worker.py`):** Al ejecutar `restore_image` (Real-ESRGAN), no se liberaban previamente las sesiones en `_cached_sessions` (`rmbg-2.0` + `u2net_human_seg`), manteniendo hasta 3 modelos en VRAM simultáneamente y provocando errores TDR/OOM en tarjetas de 4 GB a 6 GB.
+   - **Colisión de VRAM en `PersistentGPUWorker` (`gpu_worker.py`):** Al ejecutar `restore_image` (Real-ESRGAN), no se liberaban previamente las sesiones en `_cached_sessions` (`birefnet-general` + `u2net_human_seg`), manteniendo hasta 3 modelos en VRAM simultáneamente y provocando errores TDR/OOM en tarjetas de 4 GB a 6 GB.
    - **Recarga de Sesiones en CPU Fallback (`bg_remover.py`):** `_remove_background_cpu_local` instanciaba `rembg.new_session()` en cada llamada sin guardarla en `self._sessions`, penalizando severamente el procesamiento por lotes en CPU.
 
 ---
@@ -26,7 +26,7 @@
 | Herramienta / Módulo | ¿Delega a `GPUWorkerManager`? | Riesgo Detectado | Solución Aplicada en este Parche |
 | :--- | :---: | :--- | :--- |
 | **Quitar Fondo (`bg_remover.py`)** | ✅ Sí (Subproceso) | Sin caché de `rembg` en modo CPU fallback. | Nuevo método `_get_rembg_cpu_session()` cacheado en `self._sessions` + fusión `Core-Only`. |
-| **Escalado (`restorer.py` / `gpu_worker.py`)** | ✅ Sí (Subproceso) | `Real-ESRGAN` se carga en VRAM sin descargar antes `RMBG-2.0` y `U2-Net`. | Llamada automática a `self._clear_rembg_sessions()` antes de inicializar `Real-ESRGAN` y viceversa. |
+| **Escalado (`restorer.py` / `gpu_worker.py`)** | ✅ Sí (Subproceso) | `Real-ESRGAN` se carga en VRAM sin descargar antes `BiRefNet` y `U2-Net`. | Llamada automática a `self._clear_rembg_sessions()` antes de inicializar `Real-ESRGAN` y viceversa. |
 | **Varita Mágica IA (`sam_manager.py`)** | ⚠️ Proceso UI (Hilo QThread) | Ignora si el usuario apagó la GPU o si hay un worker huérfano bloqueado en `gpu_manager.py`. | Verificación estricta de `gpu_mgr.is_gpu_enabled()` y nuevo método `unload_sessions()` conectado al switch de GPU. |
 | **Detección (`yolo_detector.py` / `main_window.py`)** | ⚠️ Proceso UI (Hilo QThread) | Usa máscara cruda de 160×160 y no precalcula MobileSAM. | Precalcula MobileSAM al terminar YOLO y refina con `BBox + Polo de Inaccesibilidad (distanceTransform)` + `Guided Filter`. |
 | **Procesamiento por Lotes (`workers.py`)** | ✅ Sí (vía `bg_remover`) | Deja descriptores `Image.open(f)` abiertos durante el envío por `Queue`. | Uso de `with Image.open(f)` y `.close()` explícito en cada iteración del lote. |
@@ -125,11 +125,7 @@ def fuse_clothing_protection_core_only(
         else:
             input_img = image.copy()
 
-        if model_name == "rmbg-2.0":
-            logger.info("[CPU Fallback/Local] Ejecutando RMBG-2.0 (BiRefNet 1024x1024)...")
-            session = self.get_rmbg2_session(force_cpu=True)
-            final_alpha = self._predict_rmbg2(session, input_img)
-        elif model_name in ("isnet-anime", "birefnet-general", "u2net_human_seg"):
+        if model_name in ("isnet-anime", "birefnet-general", "u2net_human_seg"):
             import rembg
             logger.info(f"[CPU Fallback/Local] Ejecutando {model_name} en CPU...")
             sess = self._get_rembg_cpu_session(model_name)
@@ -171,7 +167,7 @@ def fuse_clothing_protection_core_only(
 
 ### 3.2. `app/core/gpu_worker.py`
 
-#### A. Actualizar `get_inspyrenet_session`, `get_rmbg2_session`, `remove_background` y `restore_image`
+#### A. Actualizar `get_inspyrenet_session`, `remove_background` y `restore_image`
 Garantiza exclusión mutua en VRAM entre los modelos de segmentación y `Real-ESRGAN`, y aplica `fuse_clothing_protection_core_only`:
 
 ```python
@@ -192,24 +188,6 @@ Garantiza exclusión mutua en VRAM entre los modelos de segmentación y `Real-ES
                 str(model_path), sess_options, providers=eff_providers
             )
         return self._cached_sessions["inspyrenet"]
-
-    def get_rmbg2_session(self, providers=None):
-        if "rmbg2" not in self._cached_sessions:
-            if self._cached_sessions or self._restorer_instance is not None:
-                logger.info("Liberando sesiones previas de VRAM para cargar RMBG-2.0...")
-                self._clear_rembg_sessions()
-
-            from app.core.model_fetcher import ensure_model_file
-            model_path = ensure_model_file("rmbg-2.0.onnx")
-            import onnxruntime as ort
-            eff_providers = self._get_providers(providers)
-            sess_options = get_optimized_session_options() or ort.SessionOptions()
-            logger.info(f"Cargando sesión RMBG-2.0 con providers: {eff_providers}...")
-            self._cached_sessions["rmbg2"] = ort.InferenceSession(
-                str(model_path), sess_options, providers=eff_providers
-            )
-        return self._cached_sessions["rmbg2"]
-```
 
 ```python
         # En PersistentGPUWorker.remove_background:

@@ -154,48 +154,6 @@ class PersistentGPUWorker:
                     )
         return self._cached_sessions["inspyrenet"]
 
-    def get_rmbg2_session(self, providers=None, force_cpu: bool = False):
-        if force_cpu:
-            self._cached_sessions.pop("rmbg2", None)
-            providers = ["CPUExecutionProvider"]
-
-        if "rmbg2" not in self._cached_sessions:
-            if self._cached_sessions or self._restorer_instance is not None:
-                logger.info("Liberando sesiones previas de VRAM para cargar RMBG-2.0...")
-                self._clear_rembg_sessions()
-
-            from app.core.model_fetcher import ensure_model_file
-            model_path = ensure_model_file("rmbg-2.0.onnx")
-            import onnxruntime as ort
-            eff_providers = self._get_providers(providers)
-            sess_options = get_optimized_session_options() or ort.SessionOptions()
-            logger.info(f"Cargando sesión RMBG-2.0 con providers: {eff_providers}...")
-            try:
-                self._cached_sessions["rmbg2"] = ort.InferenceSession(
-                    str(model_path), sess_options, providers=eff_providers
-                )
-            except Exception as e:
-                logger.warning(
-                    f"Fallo al cargar sesión RMBG-2.0 con proveedores GPU/CoreML/QNN ({eff_providers}): {e}. "
-                    f"Conmutando limpiamente a DML/CPUExecutionProvider..."
-                )
-                fallback_success = False
-                if any(p == "QNNExecutionProvider" for p in eff_providers) and "DmlExecutionProvider" in ort.get_available_providers():
-                    try:
-                        dml_provs = [("DmlExecutionProvider", {"device_id": self.device_id or 0}), "CPUExecutionProvider"]
-                        logger.info("Reintentando sesión RMBG-2.0 con DirectML tras fallo en QNN...")
-                        self._cached_sessions["rmbg2"] = ort.InferenceSession(
-                            str(model_path), sess_options, providers=dml_provs
-                        )
-                        fallback_success = True
-                    except Exception as dml_err:
-                        logger.warning(f"Fallback DirectML también falló ({dml_err}). Usando CPU...")
-                if not fallback_success:
-                    self._cached_sessions["rmbg2"] = ort.InferenceSession(
-                        str(model_path), sess_options, providers=["CPUExecutionProvider"]
-                    )
-        return self._cached_sessions["rmbg2"]
-
     def remove_background(
         self,
         image: Image.Image,
@@ -208,9 +166,8 @@ class PersistentGPUWorker:
         """
         Ejecuta la eliminación de fondo en el proceso aislado de GPU con fidelidad cromática 100% íntegra.
         - 'isnet-anime': Modelo especializado en Anime/Manga, cel-shading y mangas/ropa blanca.
-        - 'rmbg-2.0': RMBG 2.0 (BiRefNet 1024x1024) para precisión SOTA general y cabello.
+        - 'birefnet-general': BiRefNet (Dicotomic SOTA 1024x1024 MIT) para alta definición general y bordes complejos.
         - 'u2net_human_seg': Detector semántico de personas y prendas (sin fallos en blanco).
-        - 'birefnet-general': BiRefNet para alta definición general.
         - 'inspyrenet': InSPyReNet Swin-B (1024x1024) para fotografía y personas reales con anti-aliasing.
         """
         if image.mode not in ("RGB", "RGBA"):
@@ -220,26 +177,7 @@ class PersistentGPUWorker:
 
         eff_providers = self._get_providers(providers)
 
-        if model_name == "rmbg-2.0":
-            from app.core.bg_remover import _preprocess_rmbg2, _postprocess_rmbg2_mask
-            logger.info(
-                f"[GPUWorker:{os.getpid()}] Ejecutando RMBG-2.0 (BiRefNet 1024x1024) en GPU..."
-            )
-            session = self.get_rmbg2_session(providers=providers)
-            tensor, crop_box, orig_size = _preprocess_rmbg2(input_img)
-            input_name = session.get_inputs()[0].name
-            try:
-                out = session.run(None, {input_name: tensor})[0]
-            except Exception as run_err:
-                logger.warning(
-                    f"Fallo durante la inferencia de RMBG-2.0 ({run_err}). "
-                    f"Reintentando ejecución en CPUExecutionProvider..."
-                )
-                session = self.get_rmbg2_session(force_cpu=True)
-                out = session.run(None, {input_name: tensor})[0]
-            final_alpha = _postprocess_rmbg2_mask(out, crop_box, orig_size)
-
-        elif model_name in ("isnet-anime", "birefnet-general", "u2net_human_seg"):
+        if model_name in ("isnet-anime", "birefnet-general", "u2net_human_seg"):
             import rembg
             logger.info(f"[GPUWorker:{os.getpid()}] Ejecutando {model_name} en GPU con providers: {eff_providers}...")
             if model_name not in self._cached_sessions:

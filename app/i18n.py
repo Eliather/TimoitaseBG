@@ -74,7 +74,6 @@ TRANSLATIONS = {
         "batch_output_path": "Destino: {path}",
         
         "model_isnet-anime": "IS-Net Anime (Óptimo para Anime, Manga e Ilustración)",
-        "model_rmbg-2.0": "RMBG 2.0 (Bria AI SOTA — Máxima Precisión General y Cabello)",
         "model_u2net_human_seg": "U2-Net Human (Detector de Personas y Ropa — Especial Playeras Blancas)",
         "model_birefnet-general": "BiRefNet (Alta Definición General y Bordes Complejos)",
         "model_inspyrenet": "InSPyReNet Swin-B (Fotografía y Retratos Reales — Anti-aliasing Subpíxel)",
@@ -276,7 +275,6 @@ TRANSLATIONS = {
         "batch_output_path": "Destination: {path}",
         
         "model_isnet-anime": "IS-Net Anime (Optimal for Anime, Manga and Illustration)",
-        "model_rmbg-2.0": "RMBG 2.0 (Bria AI SOTA — Maximum General Precision & Hair)",
         "model_u2net_human_seg": "U2-Net Human (Person & Clothing Detector — White Shirts)",
         "model_birefnet-general": "BiRefNet (General High Definition and Complex Edges)",
         "model_inspyrenet": "InSPyReNet Swin-B (Real Photography & Portraits — Subpixel Anti-aliasing)",
@@ -478,7 +476,6 @@ TRANSLATIONS = {
         "batch_output_path": "Назначение: {path}",
         
         "model_isnet-anime": "IS-Net Anime (Для аниме и иллюстраций)",
-        "model_rmbg-2.0": "RMBG 2.0 (Bria AI SOTA — Максимальная точность и волосы)",
         "model_u2net_human_seg": "U2-Net Human (Для людей и белой одежды)",
         "model_birefnet-general": "BiRefNet (Высокая детализация сложных краев)",
         "model_inspyrenet": "InSPyReNet Swin-B (Для фото и портретов)",
@@ -680,7 +677,6 @@ TRANSLATIONS = {
         "batch_output_path": "目标：{path}",
         
         "model_isnet-anime": "IS-Net Anime（适合动漫和插画）",
-        "model_rmbg-2.0": "RMBG 2.0（Bria AI SOTA — 极致通用与发丝精度）",
         "model_u2net_human_seg": "U2-Net Human（人物与衣物检测，保护白色衣服）",
         "model_birefnet-general": "BiRefNet（通用高清和复杂边缘）",
         "model_inspyrenet": "InSPyReNet Swin-B（真实摄影和肖像）",
