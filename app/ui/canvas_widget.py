@@ -99,8 +99,9 @@ class CanvasWidget(QWidget):
         self.selection_path: Optional[QPainterPath] = None
         self._ants_offset: float = 0.0
         self._ants_timer = QTimer(self)
-        self._ants_timer.setInterval(140)
+        self._ants_timer.setInterval(40)  # 25 FPS reales
         self._ants_timer.timeout.connect(self._advance_marching_ants)
+        self._pending_wand_click: Optional[tuple] = None
 
         # Patrón de transparencia
         self.checker_pixmap = create_checkerboard_pattern(size=CHECKER_SIZE)
@@ -768,37 +769,34 @@ class CanvasWidget(QWidget):
                     temp_p.drawLine(t_start, t_end)
         temp_p.end()
         
-        # Si hay selección, recortar (clip) la máscara temporal (temp_img)
+        # Si hay selección, recortar (clip) la máscara temporal (temp_img) directamente en NumPy sin pasar por PIL
         if getattr(self, 'active_selection', None) is not None:
-            # Extraer ROI de active_selection
+            from app.core.image_utils import qimage_to_numpy, numpy_to_qimage
             sel_h, sel_w = self.active_selection.shape
-            
-            # Limites del ROI seguros
+
             roi_y1 = max(0, min(sel_h, min_y))
             roi_y2 = max(0, min(sel_h, max_y))
             roi_x1 = max(0, min(sel_w, min_x))
             roi_x2 = max(0, min(sel_w, max_x))
-            
-            # Si el ROI está fuera de los límites de la imagen, cancelamos
+
             if roi_y1 >= roi_y2 or roi_x1 >= roi_x2:
                 return
-                
+
             sel_patch = self.active_selection[roi_y1:roi_y2, roi_x1:roi_x2]
-            
-            # Ajustar la posición en temp_img si se recortó
             t_off_y = roi_y1 - min_y
             t_off_x = roi_x1 - min_x
-            
-            # Convertir temp_img a numpy
+
             try:
-                temp_np = np.array(qimage_to_pil(temp_img).convert("RGBA"))
+                temp_np = qimage_to_numpy(temp_img)
                 patch_h, patch_w = sel_patch.shape
-                # Multiplicar el alfa del trazo por la selección (0-255, respeta bordes suaves)
+                # Limpiar alfa fuera del área válida de selección (ej. cuando el trazo toca bordes negativos)
+                clipped_alpha = np.zeros((h, w), dtype=np.uint8)
                 region = temp_np[t_off_y:t_off_y + patch_h, t_off_x:t_off_x + patch_w, 3].astype(np.uint16)
-                temp_np[t_off_y:t_off_y + patch_h, t_off_x:t_off_x + patch_w, 3] = (
+                clipped_alpha[t_off_y:t_off_y + patch_h, t_off_x:t_off_x + patch_w] = (
                     region * sel_patch.astype(np.uint16) // 255
                 ).astype(np.uint8)
-                temp_img = pil_to_qimage(Image.fromarray(temp_np, "RGBA"))
+                temp_np[:, :, 3] = clipped_alpha
+                temp_img = numpy_to_qimage(temp_np)
             except Exception as e:
                 print(f"Error clipping brush to selection: {e}")
         
@@ -857,17 +855,24 @@ class CanvasWidget(QWidget):
                 # Varita Inteligente por IA (MobileSAM)
                 from app.core.sam_manager import get_sam_manager
                 sam_mgr = get_sam_manager()
-                pil_img = qimage_to_pil(self.current_qimage)
                 if not sam_mgr.has_embedding():
+                    main_win = self.window()
+                    if main_win is not self and hasattr(main_win, "_ensure_sam_embedding_async"):
+                        # Encolar clic y calcular el embedding en segundo plano sin congelar la UI
+                        self._pending_wand_click = (pt, mode)
+                        main_win._ensure_sam_embedding_async()
+                        return
+                    pil_img = qimage_to_pil(self.current_qimage)
                     sam_mgr.prepare_image(pil_img)
                 new_mask_bool = sam_mgr.predict_mask_at_point(
-                    x, y, orig_img_size=(pil_img.width, pil_img.height)
+                    x, y, orig_img_size=(self.current_qimage.width(), self.current_qimage.height())
                 )
                 if new_mask_bool is None:
                     return
                 new_mask = (new_mask_bool.astype(np.uint8) * 255)
             else:
-                img_np = np.array(qimage_to_pil(self.current_qimage).convert("RGBA"))
+                from app.core.image_utils import qimage_to_numpy
+                img_np = qimage_to_numpy(self.current_qimage)
                 region = sel_ops.magic_wand_region(
                     img_np, x, y,
                     tolerance=self.wand_tolerance,
@@ -1059,7 +1064,7 @@ class CanvasWidget(QWidget):
 
         # Icono decorativo / badge
         icon_rect = QRectF(cx - 24, box_rect.y() + 28, 48, 48)
-        painter.setBrush(QColor("#FFE4EC"))
+        painter.setBrush(QColor("#3B1219") if is_dark else QColor("#FFE4EC"))
         painter.setPen(Qt.PenStyle.NoPen)
         painter.drawRoundedRect(icon_rect, 24, 24)
 
@@ -1109,23 +1114,26 @@ class CanvasWidget(QWidget):
         painter.setRenderHint(QPainter.RenderHint.Antialiasing, True)
         
         if self.eraser_mode:
-            # Cursor oscuro para borrador
-            painter.setBrush(QColor(0, 0, 0, 65))
+            # Cursor con doble halo de alto contraste para que sea visible tanto en fondos oscuros como claros
+            painter.setBrush(QColor(15, 23, 42, 65))
             border_w = 1.0 if visual_radius < 3.0 else 1.5
-            painter.setPen(QPen(QColor(0, 0, 0, 230), border_w))
+            painter.setPen(QPen(QColor(255, 255, 255, 220), border_w + 1.0))
+            painter.drawEllipse(QPointF(cx, cy), max(1.5, visual_radius), max(1.5, visual_radius))
+            painter.setBrush(Qt.BrushStyle.NoBrush)
+            painter.setPen(QPen(QColor(56, 189, 248, 240), border_w))
+            painter.drawEllipse(QPointF(cx, cy), max(1.5, visual_radius), max(1.5, visual_radius))
         else:
             # Círculo semitransparente interior con tinte sakura
             painter.setBrush(QColor(255, 79, 121, 65))
             # Borde rosa sakura (#FF4F79)
             border_w = 1.0 if visual_radius < 3.0 else 1.5
             painter.setPen(QPen(QColor(255, 79, 121, 230), border_w))
-            
-        painter.drawEllipse(QPointF(cx, cy), max(1.5, visual_radius), max(1.5, visual_radius))
+            painter.drawEllipse(QPointF(cx, cy), max(1.5, visual_radius), max(1.5, visual_radius))
 
         # Punto central de precisión (micro-mira para esquinas)
         dot_r = 0.8 if visual_radius < 4.0 else 1.2
         if self.eraser_mode:
-            painter.setBrush(QColor(0, 0, 0, 240))
+            painter.setBrush(QColor(56, 189, 248, 245))
         else:
             painter.setBrush(QColor(255, 79, 121, 240))
             
@@ -1154,8 +1162,9 @@ class CanvasWidget(QWidget):
         painter.setBrush(QColor(0, 0, 0, 40))
         painter.drawEllipse(handle_center + QPointF(1, 1), radius + 1, radius + 1)
 
-        # Círculo blanco con borde rosa sakura
-        painter.setBrush(QColor("#FFFFFF"))
+        # Círculo oscuro/claro con borde rosa sakura
+        is_dark = getattr(self, "_is_dark_theme", True)
+        painter.setBrush(QColor("#1E293B") if is_dark else QColor("#FFFFFF"))
         painter.setPen(QPen(QColor("#FF4F79"), 2.5))
         painter.drawEllipse(handle_center, radius, radius)
 
@@ -1171,12 +1180,12 @@ class CanvasWidget(QWidget):
             "◀ ▶",
         )
 
-        # 3. Badges "ANTES" y "DESPUÉS"
+        # 3. Badges "ANTES" y "DESPUÉS" internacionalizados
         badge_y = img_rect.top() + 12
         if badge_y + 24 < img_rect.bottom():
             # Badge ANTES (Izquierda)
-            badge_antes_rect = QRectF(img_rect.left() + 12, badge_y, 60, 22)
-            painter.setBrush(QColor(28, 25, 23, 200))
+            badge_antes_rect = QRectF(img_rect.left() + 12, badge_y, 64, 22)
+            painter.setBrush(QColor(15, 23, 42, 215))
             painter.setPen(Qt.PenStyle.NoPen)
             painter.drawRoundedRect(badge_antes_rect, 6, 6)
             painter.setPen(QColor("#FFFFFF"))
@@ -1184,64 +1193,67 @@ class CanvasWidget(QWidget):
             font_b.setPixelSize(8)
             font_b.setBold(True)
             painter.setFont(font_b)
-            painter.drawText(badge_antes_rect, Qt.AlignmentFlag.AlignCenter, "ANTES")
+            painter.drawText(badge_antes_rect, Qt.AlignmentFlag.AlignCenter, tr("compare_before"))
 
             # Badge DESPUÉS (Derecha)
             badge_desp_rect = QRectF(img_rect.right() - 76, badge_y, 64, 22)
-            painter.setBrush(QColor(255, 79, 121, 220))
+            painter.setBrush(QColor(244, 63, 94, 225))
             painter.setPen(Qt.PenStyle.NoPen)
             painter.drawRoundedRect(badge_desp_rect, 6, 6)
             painter.setPen(QColor("#FFFFFF"))
-            painter.drawText(badge_desp_rect, Qt.AlignmentFlag.AlignCenter, "DESPUÉS")
+            painter.drawText(badge_desp_rect, Qt.AlignmentFlag.AlignCenter, tr("compare_after"))
 
         painter.restore()
 
     # -------------------------------------------------------------
     # Scrollbars (UI y Lógica)
     # -------------------------------------------------------------
-    def _scrollbar_style(self):
-        return """
-            QScrollBar:horizontal {
+    def _scrollbar_style(self, is_dark: bool = True):
+        track = "rgba(15, 23, 42, 0.65)" if is_dark else "rgba(231, 229, 228, 0.4)"
+        handle = "rgba(71, 85, 105, 0.8)" if is_dark else "rgba(120, 113, 108, 0.6)"
+        handle_hover = "rgba(148, 163, 184, 0.95)" if is_dark else "rgba(120, 113, 108, 0.9)"
+        return f"""
+            QScrollBar:horizontal {{
                 border: none;
-                background: rgba(231, 229, 228, 0.4);
+                background: {track};
                 height: 12px;
                 margin: 0px 0px 0px 0px;
                 border-radius: 6px;
-            }
-            QScrollBar::handle:horizontal {
-                background: rgba(120, 113, 108, 0.6);
+            }}
+            QScrollBar::handle:horizontal {{
+                background: {handle};
                 min-width: 30px;
                 border-radius: 6px;
-            }
-            QScrollBar::handle:horizontal:hover {
-                background: rgba(120, 113, 108, 0.9);
-            }
+            }}
+            QScrollBar::handle:horizontal:hover {{
+                background: {handle_hover};
+            }}
             QScrollBar::add-line:horizontal, QScrollBar::sub-line:horizontal,
-            QScrollBar::add-page:horizontal, QScrollBar::sub-page:horizontal {
+            QScrollBar::add-page:horizontal, QScrollBar::sub-page:horizontal {{
                 background: none;
                 width: 0px;
-            }
+            }}
             
-            QScrollBar:vertical {
+            QScrollBar:vertical {{
                 border: none;
-                background: rgba(231, 229, 228, 0.4);
+                background: {track};
                 width: 12px;
                 margin: 0px 0px 0px 0px;
                 border-radius: 6px;
-            }
-            QScrollBar::handle:vertical {
-                background: rgba(120, 113, 108, 0.6);
+            }}
+            QScrollBar::handle:vertical {{
+                background: {handle};
                 min-height: 30px;
                 border-radius: 6px;
-            }
-            QScrollBar::handle:vertical:hover {
-                background: rgba(120, 113, 108, 0.9);
-            }
+            }}
+            QScrollBar::handle:vertical:hover {{
+                background: {handle_hover};
+            }}
             QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical,
-            QScrollBar::add-page:vertical, QScrollBar::sub-page:vertical {
+            QScrollBar::add-page:vertical, QScrollBar::sub-page:vertical {{
                 background: none;
                 height: 0px;
-            }
+            }}
         """
 
     def retranslate_ui(self):
@@ -1251,8 +1263,14 @@ class CanvasWidget(QWidget):
 
     def update_theme(self, is_dark: bool):
         """Actualiza el aspecto de los componentes del lienzo con el tema."""
+        self._is_dark_theme = is_dark
         if hasattr(self, "drop_zone"):
             self.drop_zone.update_theme(is_dark)
+        if hasattr(self, "v_scrollbar"):
+            self.v_scrollbar.setStyleSheet(self._scrollbar_style(is_dark))
+        if hasattr(self, "h_scrollbar"):
+            self.h_scrollbar.setStyleSheet(self._scrollbar_style(is_dark))
+        self.update()
 
     def _update_scrollbars(self):
         if not self.current_qimage or self.width() <= 0 or self.height() <= 0:

@@ -3,16 +3,127 @@ TimoitaseBG - Configuración global y rutas del sistema.
 """
 import os
 import sys
-from typing import Optional
+from typing import Optional, Tuple
 from pathlib import Path
 
-# Directorio raíz de la aplicación
-APP_DIR = Path(__file__).resolve().parent
-PROJECT_ROOT = APP_DIR.parent
 
-# Directorio para modelos locales autocontenidos
-MODELS_DIR = APP_DIR / "models"
-MODELS_DIR.mkdir(parents=True, exist_ok=True)
+def resolve_app_dir() -> Path:
+    """
+    Resuelve el directorio de activos estáticos de la aplicación:
+    - En modo empaquetado (PyInstaller / sys.frozen), apunta a sys._MEIPASS / 'app'
+      para que estilos QSS e iconos vectoriales se carguen siempre correctamente.
+    - En modo desarrollo, apunta a la carpeta del paquete 'app'.
+    """
+    if getattr(sys, "frozen", False):
+        meipass = getattr(sys, "_MEIPASS", None)
+        if meipass:
+            base_res = Path(meipass)
+            if (base_res / "app").exists():
+                return base_res / "app"
+            elif (base_res / "ui").exists():
+                return base_res
+            return base_res / "app"
+        exe_dir = Path(sys.executable).resolve().parent
+        if (exe_dir / "app").exists():
+            return exe_dir / "app"
+        return exe_dir
+    return Path(__file__).resolve().parent
+
+
+def resolve_base_dir() -> Path:
+    """
+    Resuelve el directorio base o raíz del proyecto/ejecutable:
+    - En modo empaquetado, el directorio que contiene el ejecutable (sys.executable).
+    - En modo desarrollo, el directorio padre de 'app'.
+    """
+    if getattr(sys, "frozen", False):
+        return Path(sys.executable).resolve().parent
+    return Path(__file__).resolve().parent.parent
+
+
+def resolve_models_dir(base_dir: Optional[Path] = None, platform_name: Optional[str] = None) -> Path:
+    """
+    Resuelve el directorio de modelos ONNX garantizando que sea escribible:
+    - Prioridad Portable (USB): Si junto al ejecutable (base_dir) existe una carpeta 'models'
+      que ya contiene archivos .onnx o tiene permisos de escritura, se utiliza como destino
+      prioritario para soportar instalaciones portables sin tocar el disco del sistema.
+    - Modo Empaquetado Estándar (sys.frozen): En Windows, macOS y Linux la aplicación suele
+      instalarse en rutas de solo lectura (C:\\Program Files, /Applications, /opt). Por tanto,
+      se utiliza el directorio nativo de datos de usuario de cada sistema operativo:
+        * Windows: %LOCALAPPDATA%\\TimoitaseBG\\models
+        * macOS: ~/Library/Application Support/TimoitaseBG/models
+        * Linux: $XDG_DATA_HOME/TimoitaseBG/models (o ~/.local/share/TimoitaseBG/models)
+    - Modo Desarrollo: 'app/models' o la carpeta models local.
+    """
+    if platform_name is None:
+        platform_name = sys.platform
+
+    is_frozen = getattr(sys, "frozen", False)
+
+    if base_dir is None:
+        base_dir = Path(sys.executable).resolve().parent if is_frozen else Path(__file__).resolve().parent.parent
+
+    if is_frozen:
+        portable_models = base_dir / "models"
+        if portable_models.exists() and portable_models.is_dir():
+            has_onnx = any(portable_models.glob("*.onnx"))
+            is_writable = False
+            try:
+                test_file = portable_models / ".timoitase_write_test"
+                test_file.touch(exist_ok=True)
+                test_file.unlink(missing_ok=True)
+                is_writable = True
+            except (OSError, PermissionError):
+                is_writable = False
+
+            if has_onnx or is_writable:
+                try:
+                    portable_models.mkdir(parents=True, exist_ok=True)
+                    return portable_models
+                except (OSError, PermissionError):
+                    pass
+
+        # Directorio de usuario nativo según el sistema operativo
+        if platform_name == "win32":
+            local_appdata = os.environ.get("LOCALAPPDATA")
+            base_user = Path(local_appdata) if local_appdata else (Path.home() / "AppData" / "Local")
+            models_path = base_user / "TimoitaseBG" / "models"
+        elif platform_name == "darwin":
+            models_path = Path.home() / "Library" / "Application Support" / "TimoitaseBG" / "models"
+        else:
+            xdg_data = os.environ.get("XDG_DATA_HOME")
+            base_user = Path(xdg_data) if xdg_data else (Path.home() / ".local" / "share")
+            models_path = base_user / "TimoitaseBG" / "models"
+    else:
+        # Modo desarrollo local
+        models_path = Path(__file__).resolve().parent / "models"
+
+    try:
+        models_path.mkdir(parents=True, exist_ok=True)
+    except (OSError, PermissionError):
+        pass
+
+    return models_path
+
+
+def update_u2net_env(models_dir: Path) -> None:
+    """
+    Sincroniza las variables de entorno de rembg (U2NET_HOME / U2NET_home)
+    para que modelos como isnet-anime y u2net_human_seg guarden y carguen
+    sus pesos exactamente en el directorio seguro de modelos.
+    """
+    models_dir_str = str(models_dir)
+    os.environ["U2NET_HOME"] = models_dir_str
+    os.environ["U2NET_home"] = models_dir_str
+
+
+# Definición e inicialización de rutas globales
+APP_DIR: Path = resolve_app_dir()
+BASE_DIR: Path = resolve_base_dir()
+PROJECT_ROOT: Path = BASE_DIR
+
+MODELS_DIR: Path = resolve_models_dir(BASE_DIR)
+update_u2net_env(MODELS_DIR)
 
 # ==============================================================================
 # SEGURIDAD Y ACELERACIÓN POR HARDWARE (GPU)
@@ -69,6 +180,82 @@ def is_arm_architecture() -> bool:
     return mach in ("arm64", "aarch64", "armv8l", "armv7l", "arm") or mach.startswith("arm")
 
 
+_VIRTUAL_DISPLAY_KEYWORDS = (
+    "parsec",
+    "remote desktop",
+    "microsoft basic",
+    "virtual",
+    "indirect display",
+    "citrix",
+    "spacedesk",
+    "amyuni",
+    "luminon",
+    "splashtop",
+    "teamviewer",
+    "anydesk",
+)
+
+
+def _query_windows_gpus_fast() -> list:
+    """
+    Obtiene la lista de adaptadores físicos de video en Windows de forma instantánea (<1 ms)
+    leyendo la clase de registro Display ({4d36e968-e325-11ce-bfc1-08002be10318}),
+    filtrando pantallas virtuales (Parsec, RDP, Microsoft Basic, etc.).
+    Usa PowerShell (con CREATE_NO_WINDOW) únicamente como respaldo si el registro no devuelve datos.
+    """
+    adapters = []
+    if sys.platform != "win32":
+        return adapters
+
+    # 1. Lectura ultrarrápida desde el Registro de Windows (<1 ms, sin levantar subprocesos)
+    try:
+        import winreg
+        class_key_path = r"SYSTEM\CurrentControlSet\Control\Class\{4d36e968-e325-11ce-bfc1-08002be10318}"
+        with winreg.OpenKey(winreg.HKEY_LOCAL_MACHINE, class_key_path) as class_key:
+            idx = 0
+            while True:
+                try:
+                    subkey_name = winreg.EnumKey(class_key, idx)
+                    idx += 1
+                    if not subkey_name.isdigit():
+                        continue
+                    with winreg.OpenKey(class_key, subkey_name) as subkey:
+                        desc, _ = winreg.QueryValueEx(subkey, "DriverDesc")
+                        if desc and isinstance(desc, str):
+                            desc_clean = desc.strip()
+                            desc_lower = desc_clean.lower()
+                            if not any(vk in desc_lower for vk in _VIRTUAL_DISPLAY_KEYWORDS):
+                                if desc_clean not in adapters:
+                                    adapters.append(desc_clean)
+                except OSError:
+                    break
+    except Exception:
+        pass
+
+    if adapters:
+        return adapters
+
+    # 2. Respaldo por WMI / PowerShell sin ventana emergente
+    try:
+        import subprocess
+        cmd = "Get-CimInstance Win32_VideoController | Select-Object -ExpandProperty Name"
+        flags = getattr(subprocess, "CREATE_NO_WINDOW", 0)
+        out = subprocess.check_output(
+            ["powershell", "-NoProfile", "-Command", cmd],
+            stderr=subprocess.DEVNULL,
+            timeout=3,
+            creationflags=flags,
+        ).decode(errors="ignore").strip()
+        for line in out.splitlines():
+            line_clean = line.strip()
+            if line_clean and not any(vk in line_clean.lower() for vk in _VIRTUAL_DISPLAY_KEYWORDS):
+                adapters.append(line_clean)
+    except Exception:
+        pass
+
+    return adapters
+
+
 def get_gpu_name() -> str:
     """Obtiene el nombre de la GPU dedicada o SoC activo (Apple Silicon, Snapdragon Adreno, Jetson, NVIDIA, AMD, etc.)."""
     global _cached_gpu_name
@@ -108,13 +295,34 @@ def get_gpu_name() -> str:
         except Exception:
             pass
 
-    # 2. Probar nvidia-smi con timeout prudente de 3 segundos (NVIDIA en Linux y Windows, incluyendo Jetson si está disponible)
+    # 2. En Windows: consultar primero el registro instantáneo antes de lanzar subprocesos externos
+    if sys.platform == "win32":
+        win_gpus = _query_windows_gpus_fast()
+        # Priorizar mostrar la GPU dedicada si hay GPU híbrida (iGPU + dGPU)
+        for name in win_gpus:
+            name_lower = name.lower()
+            is_igpu = any(k in name_lower for k in ("intel", "uhd", "iris", "radeon(tm) graphics", "radeon graphics", "vega", "adreno"))
+            is_dgpu = any(k in name_lower for k in ("nvidia", "geforce", "rtx", "gtx", "radeon rx", "radeon pro", "arc a")) or (
+                any(k in name_lower for k in ("radeon", "amd")) and not is_igpu
+            )
+            if is_dgpu and not is_igpu:
+                _cached_gpu_name = name
+                return _cached_gpu_name
+        for name in win_gpus:
+            name_lower = name.lower()
+            if any(k in name_lower for k in ("nvidia", "geforce", "rtx", "gtx", "radeon", "amd", "arc", "intel", "adreno", "qualcomm", "snapdragon")):
+                _cached_gpu_name = name
+                return _cached_gpu_name
+
+    # 3. Probar nvidia-smi con timeout prudente (NVIDIA en Linux y Windows, incluyendo Jetson si está disponible)
     try:
         import subprocess
+        flags = getattr(subprocess, "CREATE_NO_WINDOW", 0) if sys.platform == "win32" else 0
         out = subprocess.check_output(
             ["nvidia-smi", "--query-gpu=name", "--format=csv,noheader"],
             stderr=subprocess.DEVNULL,
             timeout=3,
+            creationflags=flags,
         ).decode().strip()
         if out:
             _cached_gpu_name = out.splitlines()[0].strip()
@@ -122,7 +330,7 @@ def get_gpu_name() -> str:
     except Exception:
         pass
 
-    # 3. Probar rocm-smi en Linux si nvidia-smi no detectó tarjeta (AMD ROCm en Linux)
+    # 4. Probar rocm-smi en Linux si nvidia-smi no detectó tarjeta (AMD ROCm en Linux)
     if sys.platform != "win32" and sys.platform != "darwin":
         try:
             import subprocess
@@ -138,52 +346,28 @@ def get_gpu_name() -> str:
         except Exception:
             pass
 
-    # 4. En Windows (x86_64 y ARM64 Snapdragon / Adreno)
-    if sys.platform == "win32":
+    # 5. Respaldo en Windows ARM64: consultar procesador Snapdragon si la GPU no retornó o para QNN
+    if sys.platform == "win32" and is_arm_architecture():
         try:
-            import subprocess
-            cmd = "Get-CimInstance Win32_VideoController | Select-Object -ExpandProperty Name"
-            out = subprocess.check_output(
-                ["powershell", "-NoProfile", "-Command", cmd],
-                stderr=subprocess.DEVNULL,
-                timeout=3,
-            ).decode().strip()
-            for line in out.splitlines():
-                line = line.strip()
-                name_lower = line.lower()
-                if any(k in name_lower for k in ("nvidia", "geforce", "rtx", "gtx", "radeon", "amd", "arc", "intel", "adreno", "qualcomm", "snapdragon")):
-                    _cached_gpu_name = line
+            import platform
+            proc = platform.processor()
+            if proc and any(k in proc.lower() for k in ("snapdragon", "qualcomm")):
+                _cached_gpu_name = proc.strip()
+                return _cached_gpu_name
+        except Exception:
+            pass
+        try:
+            import winreg
+            with winreg.OpenKey(winreg.HKEY_LOCAL_MACHINE, r"HARDWARE\DESCRIPTION\System\CentralProcessor\0") as k:
+                proc_name, _ = winreg.QueryValueEx(k, "ProcessorNameString")
+                if proc_name and any(kw in proc_name.lower() for kw in ("snapdragon", "qualcomm")):
+                    _cached_gpu_name = proc_name.strip()
                     return _cached_gpu_name
         except Exception:
             pass
 
-        # Respaldo en Windows ARM64: consultar procesador Snapdragon si la GPU no retornó o para QNN
-        if is_arm_architecture():
-            try:
-                import platform
-                proc = platform.processor()
-                if proc and any(k in proc.lower() for k in ("snapdragon", "qualcomm")):
-                    _cached_gpu_name = proc.strip()
-                    return _cached_gpu_name
-            except Exception:
-                pass
-            try:
-                import subprocess
-                cmd = "Get-CimInstance Win32_Processor | Select-Object -ExpandProperty Name"
-                out = subprocess.check_output(
-                    ["powershell", "-NoProfile", "-Command", cmd],
-                    stderr=subprocess.DEVNULL,
-                    timeout=2,
-                ).decode().strip()
-                for line in out.splitlines():
-                    if any(k in line.lower() for k in ("snapdragon", "qualcomm")):
-                        _cached_gpu_name = line.strip()
-                        return _cached_gpu_name
-            except Exception:
-                pass
-
-    elif sys.platform != "darwin":
-        # 5. En Linux x86_64 y ARM: lspci
+    elif sys.platform != "win32" and sys.platform != "darwin":
+        # 6. En Linux x86_64 y ARM: lspci
         try:
             import subprocess
             out = subprocess.check_output(
@@ -200,7 +384,7 @@ def get_gpu_name() -> str:
         except Exception:
             pass
 
-        # 6. En Linux ARM64 (aarch64): SoCs como NVIDIA Jetson, Raspberry Pi, Rockchip
+        # 7. En Linux ARM64 (aarch64): SoCs como NVIDIA Jetson, Raspberry Pi, Rockchip
         if is_arm_architecture():
             # a) /proc/device-tree/model
             try:
@@ -277,12 +461,11 @@ def get_best_dml_device_id() -> int:
     En portátiles o PCs con GPU dual (APU AMD/Intel integrada + GPU dedicada NVIDIA/AMD),
     DirectML suele asignar device_id=0 a la integrada y device_id=1 a la dedicada.
     Detecta automáticamente el device_id correspondiente a la GPU dedicada
-    inspeccionando el orden en Win32_VideoController. Si solo hay APU integrada, retorna su id.
-    En Linux retorna 0 de inmediato al no utilizar DirectML.
+    filtrando adaptadores virtuales. Si solo hay una GPU física (dedicada o integrada), retorna 0.
+    En Linux/macOS retorna 0 de inmediato al no utilizar DirectML.
     """
     global _best_dml_device_id
 
-    # Si la aceleración GPU está desactivada, forzada a CPU o no es Windows, retornar 0
     if FORCE_CPU_ONLY or not ENABLE_GPU_ACCELERATION or sys.platform != "win32":
         return 0
 
@@ -293,18 +476,13 @@ def get_best_dml_device_id() -> int:
         if _best_dml_device_id is not None:
             return _best_dml_device_id
 
-        # 1. Intentar detectar directamente por el orden en Win32_VideoController
         try:
-            import subprocess
-            cmd = "Get-CimInstance Win32_VideoController | Select-Object -ExpandProperty Name"
-            out = subprocess.check_output(
-                ["powershell", "-NoProfile", "-Command", cmd],
-                stderr=subprocess.DEVNULL,
-                timeout=3,
-            ).decode().strip()
-            names = [line.strip() for line in out.splitlines() if line.strip()]
-            
-            # Buscar primero GPU dedicada
+            names = _query_windows_gpus_fast()
+            if len(names) <= 1:
+                _best_dml_device_id = 0
+                return 0
+
+            # Buscar primero GPU dedicada cuando existen múltiples adaptadores físicos
             for idx, name in enumerate(names):
                 name_lower = name.lower()
                 is_igpu = any(k in name_lower for k in ("intel", "uhd", "iris", "radeon(tm) graphics", "radeon graphics", "vega", "adreno"))
@@ -312,7 +490,7 @@ def get_best_dml_device_id() -> int:
                     any(k in name_lower for k in ("radeon", "amd")) and not is_igpu
                 )
                 if is_dgpu and not is_igpu:
-                    logger.info(f"GPU dedicada detectada en Win32_VideoController: '{name}' (DirectML device_id={idx})")
+                    logger.info(f"GPU dedicada detectada: '{name}' (DirectML device_id={idx})")
                     _best_dml_device_id = idx
                     return _best_dml_device_id
 
@@ -320,17 +498,11 @@ def get_best_dml_device_id() -> int:
             for idx, name in enumerate(names):
                 name_lower = name.lower()
                 if any(k in name_lower for k in ("radeon", "amd", "intel", "iris", "uhd", "adreno", "qualcomm")):
-                    logger.info(f"Gráficos integrados detectados en Win32_VideoController: '{name}' (DirectML device_id={idx})")
+                    logger.info(f"Gráficos integrados detectados: '{name}' (DirectML device_id={idx})")
                     _best_dml_device_id = idx
                     return _best_dml_device_id
         except Exception as e:
-            logger.warning(f"Error consultando Win32_VideoController para DirectML: {e}")
-
-        # 2. Si nvidia-smi responde pero WMI falló, usar 1 por defecto en laptops duales
-        gpu_name = get_gpu_name()
-        if gpu_name:
-            _best_dml_device_id = 1
-            return _best_dml_device_id
+            logger.warning(f"Error detectando adaptadores para DirectML: {e}")
 
         _best_dml_device_id = 0
         return _best_dml_device_id
@@ -486,7 +658,8 @@ def get_optimized_session_options():
 
 # Parámetros por defecto de la aplicación
 APP_NAME = "TimoitaseBG"
-APP_VERSION = "1.1.0"
+APP_VERSION = "1.2.1"
+APP_AUTHOR = "Eliather"
 APP_DEVELOPER = "Eliather"
 DEFAULT_WINDOW_TITLE = f"{APP_NAME} v{APP_VERSION}"
 WINDOW_MIN_WIDTH = 1200
@@ -501,10 +674,10 @@ CHECKER_SIZE = 16
 
 # Opciones de modelos para Quitar Fondo
 BG_REMOVER_MODELS = [
-    ("isnet-anime", "IS-Net Anime (Óptimo para Anime, Manga e Ilustración)"),
-    ("birefnet-general", "BiRefNet (Alta Definición General y Bordes Complejos)"),
-    ("inspyrenet", "InSPyReNet Swin-B (Fotografía y Retratos Reales — Anti-aliasing Subpíxel)"),
-    ("u2net_human_seg", "U2-Net Human (Detector de Personas y Ropa — Especial Playeras Blancas)"),
+    ("isnet-anime", "Anime (IS-Net Anime)"),
+    ("inspyrenet", "General (InSPyReNet Swin-B)"),
+    ("birefnet-general", "Alta Definición (BiRefNet HD)"),
+    ("u2net_human_seg", "Personas y Ropa (U2-Net)"),
 ]
 DEFAULT_BG_MODEL = "isnet-anime"
 

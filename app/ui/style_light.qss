@@ -391,16 +391,31 @@ QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical {
     background-color: #FF746D;
 }
 
-/* --- DIÁLOGO MODAL DE ATAJOS --- */
-#shortcutsDialogRoot {
+/* --- DIÁLOGO MODAL DE ATAJOS Y POPUPS --- */
+#shortcutsDialogRoot, #framelessPopupRoot {
     background-color: #FFFFFF;
     border-radius: 12px;
     border: 1px solid #CBD5E1;
 }
-#shortcutsDialogTitle {
+#shortcutsDialogRoot QWidget, #framelessPopupRoot QWidget {
+    background-color: transparent;
+}
+#shortcutsDialogTitle, #popupTitle {
     font-size: 14px;
     font-weight: 700;
     color: #1E293B;
+    background: transparent;
+}
+#panelSeparator {
+    background-color: #E2E8F0;
+    border: none;
+    max-height: 1px;
+}
+QPushButton#brushToolModeButton:checked, QPushButton#presetButton:checked, QPushButton#selectionModeButton:checked {
+    background-color: #FFF1F2;
+    border: 1.5px solid #F43F5E;
+    color: #E11D48;
+    font-weight: 700;
 }
 #shortcutsCategoryTitle {
     font-size: 11px;

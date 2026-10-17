@@ -15,7 +15,13 @@ import numpy as np
 import cv2
 from PIL import Image
 
-from app.config import APP_DIR, get_gpu_name, get_optimized_session_options
+from app.config import (
+    APP_DIR,
+    MODELS_DIR,
+    get_gpu_name,
+    get_optimized_session_options,
+    update_u2net_env,
+)
 
 logging.basicConfig(
     level=logging.INFO,
@@ -324,31 +330,27 @@ class PersistentGPUWorker:
                     )
 
         try:
-            return self._restorer_instance.restore_image(
+            return self._restorer_instance._restore_image_impl(
                 image,
                 scale_mode=scale_mode,
                 use_tiling=use_tiling,
                 tile_size=tile_size,
                 tile_pad=tile_pad,
+                force_cpu=False,
             )
         except Exception as restorer_err:
             logger.warning(
                 f"Fallo en ejecución de Real-ESRGAN con acelerador hardware ({restorer_err}). "
                 f"Conmutando automáticamente a CPUExecutionProvider..."
             )
-            import onnxruntime as ort
-            from app.core.model_fetcher import ensure_model_file
-            model_path = ensure_model_file(ImageRestorer.MODEL_FILENAME)
-            sess_options = get_optimized_session_options() or ort.SessionOptions()
-            self._restorer_instance._session = ort.InferenceSession(
-                str(model_path), sess_options, providers=["CPUExecutionProvider"]
-            )
-            return self._restorer_instance.restore_image(
+            self._restorer_instance._session = None
+            return self._restorer_instance._restore_image_impl(
                 image,
                 scale_mode=scale_mode,
                 use_tiling=use_tiling,
                 tile_size=tile_size,
                 tile_pad=tile_pad,
+                force_cpu=True,
             )
 
 
@@ -358,6 +360,9 @@ def gpu_worker_process_loop(request_queue, response_queue, preferred_device_id: 
     Lee peticiones desde request_queue, ejecuta la tarea en GPU y retorna el resultado
     en response_queue.
     """
+    # Sincronización explícita de U2NET_HOME hacia MODELS_DIR en el subproceso 'spawn'
+    update_u2net_env(MODELS_DIR)
+
     if preferred_device_id is None:
         from app.config import get_best_dml_device_id
         preferred_device_id = get_best_dml_device_id()

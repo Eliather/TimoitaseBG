@@ -62,8 +62,16 @@ class BatchWorkerThread(QThread):
             output_path = Path(self.output_dir)
             output_path.mkdir(parents=True, exist_ok=True)
 
-            # Encontrar imágenes
-            valid_exts = {".png", ".jpg", ".jpeg", ".webp", ".bmp", ".gif"}
+            # Encontrar imágenes y videos soportados
+            from app.core.video_processor import (
+                VIDEO_EXTENSIONS,
+                is_video_file,
+                extract_video_frames,
+                process_video_frames,
+                save_video_sequence,
+            )
+
+            valid_exts = {".png", ".jpg", ".jpeg", ".webp", ".bmp", ".gif", ".apng", *VIDEO_EXTENSIONS}
             files = [f for f in input_path.iterdir() if f.is_file() and f.suffix.lower() in valid_exts]
             total = len(files)
             
@@ -82,19 +90,79 @@ class BatchWorkerThread(QThread):
                 self.progress.emit(i, total)
                 
                 try:
-                    with Image.open(f) as raw_img:
-                        img = raw_img.convert("RGBA")
-
-                    res = remover.remove_background(
-                        img,
-                        model_name=self.model_name,
-                        enable_clothing_protection=self.enable_clothing_protection,
+                    ext = f.suffix.lower()
+                    from app.core.gif_processor import (
+                        is_animated_image,
+                        extract_gif_frames,
+                        save_animated_gif,
+                        save_animated_webp,
+                        save_animated_apng,
                     )
 
-                    out_file = output_path / f"{f.stem}_bgrm.png"
-                    res.save(out_file)
-                    res.close()
-                    img.close()
+                    if is_video_file(f):
+                        frames, _durations, fps = extract_video_frames(f)
+                        processed_frames = process_video_frames(
+                            frames=frames,
+                            model_name=self.model_name,
+                            preserve_clothing=self.enable_clothing_protection,
+                            cancel_check=self.isInterruptionRequested,
+                        )
+                        if self.isInterruptionRequested():
+                            break
+
+                        out_ext = ext if ext in (".webm", ".mkv", ".mov", ".mp4", ".avi") else ".webm"
+                        out_file = output_path / f"{f.stem}_bgrm{out_ext}"
+                        save_video_sequence(processed_frames, out_file, fps=fps)
+
+                        for pf in processed_frames:
+                            pf.close()
+                        for fr in frames:
+                            fr.close()
+                    elif is_animated_image(f):
+                        frames, durations, loop = extract_gif_frames(f)
+                        processed_frames = []
+                        for fr in frames:
+                            if self.isInterruptionRequested():
+                                break
+                            res_fr = remover.remove_background(
+                                fr,
+                                model_name=self.model_name,
+                                enable_clothing_protection=self.enable_clothing_protection,
+                            )
+                            processed_frames.append(res_fr)
+
+                        if self.isInterruptionRequested():
+                            break
+
+                        if ext == ".gif":
+                            out_file = output_path / f"{f.stem}_bgrm.gif"
+                            save_animated_gif(processed_frames, out_file, durations=durations, loop=loop)
+                        elif ext == ".webp":
+                            out_file = output_path / f"{f.stem}_bgrm.webp"
+                            save_animated_webp(processed_frames, out_file, durations=durations, loop=loop)
+                        else:  # .png, .apng
+                            out_file = output_path / f"{f.stem}_bgrm.png"
+                            save_animated_apng(processed_frames, out_file, durations=durations, loop=loop)
+
+                        for pf in processed_frames:
+                            pf.close()
+                        for fr in frames:
+                            fr.close()
+                    else:
+                        with Image.open(f) as raw_img:
+                            img = raw_img.convert("RGBA")
+
+                        res = remover.remove_background(
+                            img,
+                            model_name=self.model_name,
+                            enable_clothing_protection=self.enable_clothing_protection,
+                        )
+
+                        out_file = output_path / f"{f.stem}_bgrm.png"
+                        res.save(out_file)
+                        res.close()
+                        img.close()
+
                     success_count += 1
                 except Exception as e:
                     print(f"Error procesando {f.name}: {e}")
@@ -167,7 +235,7 @@ class YoloDetectionWorker(QThread):
 
 class GifWorkerThread(QThread):
     """
-    QThread para eliminar el fondo de todos los fotogramas de un GIF animado
+    QThread para eliminar el fondo de todos los fotogramas de un GIF animado o Video
     con estabilización temporal de bordes (anti-flicker).
     """
     progress = Signal(int, int)             # (frame_actual, total_frames)
@@ -181,12 +249,14 @@ class GifWorkerThread(QThread):
         model_name: str,
         enable_clothing_protection: bool = True,
         temporal_smoothing: float = 0.22,
+        media_label: str = "GIF",
     ):
         super().__init__()
         self.frames = frames
         self.model_name = model_name
         self.enable_clothing_protection = enable_clothing_protection
         self.temporal_smoothing = temporal_smoothing
+        self.media_label = media_label
 
     def run(self):
         import numpy as np
@@ -205,7 +275,7 @@ class GifWorkerThread(QThread):
                     return
 
                 self.progressText.emit(
-                    f"⏳ Quitando fondo al GIF ({idx + 1}/{total} fotogramas) con {self.model_name}..."
+                    f"⏳ Quitando fondo al {self.media_label} ({idx + 1}/{total} fotogramas) con {self.model_name}..."
                 )
                 self.progress.emit(idx + 1, total)
 

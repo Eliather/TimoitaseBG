@@ -32,6 +32,7 @@ TRANSLATIONS = {
         "status_reset": "Se restauró la imagen original.",
         "status_device_changed": "Modo de dispositivo cambiado a: {device}",
         "status_no_clipboard": "El portapapeles no contiene una imagen.",
+        "status_copied_clipboard": "📋 Imagen copiada al portapapeles (con transparencia)",
         "status_open_first": "Abre una imagen primero.",
         "status_no_changes_compare": "No hay cambios que comparar.",
         "status_compare_active": "Modo comparación activo: arrastra la barra divisoria para comparar con el original.",
@@ -73,10 +74,10 @@ TRANSLATIONS = {
         "batch_input_path": "Origen: {path}",
         "batch_output_path": "Destino: {path}",
         
-        "model_isnet-anime": "IS-Net Anime (Óptimo para Anime, Manga e Ilustración)",
-        "model_u2net_human_seg": "U2-Net Human (Detector de Personas y Ropa — Especial Playeras Blancas)",
-        "model_birefnet-general": "BiRefNet (Alta Definición General y Bordes Complejos)",
-        "model_inspyrenet": "InSPyReNet Swin-B (Fotografía y Retratos Reales — Anti-aliasing Subpíxel)",
+        "model_isnet-anime": "Anime (IS-Net)",
+        "model_inspyrenet": "General (InSPyReNet)",
+        "model_birefnet-general": "Alta Definición (BiRefNet)",
+        "model_u2net_human_seg": "Personas y Ropa (U2-Net)",
         
         "scale_x2": "Escalar 2x",
         "scale_x4": "Escalar 4x (Máxima resolución)",
@@ -84,9 +85,9 @@ TRANSLATIONS = {
 
         "btn_ok": "Aceptar",
         
-        "canvas_drop_title": "Arrastra una imagen aquí",
+        "canvas_drop_title": "Arrastra una imagen, GIF o video aquí",
         "canvas_drop_subtitle": "o haz clic para explorar • pega con Ctrl+V",
-        "canvas_drop_formats": "Soporta PNG, JPG, JPEG, WEBP y BMP",
+        "canvas_drop_formats": "Soporta PNG, JPG, WEBP, GIF, MP4, MOV, WEBM, MKV, AVI y más",
         
         "sidebar_title": "Herramientas",
         "sidebar_subtitle": "Edición y mejora con IA local",
@@ -114,6 +115,8 @@ TRANSLATIONS = {
         "shortcut_open_desc": "Abrir archivo de imagen",
         "shortcut_save": "Ctrl + S",
         "shortcut_save_desc": "Guardar imagen resultante",
+        "shortcut_copy": "Ctrl + C",
+        "shortcut_copy_desc": "Copiar imagen (con transparencia)",
         "shortcut_paste": "Ctrl + V",
         "shortcut_paste_desc": "Pegar desde portapapeles",
         "shortcut_undo": "Ctrl + Z",
@@ -203,6 +206,8 @@ TRANSLATIONS = {
         "status_selection_deleted": "Selección eliminada (píxeles hechos transparentes).",
         "status_selection_nothing": "No hay selección activa para borrar.",
         "history_delete_selection": "Borrar Selección",
+        "compare_before": "ANTES",
+        "compare_after": "DESPUÉS",
     },
     "en": {
         "lang_name": "English",
@@ -233,6 +238,7 @@ TRANSLATIONS = {
         "status_reset": "Original image restored.",
         "status_device_changed": "Device mode changed to: {device}",
         "status_no_clipboard": "Clipboard does not contain an image.",
+        "status_copied_clipboard": "📋 Image copied to clipboard (with transparency)",
         "status_open_first": "Open an image first.",
         "status_no_changes_compare": "No changes to compare.",
         "status_compare_active": "Comparison mode active: drag the divider to compare with the original.",
@@ -274,10 +280,10 @@ TRANSLATIONS = {
         "batch_input_path": "Source: {path}",
         "batch_output_path": "Destination: {path}",
         
-        "model_isnet-anime": "IS-Net Anime (Optimal for Anime, Manga and Illustration)",
-        "model_u2net_human_seg": "U2-Net Human (Person & Clothing Detector — White Shirts)",
-        "model_birefnet-general": "BiRefNet (General High Definition and Complex Edges)",
-        "model_inspyrenet": "InSPyReNet Swin-B (Real Photography & Portraits — Subpixel Anti-aliasing)",
+        "model_isnet-anime": "Anime (IS-Net)",
+        "model_inspyrenet": "General (InSPyReNet)",
+        "model_birefnet-general": "High Definition (BiRefNet)",
+        "model_u2net_human_seg": "People & Clothes (U2-Net)",
         
         "scale_x2": "Upscale 2x",
         "scale_x4": "Upscale 4x (Maximum resolution)",
@@ -285,9 +291,9 @@ TRANSLATIONS = {
 
         "btn_ok": "OK",
         
-        "canvas_drop_title": "Drag an image here",
+        "canvas_drop_title": "Drag an image, GIF or video here",
         "canvas_drop_subtitle": "or click to explore • paste with Ctrl+V",
-        "canvas_drop_formats": "Supports PNG, JPG, JPEG, WEBP and BMP",
+        "canvas_drop_formats": "Supports PNG, JPG, WEBP, GIF, MP4, MOV, WEBM, MKV, AVI & more",
         
         "sidebar_title": "Tools",
         "sidebar_subtitle": "Local AI editing and enhancement",
@@ -315,6 +321,8 @@ TRANSLATIONS = {
         "shortcut_open_desc": "Open image file",
         "shortcut_save": "Ctrl + S",
         "shortcut_save_desc": "Save processed image",
+        "shortcut_copy": "Ctrl + C",
+        "shortcut_copy_desc": "Copy image (with transparency)",
         "shortcut_paste": "Ctrl + V",
         "shortcut_paste_desc": "Paste from clipboard",
         "shortcut_undo": "Ctrl + Z",
@@ -404,6 +412,8 @@ TRANSLATIONS = {
         "status_selection_deleted": "Selection deleted (pixels made transparent).",
         "status_selection_nothing": "No active selection to delete.",
         "history_delete_selection": "Delete Selection",
+        "compare_before": "BEFORE",
+        "compare_after": "AFTER",
     },
     "ru": {
         "lang_name": "Русский",
@@ -434,6 +444,7 @@ TRANSLATIONS = {
         "status_reset": "Оригинал восстановлен.",
         "status_device_changed": "Режим изменен на: {device}",
         "status_no_clipboard": "В буфере обмена нет изображения.",
+        "status_copied_clipboard": "📋 Изображение скопировано в буфер обмена (с прозрачностью)",
         "status_open_first": "Сначала откройте изображение.",
         "status_no_changes_compare": "Нет изменений для сравнения.",
         "status_compare_active": "Режим сравнения активен: двигайте разделитель для сравнения с оригиналом.",
@@ -475,10 +486,10 @@ TRANSLATIONS = {
         "batch_input_path": "Источник: {path}",
         "batch_output_path": "Назначение: {path}",
         
-        "model_isnet-anime": "IS-Net Anime (Для аниме и иллюстраций)",
-        "model_u2net_human_seg": "U2-Net Human (Для людей и белой одежды)",
-        "model_birefnet-general": "BiRefNet (Высокая детализация сложных краев)",
-        "model_inspyrenet": "InSPyReNet Swin-B (Для фото и портретов)",
+        "model_isnet-anime": "Аниме (IS-Net)",
+        "model_inspyrenet": "Основная (InSPyReNet)",
+        "model_birefnet-general": "Высокая детализация (BiRefNet)",
+        "model_u2net_human_seg": "Люди и одежда (U2-Net)",
         
         "scale_x2": "Увеличить 2x",
         "scale_x4": "Увеличить 4x (Макс. разрешение)",
@@ -516,6 +527,8 @@ TRANSLATIONS = {
         "shortcut_open_desc": "Открыть файл",
         "shortcut_save": "Ctrl + S",
         "shortcut_save_desc": "Сохранить файл",
+        "shortcut_copy": "Ctrl + C",
+        "shortcut_copy_desc": "Копировать изображение (с прозрачностью)",
         "shortcut_paste": "Ctrl + V",
         "shortcut_paste_desc": "Вставить из буфера",
         "shortcut_undo": "Ctrl + Z",
@@ -605,6 +618,8 @@ TRANSLATIONS = {
         "status_selection_deleted": "Выделение удалено (пиксели сделаны прозрачными).",
         "status_selection_nothing": "Нет активного выделения для удаления.",
         "history_delete_selection": "Удалить выделение",
+        "compare_before": "ДО",
+        "compare_after": "ПОСЛЕ",
     },
     "zh": {
         "lang_name": "中文",
@@ -635,6 +650,7 @@ TRANSLATIONS = {
         "status_reset": "已恢复原始图像。",
         "status_device_changed": "设备模式已更改为：{device}",
         "status_no_clipboard": "剪贴板中没有图像。",
+        "status_copied_clipboard": "📋 图像已复制到剪贴板（带透明通道）",
         "status_open_first": "请先打开一张图片。",
         "status_no_changes_compare": "没有可对比的更改。",
         "status_compare_active": "对比模式已激活：拖动分割线以与原图对比。",
@@ -676,10 +692,10 @@ TRANSLATIONS = {
         "batch_input_path": "源：{path}",
         "batch_output_path": "目标：{path}",
         
-        "model_isnet-anime": "IS-Net Anime（适合动漫和插画）",
-        "model_u2net_human_seg": "U2-Net Human（人物与衣物检测，保护白色衣服）",
-        "model_birefnet-general": "BiRefNet（通用高清和复杂边缘）",
-        "model_inspyrenet": "InSPyReNet Swin-B（真实摄影和肖像）",
+        "model_isnet-anime": "动漫 (IS-Net)",
+        "model_inspyrenet": "通用 (InSPyReNet)",
+        "model_birefnet-general": "超清细节 (BiRefNet)",
+        "model_u2net_human_seg": "人物与衣物 (U2-Net)",
         
         "scale_x2": "放大 2x",
         "scale_x4": "放大 4x（最大分辨率）",
@@ -717,6 +733,8 @@ TRANSLATIONS = {
         "shortcut_open_desc": "打开图片",
         "shortcut_save": "Ctrl + S",
         "shortcut_save_desc": "保存结果",
+        "shortcut_copy": "Ctrl + C",
+        "shortcut_copy_desc": "复制图像（带透明通道）",
         "shortcut_paste": "Ctrl + V",
         "shortcut_paste_desc": "从剪贴板粘贴",
         "shortcut_undo": "Ctrl + Z",
@@ -806,6 +824,8 @@ TRANSLATIONS = {
         "status_selection_deleted": "选区已删除（像素已变为透明）。",
         "status_selection_nothing": "没有活动选区可删除。",
         "history_delete_selection": "删除选区",
+        "compare_before": "对比前",
+        "compare_after": "对比后",
     }
 }
 

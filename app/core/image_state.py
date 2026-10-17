@@ -92,15 +92,16 @@ class ImageState:
     def load_new_image(self, image: Image.Image) -> Image.Image:
         """
         Carga una nueva imagen, reinicia el historial y establece el original inmutable.
+        Optimización de RAM: comparte la referencia base inmutable entre _original_image,
+        el estado inicial y brush_reference (las propiedades ya entregan .copy() bajo demanda).
         """
-        # Asegurar formato RGB o RGBA
         if image.mode not in ("RGB", "RGBA"):
             converted = image.convert("RGBA" if "A" in image.mode or "transparency" in image.info else "RGB")
         else:
             converted = image.copy()
 
-        self._original_image = converted.copy()
-        self._history = [(converted.copy(), converted.copy())]
+        self._original_image = converted
+        self._history = [(converted, converted)]
         self._descriptions = ["Original"]
         self._current_index = 0
         return self.current_image
@@ -113,17 +114,20 @@ class ImageState:
         if not self.has_image:
             return self.load_new_image(image)
 
-        # Hereda la referencia del pincel del estado actual si no se provee una nueva
+        # Hereda la referencia inmutable del pincel del estado actual si no se provee una nueva
+        current_brush_ref = self._history[self._current_index][1]
         if brush_reference is None:
-            brush_reference = self._history[self._current_index][1]
+            new_brush = current_brush_ref
+        elif brush_reference is current_brush_ref:
+            new_brush = current_brush_ref
+        else:
+            new_brush = brush_reference.copy()
 
         # Truncar historial si estábamos en medio de un undo
         self._history = self._history[: self._current_index + 1]
         self._descriptions = self._descriptions[: self._current_index + 1]
 
-        # Asegurar copia independiente
         new_frame = image.copy()
-        new_brush = brush_reference.copy() if brush_reference is not self._history[self._current_index][1] else brush_reference
         self._history.append((new_frame, new_brush))
         self._descriptions.append(description)
 
@@ -178,9 +182,16 @@ class ImageState:
 
 
 class SequenceSession:
-    """Administra múltiples estados ImageState para fotogramas de un GIF animado."""
+    """Administra múltiples estados ImageState para fotogramas de un GIF animado o Video."""
 
-    def __init__(self, frames: List[Image.Image], durations: Optional[List[int]] = None, loop: int = 0):
+    def __init__(
+        self,
+        frames: List[Image.Image],
+        durations: Optional[List[int]] = None,
+        loop: int = 0,
+        fps: Optional[float] = None,
+        is_video: bool = False,
+    ):
         self.states: List[ImageState] = []
         for frame in frames:
             st = ImageState()
@@ -188,6 +199,12 @@ class SequenceSession:
             self.states.append(st)
         self.durations = durations or [80] * len(frames)
         self.loop = loop
+        self.is_video = is_video
+        if fps is not None and fps > 0:
+            self.fps = float(fps)
+        else:
+            avg_ms = sum(self.durations) / max(1, len(self.durations))
+            self.fps = round(1000.0 / max(15.0, avg_ms), 2)
         self.current_index = 0
 
     @property
@@ -200,4 +217,5 @@ class SequenceSession:
 
     def get_all_current_frames(self) -> List[Image.Image]:
         return [st.current_image for st in self.states if st.current_image is not None]
+
 

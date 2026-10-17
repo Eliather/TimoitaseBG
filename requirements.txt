@@ -1,16 +1,17 @@
 # TimoitaseBG - Dependencias
 PySide6>=6.6.0
-rembg[cpu]>=2.0.50
-onnxruntime>=1.18.0
+rembg>=2.0.50
+onnxruntime>=1.18.0; sys_platform != "win32"
 onnxruntime-directml>=1.17.0; sys_platform == "win32"
-# Para aceleración NPU Qualcomm Hexagon en Windows ARM64 (Snapdragon X Elite / Plus):
-# pip install onnxruntime-qnn
-# Para Linux aarch64 (Raspberry Pi 5, Rockchip, ARM Server):
-# El paquete 'onnxruntime' oficial publica wheels para manylinux_2_27_aarch64 con soporte NEON.
-# Para aceleración GPU NVIDIA en Linux (x86_64 y Jetson aarch64): onnxruntime-gpu>=1.18.0
-# Para aceleración GPU AMD ROCm en Linux:
-# pip install onnxruntime-rocm --extra-index-url https://aiinfra.pkgs.visualstudio.com/PublicPackages/_packaging/onnxruntime-rocm-release/pypi/simple/
-# En macOS (Apple Silicon M1-M5 e Intel Mac): onnxruntime incluye CoreMLExecutionProvider de fábrica
+# Nota importante sobre ONNX Runtime:
+# Instale un único paquete de ejecución en el entorno virtual para evitar colisiones de librerías:
+# - Windows (DirectML universal para AMD / Intel / NVIDIA / Adreno): onnxruntime-directml (incluido arriba)
+# - Windows ARM64 (NPU Qualcomm Hexagon en Snapdragon X Elite / Plus): pip uninstall onnxruntime-directml && pip install onnxruntime-qnn
+# - Windows / Linux con GPU NVIDIA (CUDA): pip uninstall onnxruntime onnxruntime-directml && pip install onnxruntime-gpu>=1.18.0
+# - Linux con GPU AMD (ROCm): pip uninstall onnxruntime && pip install onnxruntime-rocm --extra-index-url https://aiinfra.pkgs.visualstudio.com/PublicPackages/_packaging/onnxruntime-rocm-release/pypi/simple/
+# - macOS (Apple Silicon M1-M5 e Intel Mac): 'onnxruntime' incluye CoreMLExecutionProvider de fábrica
+# - Linux aarch64 (Raspberry Pi 5, Rockchip): 'onnxruntime' publica wheels manylinux_2_27_aarch64 con soporte NEON
 Pillow>=9.5.0
 numpy>=1.24.0
+scipy>=1.10.0
 opencv-contrib-python>=4.8.0

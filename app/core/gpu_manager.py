@@ -252,17 +252,18 @@ class GPUWorkerManager:
         if "timeout_override" in payload:
             return float(payload["timeout_override"])
 
-        # Base para inferencia individual
-        base_timeout = 40.0
+        # Base para inferencia individual (permite compilación inicial de shaders en DirectML)
+        base_timeout = 50.0
 
         if command == "remove_background":
             model_name = payload.get("model_name", "")
             if payload.get("enable_clothing_protection", False) and model_name not in ("u2net_human_seg", "isnet-anime"):
                 base_timeout += 15.0
-            if model_name in ("ensemble", "birefnet-general"):
-                base_timeout += 20.0
+            if model_name in ("inspyrenet", "birefnet-general", "birefnet-portrait", "ensemble"):
+                # Modelos Swin/Transformer de alta resolución (1024x1024) requieren compilación de operadores DML
+                base_timeout += 40.0
         elif command == "restore_image":
-            base_timeout = 45.0
+            base_timeout = 60.0
 
         # Imagen de alta resolución
         img = payload.get("image")

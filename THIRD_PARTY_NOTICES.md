@@ -1,6 +1,7 @@
 # Avisos de Terceros, Licencias y Atribución de Modelos de IA
 ## Third-Party Software and Machine Learning Models Notices
 
+**TimoitaseBG v1.2.0** — Autora: **[Eliather](https://github.com/Eliather)**  
 TimoitaseBG es software libre distribuido bajo la licencia **GNU Affero General Public License v3.0 (GNU AGPLv3)**.
 
 El código fuente de TimoitaseBG se rige por su propia licencia, mientras que las librerías externas y los modelos de visión por computadora de terceros conservan sus respectivas licencias originales concedidas por sus autores. Este documento detalla la atribución, procedencia, licencias y términos de uso de cada componente y conjunto de pesos (*weights*).
@@ -75,12 +76,11 @@ A continuación se detalla cada modelo de IA soportado por TimoitaseBG:
 * **Fuente ONNX:** [huggingface.co/deepghs/imgutils-models](https://huggingface.co/deepghs/imgutils-models)
 * **Compatibilidad Comercial:** Totalmente permisiva (BSD 3-Clause).
 
-### H. Detector de Ropa y Personas (U²-Net Human / Cloth Segmentation)
-* **Función:** Filtro de protección interior de prendas blancas para evitar perforaciones accidentales sobre fondos claros.
-* **Autores:** Xuebin Qin et al. (U²-Net) / Levin Dabhi (cloth-segmentation).
-* **Licencia:** **Apache License 2.0** (U²-Net) y **MIT License** (cloth-segmentation).
-* **Repositorio Oficial:** [github.com/xuebinqin/U-2-Net](https://github.com/xuebinqin/U-2-Net) / [github.com/levindabhi/cloth-segmentation](https://github.com/levindabhi/cloth-segmentation)
-* **Notas de Dataset:** Entrenado con subconjuntos del dataset de moda iMaterialist 2019.
+### H. Detector de Ropa y Personas (U²-Net Human Segmentation)
+* **Función:** Segmentación semántica de personas y filtro de protección interior de prendas claras (`u2net_human_seg`) para evitar perforaciones accidentales sobre fondos blancos.
+* **Autores:** Xuebin Qin et al. (U²-Net, University of Alberta).
+* **Licencia:** **Apache License 2.0**
+* **Repositorio Oficial:** [github.com/xuebinqin/U-2-Net](https://github.com/xuebinqin/U-2-Net)
 
 ---
 
@@ -93,7 +93,7 @@ A continuación se detalla cada modelo de IA soportado por TimoitaseBG:
 | **Lucide Icons** | Lucide Project Contributors | **ISC License** | Iconografía vectorial SVG en temas claro y oscuro. |
 | **OpenCV (opencv-python)** | OpenCV Team | **Apache 2.0** | Operaciones morfológicas, guided filter y transformaciones afines. |
 | **Pillow (PIL)** | Alex Clark and Contributors | **HPND License** | Carga, manipulación de color y guardado de imágenes. |
-| **NumPy** | NumPy Developers | **BSD 3-Clause** | Operaciones vectoriales y cálculo matricial con arrays de píxeles. |
+| **NumPy & SciPy** | NumPy / SciPy Developers | **BSD 3-Clause** | Operaciones vectoriales, relleno topológico de huecos y cálculo matricial. |
 
 ---
 

@@ -1,11 +1,12 @@
 """
 TimoitaseBG - Ventana principal de la aplicación.
 """
+import io
 from typing import Optional, Tuple
 from pathlib import Path
 from PIL import Image
 
-from PySide6.QtCore import Qt, QSize, Signal, Slot, QTimer
+from PySide6.QtCore import Qt, QSize, Signal, Slot, QTimer, QMimeData, QByteArray
 from PySide6.QtGui import QIcon, QKeySequence, QShortcut, QAction, QGuiApplication
 from PySide6.QtWidgets import (
     QComboBox,
@@ -39,7 +40,7 @@ import logging
 
 logger = logging.getLogger("TimoitaseBG.MainWindow")
 from app.core.image_state import ImageState, SequenceSession
-from app.core.image_utils import qimage_to_pil, autocrop_image, apply_solid_background
+from app.core.image_utils import qimage_to_pil, autocrop_image, apply_solid_background, pil_to_qimage
 from app.core.bg_remover import get_bg_remover
 from app.core.restorer import get_image_restorer
 from app.core.workers import WorkerThread
@@ -277,7 +278,7 @@ class MainWindow(QMainWindow):
             self.canvas.update()
 
     def _load_stylesheet(self):
-        self.is_dark_theme = getattr(self, "is_dark_theme", False)
+        self.is_dark_theme = getattr(self, "is_dark_theme", True)
         style_file = "style.qss" if self.is_dark_theme else "style_light.qss"
         style_path = Path(APP_DIR) / "ui" / style_file
         if style_path.exists():
@@ -289,7 +290,7 @@ class MainWindow(QMainWindow):
         self._update_theme_icons()
 
     def _toggle_theme(self):
-        self.is_dark_theme = not getattr(self, "is_dark_theme", False)
+        self.is_dark_theme = not getattr(self, "is_dark_theme", True)
         self._load_stylesheet()
 
     def _update_theme_icons(self):
@@ -362,13 +363,13 @@ class MainWindow(QMainWindow):
         if hasattr(self, "version_badge"):
             if self.is_dark_theme:
                 self.version_badge.setStyleSheet("""
-                    background-color: #334155; color: #94A3B8; 
-                    padding: 2px 6px; border-radius: 4px; font-size: 11px; font-weight: 600;
+                    background-color: #334155; color: #CBD5E1; border: 1px solid #475569;
+                    padding: 2px 8px; border-radius: 5px; font-size: 11px; font-weight: 600;
                 """)
             else:
                 self.version_badge.setStyleSheet("""
-                    background-color: #F1F5F9; color: #64748B; 
-                    padding: 2px 6px; border-radius: 4px; font-size: 11px; font-weight: 600;
+                    background-color: #F1F5F9; color: #64748B; border: 1px solid #E2E8F0;
+                    padding: 2px 8px; border-radius: 5px; font-size: 11px; font-weight: 600;
                 """)
 
         if hasattr(self, "btn_gif_first"):
@@ -476,18 +477,15 @@ class MainWindow(QMainWindow):
         layout.setContentsMargins(16, 0, 16, 0)
         layout.setSpacing(10)
 
-        # Marca y versión
-        from app.config import APP_NAME, APP_VERSION
+        # Marca, versión y autora
+        from app.config import APP_NAME, APP_VERSION, APP_AUTHOR
         title_label = QLabel(APP_NAME)
         title_label.setObjectName("AppTitle")
         layout.addWidget(title_label)
 
         self.version_badge = QLabel(f"v{APP_VERSION}")
         self.version_badge.setObjectName("appVersionBadge")
-        self.version_badge.setStyleSheet("""
-            background-color: #F1F5F9; color: #64748B; 
-            padding: 2px 6px; border-radius: 4px; font-size: 11px; font-weight: 600;
-        """)
+        self.version_badge.setToolTip(f"{APP_NAME} v{APP_VERSION}")
         layout.addWidget(self.version_badge, alignment=Qt.AlignmentFlag.AlignVCenter)
 
         layout.addSpacing(6)
@@ -570,7 +568,6 @@ class MainWindow(QMainWindow):
         self.lbl_zoom = QLabel("100%")
         self.lbl_zoom.setObjectName("zoomLabel")
         self.lbl_zoom.setFixedWidth(52)
-        self.lbl_zoom.setStyleSheet("font-weight: 600; color: #475569; padding: 0 4px;")
         self.lbl_zoom.setAlignment(Qt.AlignmentFlag.AlignCenter)
         layout.addWidget(self.lbl_zoom)
 
@@ -648,20 +645,17 @@ class MainWindow(QMainWindow):
         self.btn_shortcuts.setObjectName("statusShortcutsButton")
         self.btn_shortcuts.setCursor(Qt.CursorShape.PointingHandCursor)
         self.btn_shortcuts.setToolTip(tr("tooltip_shortcuts"))
-        self.btn_shortcuts.setStyleSheet("padding: 4px 10px; font-size: 12px;")
         self.btn_shortcuts.clicked.connect(self.show_shortcuts_modal)
         layout.addWidget(self.btn_shortcuts, alignment=Qt.AlignmentFlag.AlignVCenter)
 
         # Estado del documento / imagen
         self.lbl_status = QLabel(tr("status_ready"))
         self.lbl_status.setObjectName("statusText")
-        self.lbl_status.setStyleSheet("color: #64748B; font-size: 12px; margin-left: 8px; background: transparent;")
         self._current_status_i18n = ("status_ready", {})
         layout.addWidget(self.lbl_status, alignment=Qt.AlignmentFlag.AlignVCenter)
 
         self.lbl_img_info = QLabel("")
         self.lbl_img_info.setObjectName("imageInfoText")
-        self.lbl_img_info.setStyleSheet("color: #94A3B8; font-size: 11px; margin-left: 12px; background: transparent;")
         layout.addWidget(self.lbl_img_info, alignment=Qt.AlignmentFlag.AlignVCenter)
 
         layout.addStretch()
@@ -686,20 +680,21 @@ class MainWindow(QMainWindow):
         # Grip de redimensionamiento
         from PySide6.QtWidgets import QSizeGrip
         self.size_grip = QSizeGrip(self)
+        self.size_grip.setStyleSheet("background: transparent;")
         layout.addWidget(self.size_grip, 0, Qt.AlignmentFlag.AlignVCenter | Qt.AlignmentFlag.AlignRight)
 
         return bar
 
     def _create_separator(self) -> QFrame:
         sep = QFrame()
+        sep.setObjectName("panelSeparator")
         sep.setFrameShape(QFrame.Shape.VLine)
         sep.setFrameShadow(QFrame.Shadow.Plain)
-        sep.setStyleSheet("background-color: #E7E5E4; width: 1px; max-height: 20px; border: none;")
         return sep
 
     def show_shortcuts_modal(self):
         """Abre el diálogo modal con la lista interactiva de atajos de teclado y gestos."""
-        dialog = ShortcutsDialog(self, is_dark_theme=getattr(self, "is_dark_theme", False))
+        dialog = ShortcutsDialog(self, is_dark_theme=getattr(self, "is_dark_theme", True))
         dialog.exec()
 
     # -------------------------------------------------------------
@@ -710,9 +705,10 @@ class MainWindow(QMainWindow):
         QShortcut(QKeySequence("F1"), self, self.show_shortcuts_modal)
         QShortcut(QKeySequence("Ctrl+/"), self, self.show_shortcuts_modal)
 
-        # Abrir / Guardar / Pegar
+        # Abrir / Guardar / Copiar / Pegar
         QShortcut(QKeySequence("Ctrl+O"), self, self.prompt_open_image)
         QShortcut(QKeySequence("Ctrl+S"), self, self.prompt_save_image)
+        QShortcut(QKeySequence(QKeySequence.StandardKey.Copy), self, self.copy_to_clipboard)
         QShortcut(QKeySequence(QKeySequence.StandardKey.Paste), self, self.paste_from_clipboard)
 
         # Deshacer / Rehacer
@@ -871,12 +867,20 @@ class MainWindow(QMainWindow):
     # Lógica de Apertura, Pegado y Guardado
     # -------------------------------------------------------------
     def prompt_open_image(self):
-        """Abre un diálogo para seleccionar archivo de imagen o GIF animado."""
+        """Abre un diálogo para seleccionar archivo de imagen, animación o video."""
+        video_globs = "*.mp4 *.mov *.webm *.mkv *.avi *.m4v *.wmv *.flv *.mpeg *.mpg *.ogv *.3gp *.ts"
+        image_globs = "*.png *.jpg *.jpeg *.webp *.bmp *.gif *.apng"
+        filters = (
+            f"Imágenes y Videos ({image_globs} {video_globs});;"
+            f"Imágenes y Animaciones ({image_globs});;"
+            f"Videos ({video_globs});;"
+            "Todos los archivos (*.*)"
+        )
         path, _ = QFileDialog.getOpenFileName(
             self,
-            "Seleccionar Imagen",
+            "Seleccionar Imagen o Video",
             "",
-            "Imágenes (*.png *.jpg *.jpeg *.webp *.bmp *.gif);;Todos los archivos (*.*)",
+            filters,
         )
         if path:
             self.open_image_file(path)
@@ -910,27 +914,53 @@ class MainWindow(QMainWindow):
         self._update_action_states()
 
     def open_image_file(self, file_path: str):
-        """Carga una imagen estática o un GIF animado desde archivo en el estado y canvas."""
+        """Carga una imagen estática, animación (.gif, .webp, .apng) o video (.mp4, .mov, .webm, .mkv, etc.) en el estado y canvas."""
         try:
             path = Path(file_path)
             if not path.exists():
                 return
 
-            if path.suffix.lower() == ".gif":
-                from app.core.gif_processor import extract_gif_frames
+            from app.core.video_processor import is_video_file, extract_video_frames
+            if is_video_file(path):
+                self._set_status_raw(f"⏳ Extrayendo fotogramas del video: {path.name}...")
+                QGuiApplication.processEvents()
+                frames, durations, fps = extract_video_frames(path)
+                if len(frames) >= 1:
+                    if self.gif_timer.isActive():
+                        self.gif_timer.stop()
+                    self.sequence_session = SequenceSession(
+                        frames, durations, loop=0, fps=fps, is_video=True
+                    )
+                    self.current_filepath = path
+                    if hasattr(self, "gif_bar"):
+                        self.gif_bar.setVisible(len(frames) > 1)
+                    self._navigate_gif_frame(0)
+                    fmt_name = path.suffix.upper().lstrip(".")
+                    self._set_status_raw(
+                        f"🎬 Video {fmt_name} cargado: {path.name} ({len(frames)} fotogramas @ {fps:.1f} FPS)"
+                    )
+                    return
+
+            from app.core.gif_processor import is_animated_image, extract_gif_frames
+            if is_animated_image(path):
                 frames, durations, loop = extract_gif_frames(path)
                 if len(frames) > 1:
                     if self.gif_timer.isActive():
                         self.gif_timer.stop()
-                    self.sequence_session = SequenceSession(frames, durations, loop)
+                    self.sequence_session = SequenceSession(
+                        frames, durations, loop=loop, is_video=False
+                    )
                     self.current_filepath = path
                     if hasattr(self, "gif_bar"):
                         self.gif_bar.setVisible(True)
                     self._navigate_gif_frame(0)
-                    self._set_status_raw(f"GIF animado cargado: {path.name} ({len(frames)} fotogramas)")
+                    fmt_name = path.suffix.upper().lstrip(".")
+                    if fmt_name == "PNG":
+                        fmt_name = "APNG"
+                    self._set_status_raw(f"{fmt_name} animado cargado: {path.name} ({len(frames)} fotogramas)")
                     return
 
-            # Si es imagen estática (o GIF de 1 solo fotograma)
+            # Si es imagen estática (o animación de 1 solo fotograma)
             if self.gif_timer.isActive():
                 self.gif_timer.stop()
             self.sequence_session = None
@@ -939,20 +969,74 @@ class MainWindow(QMainWindow):
             pil_img = Image.open(path)
             self.load_new_pil_image(pil_img, source_name=path.name, filepath=path)
         except Exception as e:
-            QMessageBox.critical(self, "Error al abrir imagen", f"No se pudo cargar el archivo:\n{e}")
+            QMessageBox.critical(self, "Error al abrir archivo", f"No se pudo cargar el archivo:\n{e}")
+
+    def copy_to_clipboard(self):
+        """
+        Copia la imagen actual al portapapeles con canal alfa transparente preservado (Ctrl+C).
+        Inyecta tanto el stream binario PNG ('image/png') como el mapa de bits (QImage)
+        en el QMimeData para garantizar transparencia universal en Windows, macOS y Linux.
+        """
+        if not self.image_state.has_image:
+            self._set_status("status_open_first")
+            return
+
+        img = self.image_state.current_image
+        if not img:
+            return
+
+        # Si el usuario tiene seleccionado un fondo sólido en el lienzo, componerlo
+        if self.canvas.bg_color_rgb is not None:
+            img = apply_solid_background(img, self.canvas.bg_color_rgb)
+        else:
+            if img.mode != "RGBA":
+                img = img.convert("RGBA")
+
+        # Serializar a PNG en memoria para inyectar stream con alfa real de 8 bits
+        buf = io.BytesIO()
+        img.save(buf, format="PNG")
+        png_bytes = buf.getvalue()
+
+        mime_data = QMimeData()
+        byte_array = QByteArray(png_bytes)
+        mime_data.setData("image/png", byte_array)
+        mime_data.setData("application/x-qt-image", byte_array)
+        mime_data.setImageData(pil_to_qimage(img))
+
+        clipboard = QGuiApplication.clipboard()
+        clipboard.setMimeData(mime_data)
+
+        self._set_status("status_copied_clipboard")
 
     def paste_from_clipboard(self):
         """
-        Pega una imagen desde el portapapeles con Ctrl+V.
-        Detecta estrictamente contenido de imagen:
+        Pega una imagen o video desde el portapapeles con Ctrl+V.
+        Detecta estrictamente contenido multimedia:
+        - Stream PNG directo en el portapapeles (image/png) preservando canal alfa completo.
         - Imagen directa en el portapapeles (bitmap / QImage de navegador, capturador, editor).
-        - Archivo de imagen copiado desde el Explorador de Windows (.png, .jpg, .jpeg, .webp, .bmp, .gif).
-        Si el portapapeles contiene texto plano, URL de texto o archivos no imagen, no realiza ninguna acción.
+        - Archivo de imagen o video copiado desde el Explorador de Windows.
+        Si el portapapeles contiene texto plano, URL de texto o archivos no soportados, no realiza ninguna acción.
         """
         clipboard = QGuiApplication.clipboard()
         mime_data = clipboard.mimeData()
 
-        # 1. Detección estricta de mapa de bits (QImage) en portapapeles (ej. Copiar imagen en navegador)
+        # 1. Detección de stream PNG en memoria (máxima fidelidad de alfa 8-bit)
+        if mime_data.hasFormat("image/png"):
+            try:
+                png_bytes = bytes(mime_data.data("image/png"))
+                if png_bytes:
+                    pil_img = Image.open(io.BytesIO(png_bytes))
+                    if self.gif_timer.isActive():
+                        self.gif_timer.stop()
+                    self.sequence_session = None
+                    if hasattr(self, "gif_bar"):
+                        self.gif_bar.setVisible(False)
+                    self.load_new_pil_image(pil_img, source_name="Imagen desde portapapeles", filepath=None)
+                    return
+            except Exception as e:
+                logger.warning(f"Error al leer stream image/png del portapapeles: {e}")
+
+        # 2. Detección de mapa de bits (QImage) en portapapeles (ej. Copiar imagen en navegador)
         if mime_data.hasImage():
             qimg = clipboard.image()
             if not qimg.isNull() and qimg.width() > 0 and qimg.height() > 0:
@@ -968,38 +1052,73 @@ class MainWindow(QMainWindow):
                 except Exception as e:
                     logger.warning(f"Error al procesar imagen del portapapeles: {e}")
 
-        # 2. Detección de archivo copiado desde el explorador de Windows (ej. clic derecho -> Copiar en .png)
+        # 3. Detección de archivo copiado desde el explorador de Windows (ej. clic derecho -> Copiar en imagen o video)
         if mime_data.hasUrls():
             urls = mime_data.urls()
             if urls:
+                from app.core.video_processor import VIDEO_EXTENSIONS
                 local_path = Path(urls[0].toLocalFile())
-                valid_extensions = {".png", ".jpg", ".jpeg", ".webp", ".bmp", ".gif"}
+                valid_extensions = {".png", ".jpg", ".jpeg", ".webp", ".bmp", ".gif", ".apng", *VIDEO_EXTENSIONS}
                 if local_path.is_file() and local_path.suffix.lower() in valid_extensions:
                     self.open_image_file(str(local_path))
                     return
 
-        # 3. Si no hay imagen (texto plano, URL de texto, archivo de texto, etc.), feedback discreto en barra de estado
+        # 4. Si no hay imagen (texto plano, URL de texto, archivo de texto, etc.), feedback discreto en barra de estado
         self._set_status("status_no_clipboard")
 
     def prompt_save_image(self):
-        """Guarda la imagen procesada o secuencia GIF animada en disco."""
+        """Guarda la imagen procesada, secuencia animada o video en formatos libres/gratuitos en disco."""
         if not self.image_state.has_image:
             FramelessPopup(self, tr("popup_no_image_title"), tr("popup_no_image_msg")).exec()
             return
 
-        is_animated_gif = bool(self.sequence_session and self.sequence_session.total_frames > 1)
-        default_ext = ".gif" if is_animated_gif else ".png"
-        default_name = f"anime_processed{default_ext}"
-        if self.current_filepath:
-            default_name = f"{self.current_filepath.stem}_edit{default_ext}"
+        is_animated_seq = bool(self.sequence_session and self.sequence_session.total_frames > 1)
+        if is_animated_seq:
+            from app.core.video_processor import VIDEO_EXTENSIONS
 
-        filters = (
-            "GIF Animado (*.gif);;PNG transparente (*.png);;WEBP (*.webp);;JPEG (*.jpg *.jpeg)"
-            if is_animated_gif
-            else "PNG transparente (*.png);;GIF (*.gif);;JPEG (*.jpg *.jpeg);;WEBP (*.webp)"
-        )
+            orig_ext = self.current_filepath.suffix.lower() if self.current_filepath else ".webm"
+            is_vid = bool(getattr(self.sequence_session, "is_video", False) or orig_ext in VIDEO_EXTENSIONS)
 
-        path, _ = QFileDialog.getSaveFileName(self, "Guardar Imagen Como", default_name, filters)
+            if orig_ext in (".webm", ".mkv", ".mov", ".mp4", ".avi", ".webp", ".gif", ".apng"):
+                default_ext = orig_ext
+            elif orig_ext == ".png":
+                default_ext = ".apng"
+            elif is_vid:
+                default_ext = ".webm"
+            else:
+                default_ext = ".webp"
+
+            stem = self.current_filepath.stem if self.current_filepath else "video_processed"
+            default_name = f"{stem}_edit{default_ext}"
+
+            filter_map = {
+                ".webm": "Video WebM Libre - VP8/VP9 (*.webm)",
+                ".mkv": "Video Matroska Libre - FFV1/VP8 (*.mkv)",
+                ".mov": "Video QuickTime MOV - MPEG-4 Libre (*.mov)",
+                ".mp4": "Video MP4 - MPEG-4 Libre (*.mp4)",
+                ".avi": "Video AVI - Motion JPEG Libre (*.avi)",
+                ".webp": "WebP Animado HD - Alfa 8 bits (*.webp)",
+                ".gif": "GIF Animado Transparente (*.gif)",
+                ".apng": "APNG Animado - Alfa 8 bits (*.apng *.png)",
+                ".zip": "Secuencia PNG Transparente en ZIP (*.zip)",
+                ".png": "PNG Fotograma Actual (*.png)",
+            }
+            filters = ";;".join(filter_map.values())
+            initial_filter = filter_map.get(default_ext, filter_map[".webm" if is_vid else ".webp"])
+
+            dialog_title = "Guardar Video / Animación Como" if is_vid else "Guardar Animación Como"
+            path, selected_filter = QFileDialog.getSaveFileName(
+                self, dialog_title, default_name, filters, initial_filter
+            )
+        else:
+            default_ext = ".png"
+            stem = self.current_filepath.stem if self.current_filepath else "anime_processed"
+            default_name = f"{stem}_edit{default_ext}"
+            filters = "PNG transparente (*.png);;GIF (*.gif);;JPEG (*.jpg *.jpeg);;WEBP (*.webp)"
+            path, selected_filter = QFileDialog.getSaveFileName(
+                self, "Guardar Imagen Como", default_name, filters
+            )
+
         if not path:
             return
 
@@ -1009,11 +1128,60 @@ class MainWindow(QMainWindow):
                 return
 
             ext = Path(path).suffix.lower()
-            if ext == ".gif":
-                from app.core.gif_processor import save_animated_gif
-                frames_to_save = self.sequence_session.get_all_current_frames() if is_animated_gif else [img]
-                durations = self.sequence_session.durations if is_animated_gif else [100]
-                loop = self.sequence_session.loop if is_animated_gif else 0
+            if not ext:
+                sf_low = selected_filter.lower()
+                if "webm" in sf_low:
+                    ext = ".webm"
+                elif "mkv" in sf_low or "matroska" in sf_low:
+                    ext = ".mkv"
+                elif ".mov" in sf_low or "quicktime" in sf_low:
+                    ext = ".mov"
+                elif "mp4" in sf_low:
+                    ext = ".mp4"
+                elif "avi" in sf_low:
+                    ext = ".avi"
+                elif "zip" in sf_low:
+                    ext = ".zip"
+                elif "webp" in sf_low:
+                    ext = ".webp"
+                elif "gif" in sf_low:
+                    ext = ".gif"
+                elif "apng" in sf_low:
+                    ext = ".apng"
+                elif "jpg" in sf_low or "jpeg" in sf_low:
+                    ext = ".jpg"
+                else:
+                    ext = ".png"
+                path = f"{path}{ext}"
+
+            from app.core.gif_processor import save_animated_gif, save_animated_webp, save_animated_apng
+            from app.core.video_processor import save_video_sequence
+
+            frames_to_save = self.sequence_session.get_all_current_frames() if is_animated_seq else [img]
+            durations = self.sequence_session.durations if is_animated_seq else [80]
+            loop = self.sequence_session.loop if is_animated_seq else 0
+            fps = getattr(self.sequence_session, "fps", 24.0) if is_animated_seq else 24.0
+
+            # 1. Contenedores de video libres o archivo ZIP de secuencia PNG
+            if is_animated_seq and ext in (".webm", ".mkv", ".mov", ".mp4", ".avi", ".m4v", ".ogv", ".zip"):
+                save_video_sequence(
+                    frames_rgba=frames_to_save,
+                    output_path=Path(path),
+                    fps=fps,
+                    bg_color_rgb=self.canvas.bg_color_rgb,
+                    loop=loop,
+                )
+            # 2. Secuencia animada exportada a WebP Animado HD (8-bit alpha continuo 0-255)
+            elif is_animated_seq and (ext == ".webp" or ("WebP" in selected_filter and ext != ".gif")):
+                save_animated_webp(
+                    frames_rgba=frames_to_save,
+                    output_path=Path(path),
+                    durations=durations,
+                    loop=loop,
+                    bg_color_rgb=self.canvas.bg_color_rgb,
+                )
+            # 3. Secuencia animada exportada a GIF
+            elif is_animated_seq and (ext == ".gif" or ("GIF" in selected_filter and ext != ".webp")):
                 save_animated_gif(
                     frames_rgba=frames_to_save,
                     output_path=Path(path),
@@ -1021,6 +1189,16 @@ class MainWindow(QMainWindow):
                     loop=loop,
                     bg_color_rgb=self.canvas.bg_color_rgb,
                 )
+            # 4. Secuencia animada exportada a APNG
+            elif is_animated_seq and (ext == ".apng" or ("APNG" in selected_filter and "Fotograma" not in selected_filter)):
+                save_animated_apng(
+                    frames_rgba=frames_to_save,
+                    output_path=Path(path),
+                    durations=durations,
+                    loop=loop,
+                    bg_color_rgb=self.canvas.bg_color_rgb,
+                )
+            # 5. Formatos estáticos o fotograma único
             elif ext in (".jpg", ".jpeg"):
                 if self.canvas.bg_color_rgb is not None:
                     img = apply_solid_background(img, self.canvas.bg_color_rgb)
@@ -1034,7 +1212,15 @@ class MainWindow(QMainWindow):
                 if self.canvas.bg_color_rgb is not None:
                     img = apply_solid_background(img, self.canvas.bg_color_rgb)
                 img.save(path, quality=95)
-            else:
+            elif ext == ".gif":
+                save_animated_gif(
+                    frames_rgba=[img],
+                    output_path=Path(path),
+                    durations=[100],
+                    loop=0,
+                    bg_color_rgb=self.canvas.bg_color_rgb,
+                )
+            else:  # .png o fotograma actual
                 if self.canvas.bg_color_rgb is not None:
                     img = apply_solid_background(img, self.canvas.bg_color_rgb)
                 img.save(path)
@@ -1178,7 +1364,7 @@ class MainWindow(QMainWindow):
         if enable_clothing_protection is None:
             enable_clothing_protection = getattr(self.sidebar, "is_clothing_protection_enabled", lambda: True)()
 
-        # Si el archivo actual es un GIF animado multicapa, procesar toda la secuencia
+        # Si el archivo actual es un GIF animado o Video multicapa, procesar toda la secuencia
         if self.sequence_session and self.sequence_session.total_frames > 1:
             if self.gif_timer.isActive():
                 self.gif_timer.stop()
@@ -1187,7 +1373,8 @@ class MainWindow(QMainWindow):
 
             from app.core.workers import GifWorkerThread
             frames = self.sequence_session.get_all_current_frames()
-            self.set_processing(True, f"Procesando GIF ({len(frames)} frames) con {model_id}")
+            media_lbl = "Video" if getattr(self.sequence_session, "is_video", False) else "GIF"
+            self.set_processing(True, f"Procesando {media_lbl} ({len(frames)} frames) con {model_id}")
             self.progress_bar.setRange(0, len(frames))
             self.progress_bar.setValue(0)
 
@@ -1195,6 +1382,7 @@ class MainWindow(QMainWindow):
                 frames=frames,
                 model_name=model_id,
                 enable_clothing_protection=enable_clothing_protection,
+                media_label=media_lbl,
             )
             self.active_worker.progress.connect(lambda cur, tot: self.progress_bar.setValue(cur))
             self.active_worker.progressText.connect(self._set_status_raw)
@@ -1221,11 +1409,21 @@ class MainWindow(QMainWindow):
         self.progress_bar.setRange(0, 0)
         self.set_processing(False, f"{description} completado.")
         if processed_frames:
-            durations = self.sequence_session.durations if self.sequence_session else [80] * len(processed_frames)
-            loop = self.sequence_session.loop if self.sequence_session else 0
-            cur_idx = self.sequence_session.current_index if self.sequence_session else 0
-            self.sequence_session = SequenceSession(processed_frames, durations, loop)
-            self._navigate_gif_frame(min(cur_idx, len(processed_frames) - 1))
+            if self.sequence_session and len(self.sequence_session.states) == len(processed_frames):
+                cur_idx = self.sequence_session.current_index
+                for st, proc_frm in zip(self.sequence_session.states, processed_frames):
+                    st.push_state(proc_frm, description=description)
+                self._navigate_gif_frame(min(cur_idx, len(processed_frames) - 1))
+            else:
+                durations = self.sequence_session.durations if self.sequence_session else [80] * len(processed_frames)
+                loop = self.sequence_session.loop if self.sequence_session else 0
+                fps = getattr(self.sequence_session, "fps", None) if self.sequence_session else None
+                is_vid = getattr(self.sequence_session, "is_video", False) if self.sequence_session else False
+                cur_idx = self.sequence_session.current_index if self.sequence_session else 0
+                self.sequence_session = SequenceSession(
+                    processed_frames, durations, loop, fps=fps, is_video=is_vid
+                )
+                self._navigate_gif_frame(min(cur_idx, len(processed_frames) - 1))
 
     def start_restore(self, scale_mode: str, use_tiling: bool):
         if not self.image_state.has_image:
@@ -1328,6 +1526,11 @@ class MainWindow(QMainWindow):
     def _on_sam_embedding_ready(self, _):
         self.sidebar.set_wand_ai_status(tr("wand_ai_ready"))
         self._set_status("wand_ai_ready")
+        pending = getattr(self.canvas, "_pending_wand_click", None)
+        if pending is not None:
+            self.canvas._pending_wand_click = None
+            pt, mode = pending
+            self.canvas._apply_magic_wand(pt, mode=mode)
 
     def _on_sam_embedding_failed(self, err_msg: str):
         self.sidebar.set_wand_ai_status("Error")

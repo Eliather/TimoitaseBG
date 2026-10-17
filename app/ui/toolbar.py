@@ -90,7 +90,7 @@ class AutoResizingStackedWidget(QWidget):
 
 class ToggleSwitch(QAbstractButton):
     """
-    Interruptor deslizante tipo toggle moderno (estilo iOS / macOS / Fluent).
+    Interruptor deslizante tipo toggle moderno (estilo iOS / macOS / Fluent) con soporte de tema oscuro/claro.
     """
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -98,11 +98,16 @@ class ToggleSwitch(QAbstractButton):
         self.setCursor(Qt.CursorShape.PointingHandCursor)
         self.setSizePolicy(QSizePolicy.Policy.Fixed, QSizePolicy.Policy.Fixed)
         self.setFixedSize(36, 20)
+        self._is_dark: bool = True
         self._thumb_pos = 1.0 if self.isChecked() else 0.0
         self._anim = QPropertyAnimation(self, b"thumb_pos", self)
         self._anim.setDuration(150)
         self._anim.setEasingCurve(QEasingCurve.Type.InOutQuad)
         self.toggled.connect(self._on_toggled)
+
+    def set_dark_theme(self, is_dark: bool):
+        self._is_dark = is_dark
+        self.update()
 
     def _get_thumb_pos(self) -> float:
         return self._thumb_pos
@@ -134,15 +139,16 @@ class ToggleSwitch(QAbstractButton):
         thumb_diameter = h - 4.0
 
         t = self._thumb_pos
-        # Interpolar suavemente el fondo:
-        # 0.0 (inactivo/CPU) -> #CBD5E1 (slate suave)
+        # Interpolar suavemente el fondo según el tema:
+        # 0.0 (inactivo/CPU) -> #334155 (oscuro) o #CBD5E1 (claro)
         # 1.0 (activo/GPU) -> #10B981 (verde esmeralda vibrante)
         if not self.isEnabled():
-            track_color = QColor("#E2E8F0")
+            track_color = QColor("#1E293B") if self._is_dark else QColor("#E2E8F0")
         else:
-            r = int(203 * (1 - t) + 16 * t)
-            g = int(213 * (1 - t) + 185 * t)
-            b = int(225 * (1 - t) + 129 * t)
+            r0, g0, b0 = (51, 65, 85) if self._is_dark else (203, 213, 225)
+            r = int(r0 * (1 - t) + 16 * t)
+            g = int(g0 * (1 - t) + 185 * t)
+            b = int(b0 * (1 - t) + 129 * t)
             track_color = QColor(r, g, b)
 
         p.setPen(Qt.PenStyle.NoPen)
@@ -156,11 +162,14 @@ class ToggleSwitch(QAbstractButton):
         thumb_y = 2.0
 
         # Sombra sutil del thumb
-        p.setBrush(QBrush(QColor(0, 0, 0, 30)))
+        p.setBrush(QBrush(QColor(0, 0, 0, 45 if self._is_dark else 30)))
         p.drawEllipse(int(thumb_x), int(thumb_y + 1), int(thumb_diameter), int(thumb_diameter))
 
-        # Thumb blanco
-        thumb_fill = QColor("#FFFFFF") if self.isEnabled() else QColor("#94A3B8")
+        # Thumb
+        if not self.isEnabled():
+            thumb_fill = QColor("#64748B") if self._is_dark else QColor("#94A3B8")
+        else:
+            thumb_fill = QColor("#F8FAFC") if self._is_dark else QColor("#FFFFFF")
         p.setBrush(QBrush(thumb_fill))
         p.drawEllipse(int(thumb_x), int(thumb_y), int(thumb_diameter), int(thumb_diameter))
         p.end()
@@ -178,6 +187,7 @@ class GpuToggle(QWidget):
         self.setObjectName("gpuToggleWidget")
         self.setCursor(Qt.CursorShape.PointingHandCursor)
         self.setFixedHeight(28)
+        self._is_dark: bool = True
 
         layout = QHBoxLayout(self)
         layout.setContentsMargins(8, 2, 6, 2)
@@ -200,6 +210,11 @@ class GpuToggle(QWidget):
 
         self._is_gpu = True
         self._is_blocked = False
+        self._update_presentation()
+
+    def set_dark_theme(self, is_dark: bool):
+        self._is_dark = is_dark
+        self.switch.set_dark_theme(is_dark)
         self._update_presentation()
 
     def mousePressEvent(self, event):
@@ -232,42 +247,51 @@ class GpuToggle(QWidget):
 
     def _update_presentation(self):
         if self._is_blocked:
-            self.lbl_icon.setPixmap(get_pixmap("alert-triangle", size=14, color="#DC2626"))
+            fg = "#F87171" if self._is_dark else "#DC2626"
+            bg = "#450A0A" if self._is_dark else "#FEF2F2"
+            bd = "#DC2626" if self._is_dark else "#FECACA"
+            self.lbl_icon.setPixmap(get_pixmap("alert-triangle", size=14, color=fg))
             self.lbl_text.setText("CPU (Seguro)")
-            self.lbl_text.setStyleSheet("color: #DC2626; font-weight: 700; font-size: 11px; border: none; background: transparent;")
-            self.setStyleSheet("""
-                #gpuToggleWidget {
-                    background-color: #FEF2F2;
-                    border: 1px solid #FECACA;
+            self.lbl_text.setStyleSheet(f"color: {fg}; font-weight: 700; font-size: 11px; border: none; background: transparent;")
+            self.setStyleSheet(f"""
+                #gpuToggleWidget {{
+                    background-color: {bg};
+                    border: 1px solid {bd};
                     border-radius: 14px;
                     padding: 0 4px;
-                }
+                }}
             """)
             self.setToolTip("GPU bloqueada por fallo previo. La app funciona en CPU de forma segura.")
         elif not self.switch.isEnabled():
-            self.lbl_icon.setPixmap(get_pixmap("cpu", size=14, color="#94A3B8"))
+            fg = "#94A3B8"
+            bg = "#0F172A" if self._is_dark else "#F1F5F9"
+            bd = "#334155" if self._is_dark else "#E2E8F0"
+            self.lbl_icon.setPixmap(get_pixmap("cpu", size=14, color=fg))
             self.lbl_text.setText("CPU")
-            self.lbl_text.setStyleSheet("color: #94A3B8; font-weight: 600; font-size: 11px; border: none; background: transparent;")
-            self.setStyleSheet("""
-                #gpuToggleWidget {
-                    background-color: #F1F5F9;
-                    border: 1px solid #E2E8F0;
+            self.lbl_text.setStyleSheet(f"color: {fg}; font-weight: 600; font-size: 11px; border: none; background: transparent;")
+            self.setStyleSheet(f"""
+                #gpuToggleWidget {{
+                    background-color: {bg};
+                    border: 1px solid {bd};
                     border-radius: 14px;
                     padding: 0 4px;
-                }
+                }}
             """)
             self.setToolTip("GPU no disponible en este equipo. Modo CPU activo.")
         elif self.switch.isChecked():
-            self.lbl_icon.setPixmap(get_pixmap("zap", size=14, color="#059669"))
+            fg = "#34D399" if self._is_dark else "#059669"
+            bg = "#064E3B" if self._is_dark else "#ECFDF5"
+            bd = "#059669" if self._is_dark else "#A7F3D0"
+            self.lbl_icon.setPixmap(get_pixmap("zap", size=14, color=fg))
             self.lbl_text.setText("⚡ GPU Activa")
-            self.lbl_text.setStyleSheet("color: #059669; font-weight: 700; font-size: 11px; border: none; background: transparent;")
-            self.setStyleSheet("""
-                #gpuToggleWidget {
-                    background-color: #ECFDF5;
-                    border: 1px solid #A7F3D0;
+            self.lbl_text.setStyleSheet(f"color: {fg}; font-weight: 700; font-size: 11px; border: none; background: transparent;")
+            self.setStyleSheet(f"""
+                #gpuToggleWidget {{
+                    background-color: {bg};
+                    border: 1px solid {bd};
                     border-radius: 14px;
                     padding: 0 4px;
-                }
+                }}
             """)
             try:
                 from app.config import get_gpu_name, detect_device
@@ -278,16 +302,19 @@ class GpuToggle(QWidget):
             except Exception:
                 self.setToolTip("Aceleración GPU activa. Clic para pasar a CPU.")
         else:
-            self.lbl_icon.setPixmap(get_pixmap("cpu", size=14, color="#64748B"))
+            fg = "#CBD5E1" if self._is_dark else "#64748B"
+            bg = "#0F172A" if self._is_dark else "#F1F5F9"
+            bd = "#334155" if self._is_dark else "#CBD5E1"
+            self.lbl_icon.setPixmap(get_pixmap("cpu", size=14, color=fg))
             self.lbl_text.setText("CPU Activo")
-            self.lbl_text.setStyleSheet("color: #64748B; font-weight: 600; font-size: 11px; border: none; background: transparent;")
-            self.setStyleSheet("""
-                #gpuToggleWidget {
-                    background-color: #F1F5F9;
-                    border: 1px solid #CBD5E1;
+            self.lbl_text.setStyleSheet(f"color: {fg}; font-weight: 600; font-size: 11px; border: none; background: transparent;")
+            self.setStyleSheet(f"""
+                #gpuToggleWidget {{
+                    background-color: {bg};
+                    border: 1px solid {bd};
                     border-radius: 14px;
                     padding: 0 4px;
-                }
+                }}
             """)
             self.setToolTip("Modo CPU activo (0 MB VRAM). Clic para activar GPU.")
 
@@ -516,7 +543,15 @@ class ToolSidebar(QWidget):
         self.update_theme_icons(is_dark=True)
 
     def update_theme_icons(self, is_dark: bool = True):
-        """Aplica y refresca iconos vectoriales Open Source adaptados al tema."""
+        """Aplica y refresca iconos vectoriales Open Source y subcomponentes adaptados al tema."""
+        self.is_dark_theme = is_dark
+        if hasattr(self, "gpu_toggle"):
+            self.gpu_toggle.set_dark_theme(is_dark)
+        if hasattr(self, "color_preview_box"):
+            self._update_color_preview(self._selected_color_rgb, self.lbl_color_hex.text() if hasattr(self, "lbl_color_hex") else "")
+        if getattr(self, "_current_detected_subjects", None):
+            self.set_detected_subjects(self._current_detected_subjects)
+
         fg_color = "#EAEAEA" if is_dark else "#292524"
         accent_color = "#FF4F79"
         sub_color = "#999999" if is_dark else "#78716C"
@@ -1419,7 +1454,8 @@ class ToolSidebar(QWidget):
 
     def _on_swatch_none_clicked(self):
         self._selected_is_none = True
-        self.color_preview_box.setStyleSheet("background-color: transparent; border: 1.5px solid #CBD5E1; border-radius: 4px;")
+        bd = "#475569" if getattr(self, "is_dark_theme", True) else "#CBD5E1"
+        self.color_preview_box.setStyleSheet(f"background-color: transparent; border: 1.5px solid {bd}; border-radius: 4px;")
         self.lbl_color_hex.setText("Transparente")
         self.restoreTransparencyRequested.emit()
 
@@ -1451,16 +1487,18 @@ class ToolSidebar(QWidget):
                 self.btn_swatch_gray.setChecked(True)
 
     def _update_color_preview(self, color_rgb: Tuple[int, int, int], label: str):
+        bd = "#475569" if getattr(self, "is_dark_theme", True) else "#CBD5E1"
         if self._selected_is_none:
             self.color_preview_box.setStyleSheet(
-                "background-image: url(:/patterns/checker.png); border: 1px solid #D6D3D1; border-radius: 4px;"
+                f"background-color: transparent; border: 1.5px solid {bd}; border-radius: 4px;"
             )
         else:
             r, g, b = color_rgb
             self.color_preview_box.setStyleSheet(
-                f"background-color: rgb({r},{g},{b}); border: 1px solid #D6D3D1; border-radius: 4px;"
+                f"background-color: rgb({r},{g},{b}); border: 1px solid {bd}; border-radius: 4px;"
             )
-        self.lbl_color_hex.setText(label)
+        if label:
+            self.lbl_color_hex.setText(label)
 
     def set_transparency_available(self, has_transparency: bool, can_restore: bool):
         """
@@ -1602,6 +1640,12 @@ class ToolSidebar(QWidget):
         self.subject_chip_group = QButtonGroup(self)
         self.subject_chip_group.setExclusive(True)
 
+        is_dark = getattr(self, "is_dark_theme", True)
+        chip_bg = "#1E293B" if is_dark else "#F8FAFC"
+        chip_hover = "#334155" if is_dark else "#F1F5F9"
+        chip_bd = "#334155" if is_dark else "#E2E8F0"
+        chip_fg = "#F8FAFC" if is_dark else "#1E293B"
+
         for i, s in enumerate(subjects):
             btn = QPushButton(f"{s.emoji}  {s.class_name.capitalize()} ({int(s.confidence * 100)}%)")
             btn.setObjectName("subjectChipButton")
@@ -1610,7 +1654,9 @@ class ToolSidebar(QWidget):
             btn.setCursor(Qt.CursorShape.PointingHandCursor)
             btn.setStyleSheet(f"""
                 QPushButton {{
-                    border: 1px solid #44403C;
+                    background-color: {chip_bg};
+                    color: {chip_fg};
+                    border: 1px solid {chip_bd};
                     border-left: 4px solid {s.color_hex};
                     border-radius: 6px;
                     padding: 4px 10px;
@@ -1618,9 +1664,13 @@ class ToolSidebar(QWidget):
                     font-size: 12px;
                     font-weight: 500;
                 }}
+                QPushButton:hover {{
+                    background-color: {chip_hover};
+                }}
                 QPushButton:checked {{
                     background-color: {s.color_hex}33;
                     border-color: {s.color_hex};
+                    color: {chip_fg};
                     font-weight: 700;
                 }}
             """)

@@ -1,0 +1,150 @@
+name: Release Build & Multiplatform Packaging
+
+on:
+  push:
+    branches:
+      - main
+      - master
+    tags:
+      - 'v*'
+  pull_request:
+    branches:
+      - main
+      - master
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    name: Build ${{ matrix.platform_name }} (${{ matrix.arch }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: windows-latest
+            platform_name: Windows
+            arch: x64
+            artifact_file: TimoitaseBG-Windows-x64.zip
+            target_type: zip
+
+          - os: macos-14
+            platform_name: macOS Apple Silicon
+            arch: arm64
+            artifact_file: TimoitaseBG-macOS-arm64.dmg
+            target_type: dmg
+
+          - os: macos-13
+            platform_name: macOS Intel
+            arch: x64
+            artifact_file: TimoitaseBG-macOS-x64.dmg
+            target_type: dmg
+
+          - os: ubuntu-22.04
+            platform_name: Linux
+            arch: x64
+            artifact_file: TimoitaseBG-Linux-x64.tar.gz
+            target_type: tar
+
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Setup Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+
+      - name: Install Linux System Dependencies (Qt/PySide6 & OpenGL)
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            libgl1-mesa-glx \
+            libegl1-mesa \
+            libglib2.0-0 \
+            libfontconfig1 \
+            libxkbcommon-x11-0 \
+            libxcb-cursor0 \
+            libxcb-icccm4 \
+            libxcb-image0 \
+            libxcb-keysyms1 \
+            libxcb-randr0 \
+            libxcb-render-util0 \
+            libxcb-shape0 \
+            libxcb-sync1 \
+            libxcb-xfixes0 \
+            libxcb-xinerama0 \
+            libxcb-xkb1 \
+            libsm6 \
+            libxext6
+
+      - name: Upgrade Pip and Packaging Tools
+        run: |
+          python -m pip install --upgrade pip setuptools wheel
+
+      - name: Install Application Dependencies & PyInstaller
+        run: |
+          python -m pip install -r requirements.txt
+          python -m pip install pyinstaller
+
+      - name: Run PyInstaller Build
+        run: |
+          pyinstaller --noconfirm --clean build.spec
+
+      - name: Package Windows Binary (Zip)
+        if: matrix.target_type == 'zip'
+        shell: pwsh
+        run: |
+          Compress-Archive -Path dist/TimoitaseBG -DestinationPath ${{ matrix.artifact_file }} -CompressionLevel Optimal
+
+      - name: Package macOS Application (.app to .dmg)
+        if: matrix.target_type == 'dmg'
+        run: |
+          # Firma Ad-Hoc obligatoria para Apple Silicon (M1-M5) e Intel en macOS:
+          # Evita que el kernel de macOS termine el proceso con 'Code Signature Invalid'
+          # al cargar librerías dinámicas dylib/so de onnxruntime y PySide6
+          codesign --force --deep --sign - "dist/TimoitaseBG.app"
+
+          # Crear DMG nativo con hdiutil para arranque y montaje limpio
+          hdiutil create -volname "TimoitaseBG" -srcfolder "dist/TimoitaseBG.app" -ov -format UDZO "${{ matrix.artifact_file }}"
+
+      - name: Package Linux Binary (Tar.gz)
+        if: matrix.target_type == 'tar'
+        run: |
+          tar -czvf "${{ matrix.artifact_file }}" -C dist TimoitaseBG
+
+      - name: Upload Build Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.artifact_file }}
+          path: ${{ matrix.artifact_file }}
+          if-no-files-found: error
+
+  release:
+    name: Publish Release
+    needs: build
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Download all packaged artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: release-artifacts
+          merge-multiple: true
+
+      - name: List Artifacts
+        run: ls -la release-artifacts
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: release-artifacts/*
+          draft: false
+          prerelease: false
+          generate_release_notes: true

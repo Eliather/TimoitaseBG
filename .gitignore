@@ -15,7 +15,8 @@ dist/
 
 # Archivos específicos solicitados
 iniciar.bat
-tests/
+# tests/  # Comentado para permitir suite de pruebas en CI/CD y repositorio
+
 
 # Variables de entorno y secretos
 .env
@@ -50,3 +51,5 @@ models/
 .pytest_cache/
 htmlcov/
 .coverage
+tests/*.mp4
+tests/MiniStil_edit.png

@@ -110,6 +110,7 @@ class ShortcutsDialog(QDialog):
                 [
                     (tr("shortcut_open"), tr("shortcut_open_desc")),
                     (tr("shortcut_save"), tr("shortcut_save_desc")),
+                    (tr("shortcut_copy"), tr("shortcut_copy_desc")),
                     (tr("shortcut_paste"), tr("shortcut_paste_desc")),
                     (tr("shortcut_undo"), tr("shortcut_undo_desc")),
                     (tr("shortcut_redo"), tr("shortcut_redo_desc")),

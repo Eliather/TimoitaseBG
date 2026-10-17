@@ -19,6 +19,8 @@
 </p>
 
 <p align="center">
+  <img src="https://img.shields.io/badge/Versi%C3%B3n-1.2.1-FF4F79?style=for-the-badge" alt="Versión 1.2.1">
+  <img src="https://img.shields.io/badge/Autora-Eliather-8B5CF6?style=for-the-badge&logo=github&logoColor=white" alt="Autora Eliather">
   <img src="https://img.shields.io/badge/Python-3.11%2B-3776AB?style=for-the-badge&logo=python&logoColor=white" alt="Python">
   <img src="https://img.shields.io/badge/Framework-PySide6%20%2F%20Qt6-41CD52?style=for-the-badge&logo=qt&logoColor=white" alt="PySide6">
   <img src="https://img.shields.io/badge/Multiplataforma-Windows%20%7C%20macOS%20%7C%20Linux%20%7C%20ARM64-0078D4?style=for-the-badge&logo=linux&logoColor=white" alt="Multiplataforma">
@@ -27,14 +29,15 @@
 </p>
 
 <p align="center">
-  <b>Estación de trabajo de escritorio local y multiplataforma para eliminación de fondos, segmentación con IA y retoque digital de alta precisión.</b>
+  <b>Estación de trabajo de escritorio local y multiplataforma para eliminación de fondos en imágenes, GIFs y videos con IA y retoque digital de alta precisión.</b><br>
+  <i>Creada y desarrollada por <b><a href="https://github.com/Eliather">Eliather</a></b> (Autora) • Versión <b>v1.2.1</b></i>
 </p>
 
 ---
 
 ## Descripción General
 
-**TimoitaseBG** es una solución de escritorio **100% local, multiplataforma**, moderna y de alto rendimiento desarrollada con **PySide6 / Qt6** y **ONNX Runtime**. Diseñada para ilustradores, artistas de anime y manga, diseñadores gráficos y fotógrafos, integra los modelos de visión por computadora más avanzados (**BiRefNet**, **MobileSAM**, **YOLO11-seg**, **InSPyReNet**, **IS-Net Anime** y **Real-ESRGAN**) con herramientas profesionales de selección manual y enmascarado subpíxel estilo Photoshop.
+**TimoitaseBG** (creada por la autora **[Eliather](https://github.com/Eliather)**) es una solución de escritorio **100% local, multiplataforma**, moderna y de alto rendimiento desarrollada con **PySide6 / Qt6** y **ONNX Runtime**. Diseñada para ilustradores, artistas de anime y manga, diseñadores gráficos, editores de video y fotógrafos, integra los modelos de visión por computadora más avanzados (**BiRefNet**, **MobileSAM**, **YOLO11-seg**, **InSPyReNet**, **IS-Net Anime** y **Real-ESRGAN**) con herramientas profesionales de selección manual y enmascarado subpíxel estilo Photoshop.
 
 La aplicación ofrece compatibilidad nativa integral con una amplia gama de arquitecturas y aceleradores de hardware:
 - **Windows (x86_64 y ARM64):** NVIDIA CUDA, AMD Radeon / Intel Arc vía DirectML, y procesadores **Qualcomm Snapdragon X Elite / X Plus** con aceleración NPU Hexagon (**QNN**) y GPU Adreno (**DirectML ARM64**).
@@ -59,7 +62,7 @@ Todo el procesamiento se realiza de manera totalmente local en el equipo del usu
    - [Lienzo Interactivo y Comparación](#6-lienzo-interactivo-y-comparación)
    - [Procesamiento por Lotes](#7-procesamiento-por-lotes)
    - [Diseño e Internacionalización](#8-diseño-e-internacionalización)
-   - [Paginación y Edición por Fotograma en GIFs](#9-paginación-y-edición-por-fotograma-en-gifs)
+   - [Paginación y Edición Frame-by-Frame en Animaciones y Videos](#9-paginación-y-edición-frame-by-frame-en-animaciones-y-videos)
 4. [Arquitectura y Concurrencia Defensiva](#arquitectura-y-concurrencia-defensiva)
 5. [Requisitos del Sistema](#requisitos-del-sistema)
 6. [Instalación y Puesta en Marcha](#instalación-y-puesta-en-marcha)
@@ -170,9 +173,9 @@ Motor dual de selección con dos modos de operación complementarios:
 
 ### 7. Procesamiento por Lotes
 
-- Procesamiento automático de carpetas completas de imágenes sin intervención manual.
-- Aplicación uniforme del modelo de IA seleccionado y la protección de prendas.
-- Exportación secuencial en formato PNG transparente con barra de progreso en tiempo real.
+- Procesamiento automático de carpetas completas de imágenes estáticas (`.png`, `.jpg`, `.webp`, `.bmp`), animaciones (`.gif`, `.webp`, `.apng`) y videos (`.mp4`, `.mov`, `.webm`, `.mkv`, `.avi`, `.m4v`, `.wmv`, `.flv`, `.mpeg`, `.ogv`, `.3gp`, `.ts`) sin intervención manual.
+- Aplicación uniforme del modelo de IA seleccionado y la protección de prendas con estabilización temporal anti-flicker.
+- Exportación secuencial preservando transparencia o contenedor libre con barra de progreso en tiempo real.
 
 ### 8. Diseño e Internacionalización
 
@@ -180,13 +183,19 @@ Motor dual de selección con dos modos de operación complementarios:
 - **Temas Visuales:** Modos oscuro y claro implementados mediante Qt Style Sheets (QSS).
 - **Soporte Multilingüe (i18n):** Español (`es`), Inglés (`en`), Ruso (`ru`) y Chino Simplificado (`zh`).
 
-### 9. Paginación y Edición por Fotograma en GIFs
+### 9. Paginación y Edición Frame-by-Frame en Animaciones y Videos
 
-- **Navegación Cuadro a Cuadro:** Inspección y control de secuencias animadas mediante barra HUD inferior flotante (`SequenceSession`).
-- **Edición Individual Aislada:** Modificación directa de cualquier fotograma con pincel, borrador, varita MobileSAM o YOLO11 sin sobreescribir ni contaminar el resto de la animación.
-- **Reproducción Fluida en Lienzo:** Bucle interactivo (*Play / Pausa*) respetando la duración exacta de cada fotograma.
+- **Soporte Amplio de Formatos de Video y Animación:** Apertura directa y por arrastrar/soltar de videos **MP4, MOV, WebM, MKV, AVI, M4V, WMV, FLV, MPEG, MPG, OGV, 3GP, TS** y animaciones **GIF, WebP, APNG**.
+- **Navegación Cuadro a Cuadro:** Inspección y control de secuencias mediante la barra HUD inferior flotante (`SequenceSession`) con preservación del FPS original.
+- **Edición Individual Aislada e Historial por Fotograma:** Modificación directa de cualquier fotograma con pincel, borrador, varita MobileSAM o YOLO11, manteniendo deshacer/rehacer (`Ctrl+Z`/`Ctrl+Y`) y comparación *Antes/Después* en cada cuadro.
 - **Estabilización Temporal Anti-Flicker:** Suavizado dinámico de bordes en inferencia secuencial para eliminar la vibración (*jitter*) entre fotogramas consecutivos.
-- **Exportación Limpia de Paleta Indexada:** Conversión a paleta de 255 colores adaptativos con canal alfa de 1-bit sin halos oscuros en los contornos.
+- **Exportación a Formatos 100% Libres / Sin Licencias de Pago:**
+  - **WebM Libre (`.webm`):** Códec abierto y libre de regalías VP8/VP9 (soporta alfa nativo `yuva420p` si `ffmpeg` está en el PATH, o fondo sólido / Chroma Key).
+  - **Matroska Libre (`.mkv`):** Códec abierto sin pérdida `FFV1` o `VP8`.
+  - **QuickTime MOV / MP4 / AVI (`.mov`, `.mp4`, `.avi`):** Codificación integrada libre (`mp4v` y Motion JPEG `MJPG`) sin depender de codificadores propietarios ni DLLs de pago.
+  - **WebP Animado HD (`.webp`) y APNG (`.apng`):** Transparencia alfa continua de 8 bits (0–255) sin bordes dentados.
+  - **GIF Animado (`.gif`):** Paleta adaptativa de 255 colores + canal alfa limpio de 1-bit.
+  - **Secuencia PNG Transparente en ZIP (`.zip`):** Fotogramas numerados (`frame_00001.png`...) con alfa RGBA de 8 bits listos para importar en DaVinci Resolve, Premiere, After Effects o Blender.
 
 ---
 
@@ -200,7 +209,7 @@ TimoitaseBG implementa una arquitectura defensiva dividida en subprocesos para g
 │               (Interfaz Gráfica PySide6 / Event Loop Qt)                │
 │  - Renderizado nativo a 60 FPS (Hardware acelerado)                     │
 │  - CanvasWidget (Hormigas marchantes, zoom, pincel, selección)          │
-│  - MainWindow, SequenceSession (GIFs) & ToolSidebar                     │
+│  - MainWindow, SequenceSession (GIFs y Videos) & ToolSidebar            │
 └────────────────────┬────────────────────────────────┬───────────────────┘
                      │                                │
               (IPC Queue / Mutex)             (QThreads Controlados)
@@ -249,11 +258,15 @@ TimoitaseBG implementa una arquitectura defensiva dividida en subprocesos para g
 
 ## Instalación y Puesta en Marcha
 
+> [!IMPORTANT]
+> **Evite conflictos entre variantes de ONNX Runtime:**  
+> En Python, los paquetes `onnxruntime`, `onnxruntime-directml`, `onnxruntime-gpu`, `onnxruntime-rocm` y `onnxruntime-qnn` comparten el mismo espacio de nombres (`onnxruntime`). `requirements.txt` instala automáticamente `onnxruntime-directml` en Windows y `onnxruntime` en macOS/Linux. Si desea cambiar a otro proveedor específico (como CUDA, ROCm o QNN), desinstale primero el paquete base antes de instalar el nuevo.
+
 ### Opción A: Windows (x86_64 y ARM64 Snapdragon)
 
 1. **Clonar el repositorio:**
    ```bash
-   git clone git@github.com:Eliather/TimoitaseBG.git
+   git clone https://github.com/Eliather/TimoitaseBG.git
    cd TimoitaseBG
    ```
 
@@ -268,7 +281,9 @@ TimoitaseBG implementa una arquitectura defensiva dividida en subprocesos para g
    .venv\Scripts\activate
    pip install -r requirements.txt
    # Opcional para Windows ARM64 (Snapdragon X Elite / Plus con NPU Hexagon):
-   # pip install onnxruntime-qnn
+   # pip uninstall -y onnxruntime-directml && pip install onnxruntime-qnn
+   # Opcional para GPUs NVIDIA dedicadas usando CUDA nativo en lugar de DirectML:
+   # pip uninstall -y onnxruntime-directml && pip install onnxruntime-gpu
    python app/main.py
    ```
 
@@ -278,7 +293,7 @@ En macOS, `onnxruntime` incluye soporte nativo para **CoreML** (`CoreMLExecution
 
 1. **Clonar e ingresar al repositorio:**
    ```bash
-   git clone git@github.com:Eliather/TimoitaseBG.git
+   git clone https://github.com/Eliather/TimoitaseBG.git
    cd TimoitaseBG
    ```
 
@@ -305,7 +320,7 @@ En macOS, `onnxruntime` incluye soporte nativo para **CoreML** (`CoreMLExecution
 
 2. **Clonar y preparar entorno virtual:**
    ```bash
-   git clone git@github.com:Eliather/TimoitaseBG.git
+   git clone https://github.com/Eliather/TimoitaseBG.git
    cd TimoitaseBG
    python3 -m venv .venv
    source .venv/bin/activate
@@ -315,11 +330,11 @@ En macOS, `onnxruntime` incluye soporte nativo para **CoreML** (`CoreMLExecution
 3. **Aceleración Específica por Hardware (Opcional):**
    - **Para GPU NVIDIA en Linux (x86_64 o NVIDIA Jetson Orin/Nano aarch64):**
      ```bash
-     pip install onnxruntime-gpu
+     pip uninstall -y onnxruntime && pip install onnxruntime-gpu
      ```
    - **Para GPU AMD ROCm en Linux:**
      ```bash
-     pip install onnxruntime-rocm --extra-index-url https://aiinfra.pkgs.visualstudio.com/PublicPackages/_packaging/onnxruntime-rocm-release/pypi/simple/
+     pip uninstall -y onnxruntime && pip install onnxruntime-rocm --extra-index-url https://aiinfra.pkgs.visualstudio.com/PublicPackages/_packaging/onnxruntime-rocm-release/pypi/simple/
      ```
    - **Para Raspberry Pi 5 y SBCs ARM64:** El paquete oficial `onnxruntime` instala wheels compiladas para `manylinux_2_27_aarch64` con aceleración vectorial NEON integrada de fábrica.
 
@@ -335,6 +350,9 @@ En macOS, `onnxruntime` incluye soporte nativo para **CoreML** (`CoreMLExecution
 El proyecto cuenta con una suite integral de pruebas unitarias y de integración, incluyendo validaciones simuladas multiplataforma (Windows ARM64, macOS Apple Silicon, Linux ROCm/ARM SoCs y APUs integradas):
 
 ```bash
+# Ejecutar la suite completa de pruebas:
+pytest -v
+
 # Ejecutar la suite de pruebas del Watchdog Aislado y Detección Multiplataforma:
 pytest tests/test_gpu_worker_watchdog.py -v
 
@@ -372,9 +390,7 @@ TimoitaseBG hace uso de modelos y librerías de código abierto de la comunidad 
 | **Segment Anything (SAM)** | Meta AI Research | **Apache 2.0** | Modelo base y decodificador de máscaras | [GitHub](https://github.com/facebookresearch/segment-anything) |
 | **YOLO11-seg** | Ultralytics Inc. | **GNU AGPLv3** | Detección y segmentación multiobjeto (hasta 80 clases) | [GitHub](https://github.com/ultralytics/ultralytics) |
 | **Real-ESRGAN** | Wang et al. (Tencent PCG) | **BSD 3-Clause** | Super-resolución 2x/4x y restauración de nitidez | [GitHub](https://github.com/xinntao/Real-ESRGAN) |
-| **Detector de Ropa** | Levin Dabhi / Qin et al. | **MIT / Apache 2.0** | Filtro protector de prendas claras (`u2net_cloth_seg`) | [GitHub](https://github.com/levindabhi/cloth-segmentation) |
-| **U²-Net** | Qin et al. (Univ. of Alberta) | **Apache 2.0** | Segmentación semántica de personas | [GitHub](https://github.com/xuebinqin/U-2-Net) |
-| **ViTMatte** | Yao et al. (HUST & Kuaishou) | **Apache 2.0** | Refinamiento perimetral con Vision Transformers | [GitHub](https://github.com/hustvl/ViTMatte) |
+| **U²-Net Human Seg** | Qin et al. (Univ. of Alberta) | **Apache 2.0** | Segmentación semántica de personas y filtro protector de prendas claras (`u2net_human_seg`) | [GitHub](https://github.com/xuebinqin/U-2-Net) |
 | **Lucide Icons** | Lucide Project | **ISC License** | Iconografía vectorial SVG | [Lucide.dev](https://lucide.dev) |
 | **PySide6 / Qt** | The Qt Company | **LGPLv3** | Interfaz gráfica nativa multiplataforma | [Qt.io](https://www.qt.io) |
 
@@ -428,12 +444,16 @@ Para detalles exhaustivos, fuentes de descarga y hashes de verificación, consul
 
 ---
 
-## Licencia del Software
+## Autora y Licencia del Software
+
+- **Autora:** **[Eliather](https://github.com/Eliather)**
+- **Versión Actual:** `1.2.1`
+- **Apoyar el proyecto:** [Ko-fi de Eliather](https://ko-fi.com/eliather)
 
 Este programa es software libre y de código abierto distribuido bajo los términos de la **GNU Affero General Public License Version 3 (GNU AGPLv3)**. Para más detalles, consulte el archivo [LICENSE](LICENSE).
 
 ```text
-TimoitaseBG - Copyright (C) 2026 Eliather
+TimoitaseBG v1.2.1 - Copyright (C) 2026 Eliather (Autora)
 
 This program is free software: you can redistribute it and/or modify
 it under the terms of the GNU Affero General Public License as published by
