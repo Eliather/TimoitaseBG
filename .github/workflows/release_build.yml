@@ -27,16 +27,16 @@ jobs:
           - os: windows-latest
             platform_name: Windows
             arch: x64
-            artifact_file: TimoitaseBG-Windows-x64.zip
-            target_type: zip
+            artifact_file: TimoitaseBG-Windows-x64.msix
+            target_type: msix
 
-          - os: macos-14
+          - os: macos-15
             platform_name: macOS Apple Silicon
             arch: arm64
             artifact_file: TimoitaseBG-macOS-arm64.dmg
             target_type: dmg
 
-          - os: macos-13
+          - os: macos-15-intel
             platform_name: macOS Intel
             arch: x64
             artifact_file: TimoitaseBG-macOS-x64.dmg
@@ -45,8 +45,8 @@ jobs:
           - os: ubuntu-22.04
             platform_name: Linux
             arch: x64
-            artifact_file: TimoitaseBG-Linux-x64.tar.gz
-            target_type: tar
+            artifact_file: TimoitaseBG-Linux-x64.AppImage
+            target_type: appimage
 
     steps:
       - name: Checkout Repository
@@ -58,11 +58,14 @@ jobs:
           python-version: '3.11'
           cache: 'pip'
 
-      - name: Install Linux System Dependencies (Qt/PySide6 & OpenGL)
+      - name: Install Linux System Dependencies (Qt/PySide6, OpenGL & AppImage Tools)
         if: runner.os == 'Linux'
         run: |
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends \
+            file \
+            desktop-file-utils \
+            wget \
             libgl1-mesa-glx \
             libegl1-mesa \
             libglib2.0-0 \
@@ -95,16 +98,31 @@ jobs:
         run: |
           pyinstaller --noconfirm --clean build.spec
 
-      - name: Package Windows Binary (Zip)
-        if: matrix.target_type == 'zip'
+      - name: Package Windows Application (.msix)
+        if: matrix.target_type == 'msix'
         shell: pwsh
         run: |
-          Compress-Archive -Path dist/TimoitaseBG -DestinationPath ${{ matrix.artifact_file }} -CompressionLevel Optimal
+          python -m scripts.package_release msix
+
+          $sdkBin = Get-ChildItem "C:\Program Files (x86)\Windows Kits\10\bin\10.0.*\x64" | Sort-Object Name -Descending | Select-Object -First 1
+          if (-not $sdkBin) { throw "No se encontró Windows SDK (makeappx.exe)" }
+          $makeappx = Join-Path $sdkBin.FullName "makeappx.exe"
+          $signtool = Join-Path $sdkBin.FullName "signtool.exe"
+
+          & $makeappx pack /d "build/msix_stage" /p "${{ matrix.artifact_file }}" /nv /o
+          if ($LASTEXITCODE -ne 0) { throw "makeappx falló con código $LASTEXITCODE" }
+
+          # Firma digital autofirmada para paquete MSIX
+          $cert = New-SelfSignedCertificate -Type Custom -Subject "CN=Eliather" -KeyUsage DigitalSignature -FriendlyName "TimoitaseBG Certificate" -CertStoreLocation "Cert:\CurrentUser\My" -TextExtension @("2.5.29.37={text}1.3.6.1.5.5.7.3.3", "2.5.29.19={text}")
+          $pwd = ConvertTo-SecureString -String "TimoitaseBG2026" -Force -AsPlainText
+          Export-PfxCertificate -Cert "Cert:\CurrentUser\My\$($cert.Thumbprint)" -FilePath "build/TimoitaseBG.pfx" -Password $pwd | Out-Null
+
+          & $signtool sign /fd SHA256 /a /f "build/TimoitaseBG.pfx" /p "TimoitaseBG2026" "${{ matrix.artifact_file }}"
 
       - name: Package macOS Application (.app to .dmg)
         if: matrix.target_type == 'dmg'
         run: |
-          # Firma Ad-Hoc obligatoria para Apple Silicon (M1-M5) e Intel en macOS:
+          # Firma Ad-Hoc obligatoria para Apple Silicon (M1-M5) e Intel en macOS 15:
           # Evita que el kernel de macOS termine el proceso con 'Code Signature Invalid'
           # al cargar librerías dinámicas dylib/so de onnxruntime y PySide6
           codesign --force --deep --sign - "dist/TimoitaseBG.app"
@@ -112,10 +130,15 @@ jobs:
           # Crear DMG nativo con hdiutil para arranque y montaje limpio
           hdiutil create -volname "TimoitaseBG" -srcfolder "dist/TimoitaseBG.app" -ov -format UDZO "${{ matrix.artifact_file }}"
 
-      - name: Package Linux Binary (Tar.gz)
-        if: matrix.target_type == 'tar'
+      - name: Package Linux Application (.AppImage)
+        if: matrix.target_type == 'appimage'
         run: |
-          tar -czvf "${{ matrix.artifact_file }}" -C dist TimoitaseBG
+          python -m scripts.package_release appimage
+
+          wget -q "https://github.com/AppImage/appimagetool/releases/download/continuous/appimagetool-x86_64.AppImage" -O appimagetool
+          chmod +x appimagetool
+          ARCH=x86_64 ./appimagetool --appimage-extract-and-run "build/TimoitaseBG.AppDir" "${{ matrix.artifact_file }}"
+          chmod +x "${{ matrix.artifact_file }}"
 
       - name: Upload Build Artifact
         uses: actions/upload-artifact@v4

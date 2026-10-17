@@ -178,3 +178,25 @@ def test_gpu_worker_u2net_sync():
     assert os.environ.get("U2NET_home") == str(config.MODELS_DIR)
 
 
+def test_package_release_msix_and_appimage_staging(tmp_path):
+    """Verifica que scripts.package_release genere correctamente los directorios para MSIX y AppImage."""
+    from scripts.package_release import prepare_msix_stage, prepare_appimage_stage
+
+    fake_dist = tmp_path / "dist" / "TimoitaseBG"
+    fake_dist.mkdir(parents=True, exist_ok=True)
+    (fake_dist / "TimoitaseBG.exe").write_bytes(b"MZ")
+    (fake_dist / "TimoitaseBG").write_bytes(b"\x7fELF")
+
+    msix_stage = tmp_path / "msix_stage"
+    prepare_msix_stage(fake_dist, msix_stage)
+    assert (msix_stage / "AppxManifest.xml").exists()
+    assert (msix_stage / "Assets" / "StoreLogo.png").exists()
+    assert (msix_stage / "Assets" / "Square44x44Logo.png").exists()
+    assert (msix_stage / "Assets" / "Square150x150Logo.png").exists()
+
+    appdir = tmp_path / "TimoitaseBG.AppDir"
+    prepare_appimage_stage(fake_dist, appdir)
+    assert (appdir / "AppRun").exists()
+    assert (appdir / "TimoitaseBG.desktop").exists()
+    assert (appdir / "timoitasebg.png").exists()
+    assert (appdir / "usr" / "bin" / "TimoitaseBG").exists()

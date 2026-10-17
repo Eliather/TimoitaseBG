@@ -8,9 +8,14 @@ __pycache__/
 venv/
 env/
 
-# PyInstaller / Build
+# PyInstaller / Build / Local Release Binaries
 build/
 dist/
+releases/*.msix
+releases/*.dmg
+releases/*.AppImage
+releases/*.zip
+releases/*.tar.gz
 # build.spec  # Comentado intencionalmente (se recomienda NO ignorarlo)
 
 # Archivos específicos solicitados
