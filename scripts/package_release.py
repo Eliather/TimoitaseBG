@@ -47,7 +47,7 @@ def generate_brand_icon(size: int, output_path: Path) -> None:
     img.save(output_path, format="PNG")
 
 
-def prepare_msix_stage(dist_dir: Path, stage_dir: Path) -> None:
+def prepare_msix_stage(dist_dir: Path, stage_dir: Path, arch: str = "x64") -> None:
     """Prepara el directorio de staging para compilar un paquete Windows .msix con MakeAppx."""
     if stage_dir.exists():
         shutil.rmtree(stage_dir)
@@ -64,6 +64,10 @@ def prepare_msix_stage(dist_dir: Path, stage_dir: Path) -> None:
         parts.append("0")
     msix_version = ".".join(parts[:4])
 
+    # Para Windows ARM64 (Snapdragon X Elite / Plus con Prism + DirectML),
+    # ProcessorArchitecture="neutral" permite instalación nativa sin bloqueo de arquitectura.
+    manifest_arch = "neutral" if arch.lower() in ("arm64", "neutral") else "x64"
+
     manifest_xml = f"""<?xml version="1.0" encoding="utf-8"?>
 <Package
   xmlns="http://schemas.microsoft.com/appx/manifest/foundation/windows10"
@@ -74,7 +78,7 @@ def prepare_msix_stage(dist_dir: Path, stage_dir: Path) -> None:
     Name="Eliather.TimoitaseBG"
     Publisher="CN={APP_AUTHOR}"
     Version="{msix_version}"
-    ProcessorArchitecture="x64" />
+    ProcessorArchitecture="{manifest_arch}" />
   <Properties>
     <DisplayName>{APP_NAME}</DisplayName>
     <PublisherDisplayName>{APP_AUTHOR}</PublisherDisplayName>
@@ -103,7 +107,7 @@ def prepare_msix_stage(dist_dir: Path, stage_dir: Path) -> None:
 </Package>
 """
     (stage_dir / "AppxManifest.xml").write_text(manifest_xml, encoding="utf-8")
-    print(f"[MSIX] Directorio de staging preparado en: {stage_dir} (v{msix_version})")
+    print(f"[MSIX] Directorio de staging preparado en: {stage_dir} (v{msix_version}, arch={manifest_arch})")
 
 
 def prepare_appimage_stage(dist_dir: Path, appdir: Path) -> None:
@@ -149,17 +153,19 @@ exec "${HERE}/usr/bin/TimoitaseBG" "$@"
 
 if __name__ == "__main__":
     if len(sys.argv) < 2:
-        print("Uso: python -m scripts.package_release [msix|appimage]")
+        print("Uso: python -m scripts.package_release [msix|appimage] [arch]")
         sys.exit(1)
 
     mode = sys.argv[1].lower()
+    target_arch = sys.argv[2].lower() if len(sys.argv) > 2 else "x64"
     root = Path(__file__).resolve().parent.parent
     dist_folder = root / "dist" / "TimoitaseBG"
 
     if mode == "msix":
-        prepare_msix_stage(dist_folder, root / "build" / "msix_stage")
+        prepare_msix_stage(dist_folder, root / "build" / "msix_stage", arch=target_arch)
     elif mode == "appimage":
         prepare_appimage_stage(dist_folder, root / "build" / "TimoitaseBG.AppDir")
     else:
         print(f"Modo desconocido: {mode}")
         sys.exit(1)
+

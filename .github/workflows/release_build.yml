@@ -30,16 +30,34 @@ jobs:
             artifact_file: TimoitaseBG-Windows-x64.msix
             target_type: msix
 
+          - os: windows-latest
+            platform_name: Windows ARM64
+            arch: arm64
+            artifact_file: TimoitaseBG-Windows-arm64.msix
+            target_type: msix
+
           - os: macos-15
-            platform_name: macOS 15
+            platform_name: macOS 15 Apple Silicon
             arch: arm64
             artifact_file: TimoitaseBG-macOS-arm64.dmg
+            target_type: dmg
+
+          - os: macos-15-intel
+            platform_name: macOS 15 Intel
+            arch: x64
+            artifact_file: TimoitaseBG-macOS-x64.dmg
             target_type: dmg
 
           - os: ubuntu-22.04
             platform_name: Linux
             arch: x64
             artifact_file: TimoitaseBG-Linux-x64.AppImage
+            target_type: appimage
+
+          - os: ubuntu-24.04-arm
+            platform_name: Linux ARM64
+            arch: arm64
+            artifact_file: TimoitaseBG-Linux-arm64.AppImage
             target_type: appimage
 
     steps:
@@ -60,8 +78,8 @@ jobs:
             file \
             desktop-file-utils \
             wget \
-            libgl1-mesa-glx \
-            libegl1-mesa \
+            libgl1 \
+            libegl1 \
             libglib2.0-0 \
             libfontconfig1 \
             libxkbcommon-x11-0 \
@@ -85,8 +103,8 @@ jobs:
 
       - name: Install Application Dependencies & PyInstaller
         run: |
-          python -m pip install -r requirements.txt
-          python -m pip install pyinstaller
+          python -m pip install --prefer-binary --only-binary=llvmlite,numba -r requirements.txt
+          python -m pip install --prefer-binary pyinstaller
 
       - name: Run PyInstaller Build
         run: |
@@ -96,7 +114,7 @@ jobs:
         if: matrix.target_type == 'msix'
         shell: pwsh
         run: |
-          python -m scripts.package_release msix
+          python -m scripts.package_release msix ${{ matrix.arch }}
 
           $makeappxItem = Get-ChildItem "C:\Program Files (x86)\Windows Kits\10\bin\*\x64\makeappx.exe" -ErrorAction SilentlyContinue | Sort-Object FullName -Descending | Select-Object -First 1
           $signtoolItem = Get-ChildItem "C:\Program Files (x86)\Windows Kits\10\bin\*\x64\signtool.exe" -ErrorAction SilentlyContinue | Sort-Object FullName -Descending | Select-Object -First 1
@@ -118,7 +136,7 @@ jobs:
       - name: Package macOS Application (.app to .dmg)
         if: matrix.target_type == 'dmg'
         run: |
-          # Firma Ad-Hoc obligatoria para Apple Silicon (M1-M5) en macOS 15:
+          # Firma Ad-Hoc obligatoria para Apple Silicon (M1-M5) e Intel en macOS 15:
           # Evita que el kernel de macOS termine el proceso con 'Code Signature Invalid'
           # al cargar librerías dinámicas dylib/so de onnxruntime y PySide6
           codesign --force --deep --sign - "dist/TimoitaseBG.app"
@@ -131,9 +149,15 @@ jobs:
         run: |
           python -m scripts.package_release appimage
 
-          wget -q "https://github.com/AppImage/appimagetool/releases/download/continuous/appimagetool-x86_64.AppImage" -O appimagetool
+          if [ "${{ matrix.arch }}" = "arm64" ]; then
+            TOOL_ARCH="aarch64"
+          else
+            TOOL_ARCH="x86_64"
+          fi
+
+          wget -q "https://github.com/AppImage/appimagetool/releases/download/continuous/appimagetool-${TOOL_ARCH}.AppImage" -O appimagetool
           chmod +x appimagetool
-          ARCH=x86_64 ./appimagetool --appimage-extract-and-run "build/TimoitaseBG.AppDir" "${{ matrix.artifact_file }}"
+          ARCH=${TOOL_ARCH} ./appimagetool --appimage-extract-and-run "build/TimoitaseBG.AppDir" "${{ matrix.artifact_file }}"
           chmod +x "${{ matrix.artifact_file }}"
 
       - name: Upload Build Artifact
