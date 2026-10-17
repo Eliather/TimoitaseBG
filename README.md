@@ -219,7 +219,7 @@ TimoitaseBG implementa una arquitectura defensiva dividida en subprocesos para g
 │         (Subproceso dedicado)         │  │ - SamEmbeddingWorker         │
 │  - Backends: CUDA | ROCm | CoreML |   │  │ - YoloDetectionWorker        │
 │    DirectML (x64/ARM64) | QNN (NPU)   │  │ - BatchWorkerThread          │
-│  - BiRefNet General 1024×1024 (MIT)  │  │ Prioridad: LowPriority       │
+│  - BiRefNet General 1024×1024 (MIT)   │  │ Prioridad: LowPriority       │
 │  - InSPyReNet Swin-B                  │  │ CPU Thread Cap: <= 4         │
 │  - Real-ESRGAN x4plus (Tiling 512)    │  │ Afinidad ARM: allow_spin=0   │
 │  - Watchdog Supervisor & Auto-Kill    │  │ Re-entrancia bloqueada       │
