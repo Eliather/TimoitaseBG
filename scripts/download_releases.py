@@ -37,8 +37,12 @@ def download_latest_release(tag: str = "v1.2.1") -> int:
     for asset in assets:
         name = asset["name"]
         download_url = asset["browser_download_url"]
-        size_mb = asset.get("size", 0) / (1024 * 1024)
+        expected_size = asset.get("size", 0)
+        size_mb = expected_size / (1024 * 1024)
         dest = releases_dir / name
+        if dest.exists() and dest.stat().st_size == expected_size and expected_size > 0:
+            print(f"[SKIP] {name} ({size_mb:.1f} MB) ya existe en {dest}")
+            continue
         print(f"Descargando {name} ({size_mb:.1f} MB) -> {dest} ...")
         req = urllib.request.Request(download_url, headers={"User-Agent": "TimoitaseBG-ReleaseDownloader"})
         with urllib.request.urlopen(req, timeout=300) as r, open(dest, "wb") as f:
@@ -56,3 +60,4 @@ def download_latest_release(tag: str = "v1.2.1") -> int:
 if __name__ == "__main__":
     target_tag = sys.argv[1] if len(sys.argv) > 1 else "v1.2.1"
     sys.exit(download_latest_release(target_tag))
+
