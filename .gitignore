@@ -11,6 +11,9 @@ env/
 # PyInstaller / Build / Local Release Binaries
 build/
 dist/
+*.AppImage
+*.dmg
+*.msix
 releases/*.msix
 releases/*.dmg
 releases/*.AppImage

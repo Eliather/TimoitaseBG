@@ -52,6 +52,7 @@ hiddenimports = [
     'pooch',
     'pymatting',
     'numpy',
+    'unittest',
     'PySide6',
     'PySide6.QtCore',
     'PySide6.QtGui',
@@ -66,6 +67,7 @@ elif sys.platform == "darwin":
     hiddenimports.append('onnxruntime.providers.coreml')
 
 # 3. Exclusiones de paquetes de desarrollo para reducir cientos de MBs
+# NOTA: 'unittest' NO debe excluirse porque numpy y scipy.ndimage lo requieren en tiempo de ejecución.
 excludes = [
     'pytest',
     'tkinter',
@@ -74,11 +76,9 @@ excludes = [
     'IPython',
     'ipykernel',
     'jupyter',
-    'unittest',
     'torch',
     'torchvision',
     'tensorboard',
-    'scipy.spatial.cKDTree',
 ]
 
 a = Analysis(
@@ -139,8 +139,8 @@ if sys.platform == "darwin":
             'CFBundleName': 'TimoitaseBG',
             'CFBundleDisplayName': 'TimoitaseBG',
             'CFBundleIdentifier': 'com.eliather.timoitasebg',
-            'CFBundleVersion': '1.2.1',
-            'CFBundleShortVersionString': '1.2.1',
+            'CFBundleVersion': '1.2.2',
+            'CFBundleShortVersionString': '1.2.2',
             'NSHumanReadableCopyright': 'Copyright © 2026 Eliather (Autora)',
             'NSHighResolutionCapable': True,
             'NSRequiresAquaSystemAppearance': False,

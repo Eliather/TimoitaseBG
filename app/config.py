@@ -658,7 +658,7 @@ def get_optimized_session_options():
 
 # Parámetros por defecto de la aplicación
 APP_NAME = "TimoitaseBG"
-APP_VERSION = "1.2.1"
+APP_VERSION = "1.2.2"
 APP_AUTHOR = "Eliather"
 APP_DEVELOPER = "Eliather"
 DEFAULT_WINDOW_TITLE = f"{APP_NAME} v{APP_VERSION}"
