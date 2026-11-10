@@ -280,6 +280,7 @@ class GPUWorkerManager:
         payload: Dict[str, Any],
         cpu_fallback_fn: Callable[[], Any],
         timeout_override: Optional[float] = None,
+        progress_cb: Optional[Callable[[int, str], None]] = None,
     ) -> Any:
         """
         Ejecuta la inferencia en el proceso persistente de GPU bajo supervisión de watchdog.
@@ -318,7 +319,7 @@ class GPUWorkerManager:
                 self._notify("GPU no respondió, se procesó con CPU")
                 return cpu_fallback_fn()
 
-            # Esperar respuesta con verificación periódica del estado del proceso
+            # Esperar respuesta con verificación periódica del estado del proceso y recepción de progreso en vivo
             t0 = time.time()
             received_resp = None
 
@@ -326,6 +327,17 @@ class GPUWorkerManager:
                 try:
                     resp = self._response_queue.get(timeout=0.5)
                     if resp.get("task_id") == task_id:
+                        if resp.get("status") == "progress":
+                            # Latido de avance (ej. descarga de modelo o bloque de tiling): reiniciar ventana de inactividad
+                            t0 = time.time()
+                            if progress_cb is not None:
+                                try:
+                                    pct = int(resp.get("percent", 0))
+                                    msg = str(resp.get("message", ""))
+                                    progress_cb(pct, msg)
+                                except Exception:
+                                    pass
+                            continue
                         received_resp = resp
                         break
                     else:

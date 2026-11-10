@@ -19,7 +19,7 @@
 </p>
 
 <p align="center">
-  <img src="https://img.shields.io/badge/Versi%C3%B3n-1.2.2-FF4F79?style=for-the-badge" alt="Versión 1.2.2">
+  <img src="https://img.shields.io/badge/Versi%C3%B3n-1.2.3-FF4F79?style=for-the-badge" alt="Versión 1.2.3">
   <img src="https://img.shields.io/badge/Autora-Eliather-8B5CF6?style=for-the-badge&logo=github&logoColor=white" alt="Autora Eliather">
   <img src="https://img.shields.io/badge/Python-3.11%2B-3776AB?style=for-the-badge&logo=python&logoColor=white" alt="Python">
   <img src="https://img.shields.io/badge/Framework-PySide6%20%2F%20Qt6-41CD52?style=for-the-badge&logo=qt&logoColor=white" alt="PySide6">
@@ -30,7 +30,7 @@
 
 <p align="center">
   <b>Estación de trabajo de escritorio local y multiplataforma para eliminación de fondos en imágenes, GIFs y videos con IA y retoque digital de alta precisión.</b><br>
-  <i>Creada y desarrollada por <b><a href="https://github.com/Eliather">Eliather</a></b> (Autora) • Versión <b>v1.2.2</b></i>
+  <i>Creada y desarrollada por <b><a href="https://github.com/Eliather">Eliather</a></b> (Autora) • Versión <b>v1.2.3</b></i>
 </p>
 
 ---
@@ -447,13 +447,13 @@ Para detalles exhaustivos, fuentes de descarga y hashes de verificación, consul
 ## Autora y Licencia del Software
 
 - **Autora:** **[Eliather](https://github.com/Eliather)**
-- **Versión Actual:** `1.2.2`
+- **Versión Actual:** `1.2.3`
 - **Apoyar el proyecto:** [Ko-fi de Eliather](https://ko-fi.com/eliather)
 
 Este programa es software libre y de código abierto distribuido bajo los términos de la **GNU Affero General Public License Version 3 (GNU AGPLv3)**. Para más detalles, consulte el archivo [LICENSE](LICENSE).
 
 ```text
-TimoitaseBG v1.2.2 - Copyright (C) 2026 Eliather (Autora)
+TimoitaseBG v1.2.3 - Copyright (C) 2026 Eliather (Autora)
 
 This program is free software: you can redistribute it and/or modify
 it under the terms of the GNU Affero General Public License as published by

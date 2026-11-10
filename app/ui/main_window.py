@@ -660,10 +660,13 @@ class MainWindow(QMainWindow):
 
         layout.addStretch()
 
-        # Barra de progreso
+        # Barra de progreso determinista con porcentaje real (0% - 100%)
         self.progress_bar = QProgressBar()
-        self.progress_bar.setFixedWidth(160)
-        self.progress_bar.setRange(0, 0) # Indeterminado por defecto
+        self.progress_bar.setFixedWidth(190)
+        self.progress_bar.setRange(0, 100)
+        self.progress_bar.setValue(0)
+        self.progress_bar.setTextVisible(True)
+        self.progress_bar.setFormat("%p%")
         self.progress_bar.setVisible(False)
         layout.addWidget(self.progress_bar, alignment=Qt.AlignmentFlag.AlignVCenter)
 
@@ -1333,8 +1336,23 @@ class MainWindow(QMainWindow):
         percent = int(zoom * 100)
         self.lbl_zoom.setText(f"{percent}%")
 
+    @Slot(int, str)
+    def _on_worker_progress(self, percent: int, message: str):
+        """Actualiza la barra de progreso real (0% - 100%) y el mensaje de estado en vivo."""
+        pct = max(0, min(100, int(percent)))
+        if self.progress_bar.maximum() != 100 or self.progress_bar.minimum() != 0:
+            self.progress_bar.setRange(0, 100)
+        self.progress_bar.setValue(pct)
+        if not self.progress_bar.isVisible():
+            self.progress_bar.setVisible(True)
+        if message:
+            self._set_status_raw(f"⏳ [{pct}%] {message}")
+
     def set_processing(self, is_processing: bool, message: str = ""):
         """Activa o desactiva el estado de carga y barra de progreso."""
+        if is_processing:
+            self.progress_bar.setRange(0, 100)
+            self.progress_bar.setValue(0)
         self.progress_bar.setVisible(is_processing)
         self.sidebar.set_busy(is_processing)
         self.btn_open.setEnabled(not is_processing)
@@ -1345,7 +1363,7 @@ class MainWindow(QMainWindow):
         self.btn_compare.setEnabled(not is_processing and self.image_state.has_image and self.image_state._current_index > 0)
 
         if is_processing:
-            self._set_status_raw(f"⏳ {message}...")
+            self._set_status_raw(f"⏳ [0%] {message}...")
         else:
             if message:
                 self._set_status_raw(message)
@@ -1392,7 +1410,6 @@ class MainWindow(QMainWindow):
             return
 
         current_img = self.image_state.current_image
-        self.progress_bar.setRange(0, 0)
         self.set_processing(True, f"Quitando fondo con {model_id}")
         self.active_worker = WorkerThread(
             get_bg_remover().remove_background,
@@ -1401,12 +1418,13 @@ class MainWindow(QMainWindow):
             enable_clothing_protection=enable_clothing_protection,
             description=f"Quitar fondo ({model_id})",
         )
+        self.active_worker.progressPercent.connect(self._on_worker_progress)
         self.active_worker.finishedResult.connect(self._on_worker_finished)
         self.active_worker.failed.connect(self._on_worker_failed)
         self.active_worker.start()
 
     def _on_gif_worker_finished(self, processed_frames: list, description: str):
-        self.progress_bar.setRange(0, 0)
+        self.progress_bar.setRange(0, 100)
         self.set_processing(False, f"{description} completado.")
         if processed_frames:
             if self.sequence_session and len(self.sequence_session.states) == len(processed_frames):
@@ -1442,6 +1460,7 @@ class MainWindow(QMainWindow):
             use_tiling=use_tiling,
             description=desc,
         )
+        self.active_worker.progressPercent.connect(self._on_worker_progress)
         self.active_worker.finishedResult.connect(self._on_worker_finished)
         self.active_worker.failed.connect(self._on_worker_failed)
         self.active_worker.start()
@@ -1518,12 +1537,14 @@ class MainWindow(QMainWindow):
         from app.core.workers import SamEmbeddingWorker
         pil_img = self.image_state.current_image
         self.sam_worker = SamEmbeddingWorker(pil_img)
+        self.sam_worker.progressPercent.connect(self._on_worker_progress)
         self.sam_worker.embeddingReady.connect(self._on_sam_embedding_ready)
         self.sam_worker.finishedResult.connect(self._on_sam_embedding_ready)
         self.sam_worker.failed.connect(self._on_sam_embedding_failed)
         self.sam_worker.start()
 
     def _on_sam_embedding_ready(self, _):
+        self.progress_bar.setVisible(False)
         self.sidebar.set_wand_ai_status(tr("wand_ai_ready"))
         self._set_status("wand_ai_ready")
         pending = getattr(self.canvas, "_pending_wand_click", None)
@@ -1533,6 +1554,7 @@ class MainWindow(QMainWindow):
             self.canvas._apply_magic_wand(pt, mode=mode)
 
     def _on_sam_embedding_failed(self, err_msg: str):
+        self.progress_bar.setVisible(False)
         self.sidebar.set_wand_ai_status("Error")
         self._set_status_raw(f"SAM: {err_msg}")
 
@@ -1744,11 +1766,13 @@ class MainWindow(QMainWindow):
         self._set_status("detect_status_computing")
         from app.core.workers import YoloDetectionWorker
         self.yolo_worker = YoloDetectionWorker(self.image_state.current_image)
+        self.yolo_worker.progressPercent.connect(self._on_worker_progress)
         self.yolo_worker.finishedResult.connect(self._on_yolo_finished)
         self.yolo_worker.failed.connect(self._on_yolo_failed)
         self.yolo_worker.start()
 
     def _on_yolo_finished(self, subjects: list):
+        self.progress_bar.setVisible(False)
         self.sidebar.set_detecting_subjects_state(False)
         self.sidebar.set_detected_subjects(subjects)
         if subjects:
@@ -1759,6 +1783,7 @@ class MainWindow(QMainWindow):
             self._set_status("detect_none_found")
 
     def _on_yolo_failed(self, err_msg: str):
+        self.progress_bar.setVisible(False)
         self.sidebar.set_detecting_subjects_state(False)
         self._set_status_raw(f"Error YOLO: {err_msg}")
 

@@ -35,12 +35,14 @@ rembg_datas, rembg_binaries, rembg_hidden = safe_collect_all('rembg')
 ort_datas, ort_binaries, ort_hidden = safe_collect_all('onnxruntime')
 pooch_datas, pooch_binaries, pooch_hidden = safe_collect_all('pooch')
 pymatting_datas, pymatting_binaries, pymatting_hidden = safe_collect_all('pymatting')
+certifi_datas, certifi_binaries, certifi_hidden = safe_collect_all('certifi')
 
-datas += rembg_datas + ort_datas + pooch_datas + pymatting_datas
-binaries = rembg_binaries + ort_binaries + pooch_binaries + pymatting_binaries
+datas += rembg_datas + ort_datas + pooch_datas + pymatting_datas + certifi_datas
+binaries = rembg_binaries + ort_binaries + pooch_binaries + pymatting_binaries + certifi_binaries
 
 # 2. Hidden imports esenciales para inferencia y UI
 hiddenimports = [
+    'certifi',
     'onnxruntime',
     'onnxruntime.providers.cpu',
     'rembg',
@@ -58,7 +60,7 @@ hiddenimports = [
     'PySide6.QtGui',
     'PySide6.QtWidgets',
     'PySide6.QtSvg',
-] + rembg_hidden + ort_hidden + pooch_hidden + pymatting_hidden
+] + rembg_hidden + ort_hidden + pooch_hidden + pymatting_hidden + certifi_hidden
 
 # Proveedores de aceleración específicos por plataforma
 if sys.platform == "win32":
@@ -139,8 +141,8 @@ if sys.platform == "darwin":
             'CFBundleName': 'TimoitaseBG',
             'CFBundleDisplayName': 'TimoitaseBG',
             'CFBundleIdentifier': 'com.eliather.timoitasebg',
-            'CFBundleVersion': '1.2.2',
-            'CFBundleShortVersionString': '1.2.2',
+            'CFBundleVersion': '1.2.3',
+            'CFBundleShortVersionString': '1.2.3',
             'NSHumanReadableCopyright': 'Copyright © 2026 Eliather (Autora)',
             'NSHighResolutionCapable': True,
             'NSRequiresAquaSystemAppearance': False,

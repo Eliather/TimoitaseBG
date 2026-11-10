@@ -18,6 +18,7 @@ from PIL import Image
 from app.config import (
     APP_DIR,
     MODELS_DIR,
+    configure_ssl_certificates,
     get_gpu_name,
     get_optimized_session_options,
     update_u2net_env,
@@ -117,7 +118,12 @@ class PersistentGPUWorker:
         """Compatibilidad con get_bg_session: redirige a la sesión de InSPyReNet."""
         return self.get_inspyrenet_session(providers=providers)
 
-    def get_inspyrenet_session(self, providers=None, force_cpu: bool = False):
+    def get_inspyrenet_session(
+        self,
+        providers=None,
+        force_cpu: bool = False,
+        progress_cb=None,
+    ):
         """Obtiene o inicializa una sesión ONNX para InSPyReNet en GPU Worker."""
         if force_cpu:
             self._cached_sessions.pop("inspyrenet", None)
@@ -129,10 +135,26 @@ class PersistentGPUWorker:
                 self._clear_rembg_sessions()
 
             from app.core.model_fetcher import ensure_model_file
-            model_path = ensure_model_file("inspyrenet.onnx")
+
+            if progress_cb:
+                progress_cb(5, "Verificando modelo InSPyReNet...")
+
+            def _dl_prog(dl: int, tot: int):
+                if progress_cb and tot > 0:
+                    pct = 5 + int(round((dl / tot) * 30))
+                    dl_mb = dl / (1024 * 1024)
+                    tot_mb = tot / (1024 * 1024)
+                    progress_cb(
+                        min(35, pct),
+                        f"Descargando inspyrenet.onnx ({dl_mb:.1f} / {tot_mb:.1f} MB)...",
+                    )
+
+            model_path = ensure_model_file("inspyrenet.onnx", progress_cb=_dl_prog)
             import onnxruntime as ort
             eff_providers = self._get_providers(providers)
             sess_options = get_optimized_session_options() or ort.SessionOptions()
+            if progress_cb:
+                progress_cb(38, "Cargando modelo InSPyReNet en memoria...")
             logger.info(f"Cargando sesión inspyrenet con providers: {eff_providers}...")
             try:
                 self._cached_sessions["inspyrenet"] = ort.InferenceSession(
@@ -168,6 +190,7 @@ class PersistentGPUWorker:
         ensemble_weight: float = 0.5,
         refine_matting: bool = False,
         enable_clothing_protection: bool = True,
+        progress_cb=None,
     ) -> Image.Image:
         """
         Ejecuta la eliminación de fondo en el proceso aislado de GPU con fidelidad cromática 100% íntegra.
@@ -176,6 +199,9 @@ class PersistentGPUWorker:
         - 'u2net_human_seg': Detector semántico de personas y prendas (sin fallos en blanco).
         - 'inspyrenet': InSPyReNet Swin-B (1024x1024) para fotografía y personas reales con anti-aliasing.
         """
+        if progress_cb:
+            progress_cb(5, f"Preparando imagen para {model_name}...")
+
         if image.mode not in ("RGB", "RGBA"):
             input_img = image.convert("RGB")
         else:
@@ -185,8 +211,23 @@ class PersistentGPUWorker:
 
         if model_name in ("isnet-anime", "birefnet-general", "u2net_human_seg"):
             import rembg
+            from app.core.model_fetcher import MODEL_URLS, ensure_model_file
             logger.info(f"[GPUWorker:{os.getpid()}] Ejecutando {model_name} en GPU con providers: {eff_providers}...")
             if model_name not in self._cached_sessions:
+                onnx_fname = f"{model_name}.onnx"
+                if onnx_fname in MODEL_URLS:
+                    def _dl_rembg(dl: int, tot: int):
+                        if progress_cb and tot > 0:
+                            pct = 5 + int(round((dl / tot) * 30))
+                            dl_mb = dl / (1024 * 1024)
+                            tot_mb = tot / (1024 * 1024)
+                            progress_cb(
+                                min(35, pct),
+                                f"Descargando {onnx_fname} ({dl_mb:.1f} / {tot_mb:.1f} MB)...",
+                            )
+                    ensure_model_file(onnx_fname, progress_cb=_dl_rembg)
+                if progress_cb:
+                    progress_cb(38, f"Cargando modelo {model_name} en memoria...")
                 if self._cached_sessions or self._restorer_instance is not None:
                     self._clear_rembg_sessions()
                 try:
@@ -201,6 +242,8 @@ class PersistentGPUWorker:
                     )
 
             session = self._cached_sessions[model_name]
+            if progress_cb:
+                progress_cb(50, f"Ejecutando inferencia con {model_name}...")
             try:
                 out = rembg.remove(input_img, session=session)
             except Exception as run_err:
@@ -212,6 +255,8 @@ class PersistentGPUWorker:
                 self._cached_sessions[model_name] = session
                 out = rembg.remove(input_img, session=session)
             final_alpha = np.array(out.split()[-1], dtype=np.uint8)
+            if progress_cb:
+                progress_cb(80, "Máscara principal generada...")
 
         else:
             from app.core.bg_remover import (
@@ -222,9 +267,13 @@ class PersistentGPUWorker:
             logger.info(
                 f"[GPUWorker:{os.getpid()}] Ejecutando InSPyReNet (Swin-B 1024x1024)..."
             )
-            session = self.get_inspyrenet_session(providers=providers)
+            session = self.get_inspyrenet_session(providers=providers, progress_cb=progress_cb)
+            if progress_cb:
+                progress_cb(45, "Preprocesando tensor 1024×1024...")
             tensor, orig_size = _preprocess_inspyrenet(input_img)
             input_name = session.get_inputs()[0].name
+            if progress_cb:
+                progress_cb(55, "Ejecutando red neuronal InSPyReNet (Swin-B)...")
             try:
                 out = session.run(None, {input_name: tensor})[0]
             except Exception as run_err:
@@ -232,8 +281,12 @@ class PersistentGPUWorker:
                     f"Fallo durante la inferencia de InSPyReNet ({run_err}). "
                     f"Reintentando ejecución en CPUExecutionProvider..."
                 )
-                session = self.get_inspyrenet_session(force_cpu=True)
+                if progress_cb:
+                    progress_cb(60, "Conmutando inferencia InSPyReNet a CPU...")
+                session = self.get_inspyrenet_session(force_cpu=True, progress_cb=progress_cb)
                 out = session.run(None, {input_name: tensor})[0]
+            if progress_cb:
+                progress_cb(78, "Refinando bordes subpíxel...")
             raw_mask = _postprocess_inspyrenet_mask(out, orig_size)
             cleaned_rgb, final_alpha = postprocess_inspyrenet(input_img, raw_mask)
             input_img = Image.fromarray(cleaned_rgb, mode="RGB")
@@ -241,6 +294,8 @@ class PersistentGPUWorker:
         # Fusión Core-Only con Detector Semántico de Ropa (omite isnet-anime por sesgo de dominio 2D)
         if enable_clothing_protection and model_name not in ("u2net_human_seg", "isnet-anime"):
             try:
+                if progress_cb:
+                    progress_cb(85, "Aplicando protección semántica de ropa...")
                 import rembg
                 from app.core.bg_remover import fuse_clothing_protection_core_only
 
@@ -270,12 +325,17 @@ class PersistentGPUWorker:
             except Exception as e:
                 logger.warning(f"Protección de ropa u2net_human_seg omitida en GPU: {e}")
 
+        if progress_cb:
+            progress_cb(95, "Componiendo canal alfa final...")
+
         if image.mode == "RGBA":
             orig_alpha = np.array(image.split()[-1], dtype=np.uint8)
             final_alpha = np.minimum(final_alpha, orig_alpha)
 
         output = input_img.convert("RGB").convert("RGBA")
         output.putalpha(Image.fromarray(final_alpha, mode="L"))
+        if progress_cb:
+            progress_cb(100, "Eliminación de fondo completada.")
         return output
 
     def restore_image(
@@ -286,6 +346,7 @@ class PersistentGPUWorker:
         tile_size: int = 512,
         tile_pad: int = 16,
         providers=None,
+        progress_cb=None,
     ) -> Image.Image:
         """
         Ejecuta restauración Real-ESRGAN en el proceso aislado de GPU.
@@ -302,8 +363,24 @@ class PersistentGPUWorker:
             eff_providers = self._get_providers(providers)
             import onnxruntime as ort
             from app.core.model_fetcher import ensure_model_file
-            model_path = ensure_model_file(ImageRestorer.MODEL_FILENAME)
+
+            if progress_cb:
+                progress_cb(5, "Verificando modelo Real-ESRGAN...")
+
+            def _dl_prog(dl: int, tot: int):
+                if progress_cb and tot > 0:
+                    pct = 5 + int(round((dl / tot) * 12))
+                    dl_mb = dl / (1024 * 1024)
+                    tot_mb = tot / (1024 * 1024)
+                    progress_cb(
+                        min(17, pct),
+                        f"Descargando Real-ESRGAN ({dl_mb:.1f} / {tot_mb:.1f} MB)...",
+                    )
+
+            model_path = ensure_model_file(ImageRestorer.MODEL_FILENAME, progress_cb=_dl_prog)
             sess_options = get_optimized_session_options() or ort.SessionOptions()
+            if progress_cb:
+                progress_cb(18, "Cargando modelo Real-ESRGAN en memoria...")
             logger.info(f"Worker: Inicializando Real-ESRGAN con providers: {eff_providers}...")
             try:
                 self._restorer_instance._session = ort.InferenceSession(
@@ -337,6 +414,7 @@ class PersistentGPUWorker:
                 tile_size=tile_size,
                 tile_pad=tile_pad,
                 force_cpu=False,
+                progress_cb=progress_cb,
             )
         except Exception as restorer_err:
             logger.warning(
@@ -351,6 +429,7 @@ class PersistentGPUWorker:
                 tile_size=tile_size,
                 tile_pad=tile_pad,
                 force_cpu=True,
+                progress_cb=progress_cb,
             )
 
 
@@ -360,8 +439,9 @@ def gpu_worker_process_loop(request_queue, response_queue, preferred_device_id: 
     Lee peticiones desde request_queue, ejecuta la tarea en GPU y retorna el resultado
     en response_queue.
     """
-    # Sincronización explícita de U2NET_HOME hacia MODELS_DIR en el subproceso 'spawn'
+    # Sincronización explícita de U2NET_HOME y certificados SSL en el subproceso 'spawn'
     update_u2net_env(MODELS_DIR)
+    configure_ssl_certificates()
 
     if preferred_device_id is None:
         from app.config import get_best_dml_device_id
@@ -381,6 +461,17 @@ def gpu_worker_process_loop(request_queue, response_queue, preferred_device_id: 
             task_id = req.get("task_id", "")
             command = req.get("command", "")
             payload = req.get("payload", {})
+
+            def _emit_progress(percent: int, message: str):
+                try:
+                    response_queue.put({
+                        "task_id": task_id,
+                        "status": "progress",
+                        "percent": int(percent),
+                        "message": str(message),
+                    })
+                except Exception:
+                    pass
 
             # 1. Comando de verificación simple
             if command == "ping":
@@ -410,6 +501,7 @@ def gpu_worker_process_loop(request_queue, response_queue, preferred_device_id: 
                     ensemble_weight=ensemble_weight,
                     refine_matting=refine_matting,
                     enable_clothing_protection=enable_clothing_protection,
+                    progress_cb=_emit_progress,
                 )
                 response_queue.put({"task_id": task_id, "status": "ok", "result": result_img})
                 continue
@@ -429,6 +521,7 @@ def gpu_worker_process_loop(request_queue, response_queue, preferred_device_id: 
                     tile_size=tile_size,
                     tile_pad=tile_pad,
                     providers=providers,
+                    progress_cb=_emit_progress,
                 )
                 response_queue.put({"task_id": task_id, "status": "ok", "result": result_img})
                 continue

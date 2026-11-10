@@ -117,6 +117,59 @@ def update_u2net_env(models_dir: Path) -> None:
     os.environ["U2NET_home"] = models_dir_str
 
 
+_SYSTEM_CA_BUNDLE_PATHS = (
+    "/etc/ssl/certs/ca-certificates.crt",                  # Debian / Ubuntu / Gentoo / Arch
+    "/etc/pki/tls/certs/ca-bundle.crt",                    # Fedora / RHEL / CentOS
+    "/etc/ssl/ca-bundle.pem",                              # openSUSE / SLES
+    "/etc/pki/tls/cacert.pem",                             # OpenELEC
+    "/etc/pki/ca-trust/extracted/pem/tls-ca-bundle.pem",   # CentOS / RHEL 7+
+    "/etc/ssl/cert.pem",                                   # Alpine / macOS / FreeBSD
+)
+
+
+def resolve_ca_bundle_path() -> Optional[str]:
+    """
+    Resuelve la ruta de un archivo de autoridades de certificación (CA bundle) válido:
+    1. Si SSL_CERT_FILE o REQUESTS_CA_BUNDLE ya apuntan a un archivo existente en disco, lo respeta.
+    2. Intenta obtener el bundle empaquetado de `certifi.where()`.
+    3. Recorre las rutas estándar de certificados CA del sistema en Linux y macOS.
+    """
+    for env_var in ("SSL_CERT_FILE", "REQUESTS_CA_BUNDLE"):
+        existing = os.environ.get(env_var)
+        if existing and Path(existing).is_file():
+            return str(Path(existing).resolve())
+
+    try:
+        import certifi
+        ca_path = certifi.where()
+        if ca_path and Path(ca_path).is_file():
+            return str(Path(ca_path).resolve())
+    except Exception:
+        pass
+
+    for sys_ca in _SYSTEM_CA_BUNDLE_PATHS:
+        if Path(sys_ca).is_file():
+            return sys_ca
+
+    return None
+
+
+def configure_ssl_certificates() -> Optional[str]:
+    """
+    Garantiza que SSL_CERT_FILE y REQUESTS_CA_BUNDLE apunten a un archivo CA válido.
+    Corrige en Linux (.AppImage / PyInstaller) el error:
+    [SSL: CERTIFICATE_VERIFY_FAILED] unable to get local issuer certificate (_ssl.c:1016)
+    cuando OpenSSL busca en rutas de compilación inexistentes (ej. /opt/hostedtoolcache/...).
+    """
+    ca_bundle = resolve_ca_bundle_path()
+    if ca_bundle:
+        for env_var in ("SSL_CERT_FILE", "REQUESTS_CA_BUNDLE", "CURL_CA_BUNDLE"):
+            curr = os.environ.get(env_var)
+            if not curr or not Path(curr).is_file():
+                os.environ[env_var] = ca_bundle
+    return ca_bundle
+
+
 # Definición e inicialización de rutas globales
 APP_DIR: Path = resolve_app_dir()
 BASE_DIR: Path = resolve_base_dir()
@@ -124,6 +177,7 @@ PROJECT_ROOT: Path = BASE_DIR
 
 MODELS_DIR: Path = resolve_models_dir(BASE_DIR)
 update_u2net_env(MODELS_DIR)
+configure_ssl_certificates()
 
 # ==============================================================================
 # SEGURIDAD Y ACELERACIÓN POR HARDWARE (GPU)
@@ -658,7 +712,7 @@ def get_optimized_session_options():
 
 # Parámetros por defecto de la aplicación
 APP_NAME = "TimoitaseBG"
-APP_VERSION = "1.2.2"
+APP_VERSION = "1.2.3"
 APP_AUTHOR = "Eliather"
 APP_DEVELOPER = "Eliather"
 DEFAULT_WINDOW_TITLE = f"{APP_NAME} v{APP_VERSION}"

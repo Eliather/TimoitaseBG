@@ -56,21 +56,37 @@ class ImageRestorer:
         self._session = None
         self._cpu_session = None
 
-    def _get_cpu_session(self):
+    def _get_cpu_session(self, progress_cb=None):
         """Inicializa o retorna la sesión garantizada en CPU."""
         if self._cpu_session is None:
             import onnxruntime as ort
             from app.config import get_optimized_session_options
-            model_path = ensure_model_file(self.MODEL_FILENAME)
+
+            if progress_cb:
+                progress_cb(5, "Verificando modelo Real-ESRGAN...")
+
+            def _dl_prog(dl: int, tot: int):
+                if progress_cb and tot > 0:
+                    pct = 5 + int(round((dl / tot) * 12))
+                    dl_mb = dl / (1024 * 1024)
+                    tot_mb = tot / (1024 * 1024)
+                    progress_cb(
+                        min(17, pct),
+                        f"Descargando Real-ESRGAN ({dl_mb:.1f} / {tot_mb:.1f} MB)...",
+                    )
+
+            model_path = ensure_model_file(self.MODEL_FILENAME, progress_cb=_dl_prog)
+            if progress_cb:
+                progress_cb(18, "Cargando modelo Real-ESRGAN en CPU...")
             logger.info("Inicializando sesión local de Real-ESRGAN con CPUExecutionProvider...")
             sess_options = get_optimized_session_options() or ort.SessionOptions()
             self._cpu_session = ort.InferenceSession(str(model_path), sess_options, providers=["CPUExecutionProvider"])
         return self._cpu_session
 
-    def _get_session(self, force_cpu: bool = False):
+    def _get_session(self, force_cpu: bool = False, progress_cb=None):
         if not force_cpu and getattr(self, "_session", None) is not None:
             return self._session
-        return self._get_cpu_session()
+        return self._get_cpu_session(progress_cb=progress_cb)
 
     def restore_image(
         self,
@@ -79,6 +95,7 @@ class ImageRestorer:
         use_tiling: bool = True,
         tile_size: int = 512,
         tile_pad: int = 16,
+        progress_cb=None,
     ) -> Image.Image:
         """
         Restaura la imagen aplicando Real-ESRGAN x4.
@@ -110,7 +127,13 @@ class ImageRestorer:
         # para no intentar re-despachar a otro subproceso daemon hijo.
         if multiprocessing.current_process().name != "MainProcess":
             return self._restore_image_impl(
-                image, scale_mode, use_tiling, tile_size, tile_pad, force_cpu=False
+                image,
+                scale_mode,
+                use_tiling,
+                tile_size,
+                tile_pad,
+                force_cpu=False,
+                progress_cb=progress_cb,
             )
 
         from app.core.gpu_manager import get_gpu_manager
@@ -127,12 +150,25 @@ class ImageRestorer:
                     "tile_pad": tile_pad,
                 },
                 cpu_fallback_fn=lambda: self._restore_image_impl(
-                    image, scale_mode, use_tiling, tile_size, tile_pad, force_cpu=True
+                    image,
+                    scale_mode,
+                    use_tiling,
+                    tile_size,
+                    tile_pad,
+                    force_cpu=True,
+                    progress_cb=progress_cb,
                 ),
+                progress_cb=progress_cb,
             )
         else:
             return self._restore_image_impl(
-                image, scale_mode, use_tiling, tile_size, tile_pad, force_cpu=True
+                image,
+                scale_mode,
+                use_tiling,
+                tile_size,
+                tile_pad,
+                force_cpu=True,
+                progress_cb=progress_cb,
             )
 
     def _restore_image_impl(
@@ -143,6 +179,7 @@ class ImageRestorer:
         tile_size: int = 512,
         tile_pad: int = 16,
         force_cpu: bool = True,
+        progress_cb=None,
     ) -> Image.Image:
         orig_w, orig_h = image.size
 
@@ -165,9 +202,12 @@ class ImageRestorer:
                     f"Reduzca la resolución de la imagen antes de continuar."
                 )
 
+        if progress_cb:
+            progress_cb(10, "Preparando canales RGB y Alfa...")
+
         rgb_img, alpha_channel = separate_alpha(image)
 
-        session = self._get_session(force_cpu=force_cpu)
+        session = self._get_session(force_cpu=force_cpu, progress_cb=progress_cb)
         input_name = session.get_inputs()[0].name
         output_name = session.get_outputs()[0].name
 
@@ -178,15 +218,30 @@ class ImageRestorer:
 
         # Decidir si procesar directamente o con tiling
         if not use_tiling or (h <= tile_size and w <= tile_size):
+            if progress_cb:
+                progress_cb(30, "Ejecutando super-resolución Real-ESRGAN...")
             out_tensor = session.run([output_name], {input_name: img_nchw})[0]
             out_4x = self._tensor_to_image(out_tensor[0])
+            if progress_cb:
+                progress_cb(90, "Inferencia completada, reescalando...")
         else:
-            out_4x = self._process_tiled(session, img_nchw, tile_size, tile_pad, input_name, output_name)
+            out_4x = self._process_tiled(
+                session,
+                img_nchw,
+                tile_size,
+                tile_pad,
+                input_name,
+                output_name,
+                progress_cb=progress_cb,
+            )
 
         # Ajuste forzado de dimensiones del output 4x para evitar cualquier desfase por redondeo
         expected_4x_size = (orig_w * 4, orig_h * 4)
         if out_4x.size != expected_4x_size:
             out_4x = out_4x.resize(expected_4x_size, resample=Image.Resampling.LANCZOS)
+
+        if progress_cb:
+            progress_cb(94, "Ajustando resolución final y canal alfa...")
 
         # Si había canal alfa original, redimensionarlo forzadamente a las dimensiones EXACTAS de out_4x
         if alpha_channel is not None:
@@ -210,6 +265,9 @@ class ImageRestorer:
             target_alpha = alpha_channel.resize(result.size, resample=Image.Resampling.LANCZOS)
             result = combine_alpha(result, target_alpha)
 
+        if progress_cb:
+            progress_cb(100, "Restauración completada.")
+
         return result
 
     def _process_tiled(
@@ -220,6 +278,7 @@ class ImageRestorer:
         tile_pad: int,
         input_name: str,
         output_name: str,
+        progress_cb=None,
     ) -> Image.Image:
         """
         Procesa una imagen grande dividiéndola en bloques con padding perimetral.
@@ -251,9 +310,18 @@ class ImageRestorer:
             )
 
         output_hwc = np.empty((out_h, out_w, 3), dtype=np.uint8)
+        done_tiles = 0
 
         for ty in range(tiles_y):
             for tx in range(tiles_x):
+                done_tiles += 1
+                if progress_cb:
+                    pct = 20 + int(round((done_tiles / max(1, total_tiles)) * 70))
+                    progress_cb(
+                        min(90, pct),
+                        f"Restaurando bloque {done_tiles}/{total_tiles}...",
+                    )
+
                 # Coordenadas del mosaico
                 x1 = tx * tile_size
                 x2 = min(x1 + tile_size, w)

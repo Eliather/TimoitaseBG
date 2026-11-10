@@ -128,6 +128,7 @@ class YOLODetector:
         pil_img: Image.Image,
         conf_threshold: float = 0.35,
         iou_threshold: float = 0.45,
+        progress_cb: Optional[Callable[[int, str], None]] = None,
     ) -> List[DetectedSubject]:
         """
         Detecta y segmenta todos los sujetos/objetos en la imagen.
@@ -138,13 +139,32 @@ class YOLODetector:
 
         with self._lock:
             if self._session is None:
-                self.ensure_model()
+                if progress_cb:
+                    progress_cb(10, "Verificando modelo YOLO11-seg...")
 
+                def _dl_prog(dl: int, tot: int):
+                    if progress_cb and tot > 0:
+                        pct = 10 + int(round((dl / tot) * 35))
+                        dl_mb = dl / (1024 * 1024)
+                        tot_mb = tot / (1024 * 1024)
+                        progress_cb(
+                            min(45, pct),
+                            f"Descargando YOLO11-seg ({dl_mb:.1f} / {tot_mb:.1f} MB)...",
+                        )
+
+                self.ensure_model(progress_cb=_dl_prog)
+
+            if progress_cb:
+                progress_cb(50, "Preprocesando imagen para detección YOLO11...")
             tensor, crop_box, (orig_w, orig_h), scale = self._preprocess(pil_img, 640)
             pad_x, pad_y, new_w, new_h = crop_box
 
+            if progress_cb:
+                progress_cb(70, "Ejecutando inferencia multiobjeto YOLO11-seg...")
             input_name = self._session.get_inputs()[0].name
             outputs = self._session.run(None, {input_name: tensor})
+            if progress_cb:
+                progress_cb(90, "Generando máscaras de sujetos detectados...")
 
         # Salida 0: (1, 116, 8400) -> Transponer a (8400, 116)
         output0 = outputs[0]
@@ -247,6 +267,8 @@ class YOLODetector:
                 )
             )
 
+        if progress_cb:
+            progress_cb(100, "Detección YOLO11 completada.")
         return results
 
 

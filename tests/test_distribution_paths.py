@@ -200,3 +200,152 @@ def test_package_release_msix_and_appimage_staging(tmp_path):
     assert (appdir / "TimoitaseBG.desktop").exists()
     assert (appdir / "timoitasebg.png").exists()
     assert (appdir / "usr" / "bin" / "TimoitaseBG").exists()
+
+
+def test_configure_ssl_certificates_repairs_invalid_linux_runner_path():
+    """
+    Verifica que configure_ssl_certificates() reemplace rutas de compilación inexistentes
+    (como /opt/hostedtoolcache/.../ssl/cert.pem en Linux AppImage) por un CA bundle válido (certifi).
+    """
+    from app.config import configure_ssl_certificates, resolve_ca_bundle_path
+
+    broken_env = {
+        "SSL_CERT_FILE": "/opt/hostedtoolcache/Python/3.11.9/x64/ssl/cert.pem",
+        "REQUESTS_CA_BUNDLE": "/nonexistent/path/cacert.pem",
+    }
+    with patch.dict(os.environ, broken_env, clear=False):
+        ca_bundle = configure_ssl_certificates()
+        assert ca_bundle is not None
+        assert Path(ca_bundle).is_file()
+        assert os.environ["SSL_CERT_FILE"] == ca_bundle
+        assert os.environ["REQUESTS_CA_BUNDLE"] == ca_bundle
+        assert resolve_ca_bundle_path() == ca_bundle
+
+
+def test_model_fetcher_ssl_context_and_fallback_on_cert_error(tmp_path):
+    """
+    Verifica que ensure_model_file() pase un ssl.SSLContext a urlopen y se recupere
+    automáticamente si en Linux ocurre [SSL: CERTIFICATE_VERIFY_FAILED] (_ssl.c:1016).
+    """
+    import ssl
+    import urllib.error
+    import app.core.model_fetcher as mf
+
+    ctx = mf._create_ssl_context()
+    assert isinstance(ctx, ssl.SSLContext)
+
+    dummy_payload = b"ONNX" * 300000  # > 1 MB
+    call_contexts = []
+
+    class FakeHttpResponse:
+        def __init__(self, data: bytes):
+            self._data = data
+            self._offset = 0
+            self.headers = {"Content-Length": str(len(data))}
+
+        def read(self, size: int = -1) -> bytes:
+            if self._offset >= len(self._data):
+                return b""
+            chunk = self._data[self._offset : self._offset + size]
+            self._offset += len(chunk)
+            return chunk
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, exc_type, exc_val, exc_tb):
+            return False
+
+    def fake_urlopen(req, context=None, timeout=None):
+        call_contexts.append(context)
+        if len(call_contexts) == 1:
+            ssl_err = ssl.SSLCertVerificationError(
+                1,
+                "[SSL: CERTIFICATE_VERIFY_FAILED] certificate verify failed: unable to get local issuer certificate (_ssl.c:1016)",
+            )
+            raise urllib.error.URLError(ssl_err)
+        return FakeHttpResponse(dummy_payload)
+
+    with patch.object(mf, "MODELS_DIR", tmp_path), \
+         patch("urllib.request.urlopen", side_effect=fake_urlopen):
+        downloaded_path = mf.ensure_model_file("inspyrenet.onnx")
+        assert downloaded_path == tmp_path / "inspyrenet.onnx"
+        assert downloaded_path.exists()
+        assert downloaded_path.stat().st_size == len(dummy_payload)
+        assert len(call_contexts) == 2
+        assert isinstance(call_contexts[0], ssl.SSLContext)
+        assert isinstance(call_contexts[1], ssl.SSLContext)
+        assert call_contexts[1].verify_mode == ssl.CERT_NONE
+
+
+def test_real_progressive_percentage_reporting():
+    """
+    Verifica que BackgroundRemover, ImageRestorer y GPUWorkerManager emitan porcentajes
+    reales y progresivos (0% -> 100%) hacia progress_cb sin bloquear ni usar rangos indeterminados.
+    """
+    import numpy as np
+    from PIL import Image
+    from unittest.mock import MagicMock
+    from app.core.bg_remover import BackgroundRemover
+    from app.core.restorer import ImageRestorer
+
+    dummy_img = Image.new("RGBA", (64, 64), (120, 180, 220, 255))
+
+    # 1. Progreso real en BackgroundRemover (InSPyReNet)
+    remover = BackgroundRemover()
+    fake_session = MagicMock()
+    fake_input = MagicMock()
+    fake_input.name = "input"
+    fake_session.get_inputs.return_value = [fake_input]
+    fake_session.run.return_value = [np.ones((1, 1, 1024, 1024), dtype=np.float32)]
+    remover._sessions["inspyrenet_cpu"] = fake_session
+
+    bg_events = []
+    out_bg = remover._remove_background_cpu_local(
+        dummy_img,
+        model_name="inspyrenet",
+        enable_clothing_protection=False,
+        progress_cb=lambda pct, msg: bg_events.append((pct, msg)),
+    )
+    assert out_bg.size == (64, 64)
+    percents_bg = [p for p, _ in bg_events]
+    assert len(percents_bg) >= 4
+    assert percents_bg == sorted(percents_bg)
+    assert percents_bg[0] > 0
+    assert percents_bg[-1] == 100
+
+    # 2. Progreso real por bloques (tiles) en ImageRestorer
+    restorer = ImageRestorer()
+    fake_sr_sess = MagicMock()
+    sr_in = MagicMock()
+    sr_in.name = "in"
+    sr_out = MagicMock()
+    sr_out.name = "out"
+    fake_sr_sess.get_inputs.return_value = [sr_in]
+    fake_sr_sess.get_outputs.return_value = [sr_out]
+
+    def fake_sr_run(out_names, feed):
+        tensor = list(feed.values())[0]
+        _, c, h, w = tensor.shape
+        return [np.ones((1, c, h * 4, w * 4), dtype=np.float32) * 0.5]
+
+    fake_sr_sess.run.side_effect = fake_sr_run
+    restorer._cpu_session = fake_sr_sess
+
+    sr_events = []
+    out_sr = restorer._restore_image_impl(
+        dummy_img,
+        scale_mode="x2",
+        use_tiling=True,
+        tile_size=32,
+        tile_pad=4,
+        force_cpu=True,
+        progress_cb=lambda pct, msg: sr_events.append((pct, msg)),
+    )
+    assert out_sr.size == (128, 128)
+    percents_sr = [p for p, _ in sr_events]
+    assert any("Restaurando bloque" in m for _, m in sr_events)
+    assert percents_sr == sorted(percents_sr)
+    assert percents_sr[-1] == 100
+
+

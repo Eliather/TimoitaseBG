@@ -14,7 +14,7 @@ from pathlib import Path
 REPO = "Eliather/TimoitaseBG"
 
 
-def download_latest_release(tag: str = "v1.2.2") -> int:
+def download_latest_release(tag: str = "v1.2.3") -> int:
     root = Path(__file__).resolve().parent.parent
     releases_dir = root / "releases"
     releases_dir.mkdir(parents=True, exist_ok=True)
@@ -58,6 +58,6 @@ def download_latest_release(tag: str = "v1.2.2") -> int:
 
 
 if __name__ == "__main__":
-    target_tag = sys.argv[1] if len(sys.argv) > 1 else "v1.2.2"
+    target_tag = sys.argv[1] if len(sys.argv) > 1 else "v1.2.3"
     sys.exit(download_latest_release(target_tag))
 

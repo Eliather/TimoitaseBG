@@ -1,6 +1,7 @@
 """
 TimoitaseBG - Hilos de ejecución en segundo plano para inferencia asíncrona no bloqueante.
 """
+import inspect
 from typing import Callable, Any, Tuple, Dict, Optional, List
 from PIL import Image
 from PySide6.QtCore import QThread, Signal
@@ -14,6 +15,7 @@ class WorkerThread(QThread):
     # Señales emitidas hacia la UI
     startedProcessing = Signal(str)
     progress = Signal(str)
+    progressPercent = Signal(int, str)    # (porcentaje_0_100, mensaje_etapa)
     finishedResult = Signal(object, str)  # (result_image, action_description)
     failed = Signal(str)                  # error_message
 
@@ -24,11 +26,31 @@ class WorkerThread(QThread):
         self.kwargs = kwargs
         self.description = description
 
+    def _emit_progress(self, percent: int, message: str):
+        pct = max(0, min(100, int(percent)))
+        msg = str(message or self.description)
+        self.progressPercent.emit(pct, msg)
+        self.progress.emit(msg)
+
     def run(self):
         try:
             self.setPriority(QThread.Priority.LowPriority)
             self.startedProcessing.emit(f"Iniciando {self.description}")
-            result = self.task_fn(*self.args, **self.kwargs)
+            self._emit_progress(5, f"Iniciando {self.description}...")
+
+            call_kwargs = dict(self.kwargs)
+            if "progress_cb" not in call_kwargs:
+                try:
+                    sig = inspect.signature(self.task_fn)
+                    if "progress_cb" in sig.parameters or any(
+                        p.kind == inspect.Parameter.VAR_KEYWORD for p in sig.parameters.values()
+                    ):
+                        call_kwargs["progress_cb"] = self._emit_progress
+                except Exception:
+                    pass
+
+            result = self.task_fn(*self.args, **call_kwargs)
+            self._emit_progress(100, f"{self.description} completado.")
             self.finishedResult.emit(result, self.description)
         except Exception as e:
             import traceback
@@ -182,6 +204,7 @@ class SamEmbeddingWorker(QThread):
     en segundo plano sin congelar la interfaz gráfica.
     """
     progressStatus = Signal(str)
+    progressPercent = Signal(int, str)
     embeddingReady = Signal(bool)
     finishedResult = Signal(bool)
     failed = Signal(str)
@@ -191,13 +214,21 @@ class SamEmbeddingWorker(QThread):
         self.image = image
         self.image_id = image_id
 
+    def _emit_progress(self, percent: int, message: str):
+        pct = max(0, min(100, int(percent)))
+        msg = str(message)
+        self.progressPercent.emit(pct, msg)
+        self.progressStatus.emit(msg)
+
     def run(self):
         from app.core.sam_manager import get_sam_manager
         try:
             self.setPriority(QThread.Priority.LowPriority)
-            self.progressStatus.emit("Preparando Varita IA (MobileSAM)...")
+            self._emit_progress(5, "Preparando Varita IA (MobileSAM)...")
             sam_mgr = get_sam_manager()
-            success = sam_mgr.prepare_image(self.image, image_id=self.image_id)
+            success = sam_mgr.prepare_image(
+                self.image, image_id=self.image_id, progress_cb=self._emit_progress
+            )
             self.embeddingReady.emit(success)
             self.finishedResult.emit(success)
         except Exception as e:
@@ -212,6 +243,7 @@ class YoloDetectionWorker(QThread):
     en segundo plano sin congelar la interfaz gráfica.
     """
     progressStatus = Signal(str)
+    progressPercent = Signal(int, str)
     finishedResult = Signal(list)  # List[DetectedSubject]
     failed = Signal(str)
 
@@ -220,12 +252,22 @@ class YoloDetectionWorker(QThread):
         self.image = image
         self.conf_threshold = conf_threshold
 
+    def _emit_progress(self, percent: int, message: str):
+        pct = max(0, min(100, int(percent)))
+        msg = str(message)
+        self.progressPercent.emit(pct, msg)
+        self.progressStatus.emit(msg)
+
     def run(self):
         from app.core.yolo_detector import get_yolo_detector
         try:
-            self.progressStatus.emit("Detectando sujetos con IA (YOLO11)...")
+            self._emit_progress(5, "Detectando sujetos con IA (YOLO11)...")
             detector = get_yolo_detector()
-            subjects = detector.detect_subjects(self.image, conf_threshold=self.conf_threshold)
+            subjects = detector.detect_subjects(
+                self.image,
+                conf_threshold=self.conf_threshold,
+                progress_cb=self._emit_progress,
+            )
             self.finishedResult.emit(subjects)
         except Exception as e:
             import traceback

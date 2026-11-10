@@ -627,17 +627,33 @@ class BackgroundRemover:
         self._sessions: Dict[str, Any] = {}
         self._lock = threading.Lock()
 
-    def get_inspyrenet_session(self, force_cpu: bool = False):
+    def get_inspyrenet_session(self, force_cpu: bool = False, progress_cb=None):
         """Obtiene o inicializa una sesión ONNX para el modelo InSPyReNet (Swin-B 1024x1024)."""
         cache_key = "inspyrenet_cpu" if force_cpu else "inspyrenet"
         if cache_key not in self._sessions:
             with self._lock:
                 if cache_key not in self._sessions:
                     from app.core.model_fetcher import ensure_model_file
-                    model_path = ensure_model_file("inspyrenet.onnx")
+
+                    if progress_cb:
+                        progress_cb(5, "Verificando modelo InSPyReNet...")
+
+                    def _dl_prog(dl: int, tot: int):
+                        if progress_cb and tot > 0:
+                            pct = 5 + int(round((dl / tot) * 30))
+                            dl_mb = dl / (1024 * 1024)
+                            tot_mb = tot / (1024 * 1024)
+                            progress_cb(
+                                min(35, pct),
+                                f"Descargando inspyrenet.onnx ({dl_mb:.1f} / {tot_mb:.1f} MB)...",
+                            )
+
+                    model_path = ensure_model_file("inspyrenet.onnx", progress_cb=_dl_prog)
                     import onnxruntime as ort
                     providers = ["CPUExecutionProvider"] if force_cpu else get_inference_providers()
                     sess_options = get_optimized_session_options() or ort.SessionOptions()
+                    if progress_cb:
+                        progress_cb(38, "Cargando modelo InSPyReNet en memoria...")
                     try:
                         self._sessions[cache_key] = ort.InferenceSession(str(model_path), sess_options, providers=providers)
                     except Exception as e:
@@ -661,13 +677,28 @@ class BackgroundRemover:
         out = session.run(None, {input_name: tensor})[0]
         return _postprocess_inspyrenet_mask(out, orig_size)
 
-    def _get_rembg_cpu_session(self, model_name: str):
+    def _get_rembg_cpu_session(self, model_name: str, progress_cb=None):
         """Obtiene o reutiliza en caché una sesión de rembg en CPU para evitar recargas en lotes."""
         cache_key = f"rembg_cpu_{model_name}"
         if cache_key not in self._sessions:
             with self._lock:
                 if cache_key not in self._sessions:
+                    from app.core.model_fetcher import MODEL_URLS, ensure_model_file
+                    onnx_fname = f"{model_name}.onnx"
+                    if onnx_fname in MODEL_URLS:
+                        def _dl_prog(dl: int, tot: int):
+                            if progress_cb and tot > 0:
+                                pct = 5 + int(round((dl / tot) * 30))
+                                dl_mb = dl / (1024 * 1024)
+                                tot_mb = tot / (1024 * 1024)
+                                progress_cb(
+                                    min(35, pct),
+                                    f"Descargando {onnx_fname} ({dl_mb:.1f} / {tot_mb:.1f} MB)...",
+                                )
+                        ensure_model_file(onnx_fname, progress_cb=_dl_prog)
                     import rembg
+                    if progress_cb:
+                        progress_cb(38, f"Inicializando sesión {model_name} en CPU...")
                     self._sessions[cache_key] = rembg.new_session(
                         model_name, providers=["CPUExecutionProvider"]
                     )
@@ -680,10 +711,14 @@ class BackgroundRemover:
         ensemble_weight: float = 0.5,
         refine_matting: bool = False,
         enable_clothing_protection: bool = True,
+        progress_cb=None,
     ) -> Image.Image:
         """
         Ejecución local en CPU con preservación 100% íntegra de colores originales.
         """
+        if progress_cb:
+            progress_cb(5, f"Preparando imagen para {model_name}...")
+
         if image.mode not in ("RGB", "RGBA"):
             input_img = image.convert("RGB")
         else:
@@ -692,19 +727,29 @@ class BackgroundRemover:
         if model_name in ("isnet-anime", "birefnet-general", "u2net_human_seg"):
             import rembg
             logger.info(f"[CPU Fallback/Local] Ejecutando {model_name} en CPU...")
-            sess = self._get_rembg_cpu_session(model_name)
+            sess = self._get_rembg_cpu_session(model_name, progress_cb=progress_cb)
+            if progress_cb:
+                progress_cb(50, f"Ejecutando inferencia con {model_name}...")
             out = rembg.remove(input_img, session=sess)
             final_alpha = np.array(out.split()[-1], dtype=np.uint8)
+            if progress_cb:
+                progress_cb(80, "Máscara principal generada...")
         else:
             logger.info("[CPU Fallback/Local] Ejecutando InSPyReNet (Swin-B 1024x1024)...")
-            session = self.get_inspyrenet_session(force_cpu=True)
+            session = self.get_inspyrenet_session(force_cpu=True, progress_cb=progress_cb)
+            if progress_cb:
+                progress_cb(50, "Ejecutando red neuronal InSPyReNet (Swin-B)...")
             raw_mask = self._predict_inspyrenet(session, input_img)
+            if progress_cb:
+                progress_cb(78, "Refinando bordes subpíxel...")
             cleaned_rgb, final_alpha = postprocess_inspyrenet(input_img, raw_mask)
             input_img = Image.fromarray(cleaned_rgb, mode="RGB")
 
         # Fusión Core-Only con Detector Semántico de Ropa (se omite en isnet-anime y u2net_human_seg)
         if enable_clothing_protection and model_name not in ("u2net_human_seg", "isnet-anime"):
             try:
+                if progress_cb:
+                    progress_cb(85, "Aplicando protección semántica de ropa...")
                 import rembg
                 human_sess = self._get_rembg_cpu_session("u2net_human_seg")
                 human_out = rembg.remove(input_img, session=human_sess)
@@ -718,12 +763,17 @@ class BackgroundRemover:
             except Exception as e:
                 logger.warning(f"Protección de ropa u2net_human_seg omitida en CPU: {e}")
 
+        if progress_cb:
+            progress_cb(95, "Componiendo canal alfa final...")
+
         if image.mode == "RGBA":
             orig_alpha = np.array(image.split()[-1], dtype=np.uint8)
             final_alpha = np.minimum(final_alpha, orig_alpha)
 
         output = input_img.convert("RGB").convert("RGBA")
         output.putalpha(Image.fromarray(final_alpha, mode="L"))
+        if progress_cb:
+            progress_cb(100, "Eliminación de fondo completada.")
         return output
 
     def remove_background(
@@ -733,6 +783,7 @@ class BackgroundRemover:
         ensemble_weight: float = 0.5,
         refine_matting: bool = False,
         enable_clothing_protection: bool = True,
+        progress_cb=None,
     ) -> Image.Image:
         """
         Elimina el fondo de una imagen usando el modelo seleccionado (IS-Net Anime, U2-Net Human, BiRefNet o InSPyReNet).
@@ -758,7 +809,9 @@ class BackgroundRemover:
                     ensemble_weight=ensemble_weight,
                     refine_matting=refine_matting,
                     enable_clothing_protection=enable_clothing_protection,
+                    progress_cb=progress_cb,
                 ),
+                progress_cb=progress_cb,
             )
         else:
             return self._remove_background_cpu_local(
@@ -767,6 +820,7 @@ class BackgroundRemover:
                 ensemble_weight=ensemble_weight,
                 refine_matting=refine_matting,
                 enable_clothing_protection=enable_clothing_protection,
+                progress_cb=progress_cb,
             )
 
 

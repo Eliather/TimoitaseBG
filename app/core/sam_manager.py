@@ -147,7 +147,12 @@ class SAMManager:
 
         return input_tensor, scale, new_w, new_h
 
-    def prepare_image(self, pil_img: Image.Image, image_id: Optional[int] = None) -> bool:
+    def prepare_image(
+        self,
+        pil_img: Image.Image,
+        image_id: Optional[int] = None,
+        progress_cb: Optional[Callable[[int, str], None]] = None,
+    ) -> bool:
         """
         Ejecuta el Image Encoder de MobileSAM para la imagen dada.
         Calcula y almacena en memoria el tensor de embeddings.
@@ -158,6 +163,8 @@ class SAMManager:
         with self._lock:
             # Si ya está calculado para esta misma instancia, reutilizar
             if image_id is not None and self.current_image_id == image_id and self.cached_embedding is not None:
+                if progress_cb:
+                    progress_cb(100, "Varita IA lista.")
                 return True
 
             if self._is_computing:
@@ -168,12 +175,29 @@ class SAMManager:
 
         try:
             if self.encoder_session is None or self.decoder_session is None:
-                self.ensure_models()
+                if progress_cb:
+                    progress_cb(10, "Verificando modelos de MobileSAM...")
 
+                def _dl_prog(dl: int, tot: int):
+                    if progress_cb and tot > 0:
+                        pct = 10 + int(round((dl / tot) * 35))
+                        dl_mb = dl / (1024 * 1024)
+                        tot_mb = tot / (1024 * 1024)
+                        progress_cb(
+                            min(45, pct),
+                            f"Descargando MobileSAM ({dl_mb:.1f} / {tot_mb:.1f} MB)...",
+                        )
+
+                self.ensure_models(progress_cb=_dl_prog)
+
+            if progress_cb:
+                progress_cb(50, "Preprocesando imagen para MobileSAM...")
             w, h = pil_img.size
             input_tensor, scale, new_w, new_h = self._preprocess_image(pil_img)
 
             # Ejecutar encoder
+            if progress_cb:
+                progress_cb(70, "Calculando mapa semántico (MobileSAM Encoder)...")
             enc_input_name = self.encoder_session.get_inputs()[0].name
             outputs = self.encoder_session.run(None, {enc_input_name: input_tensor})
             embedding = outputs[0]  # shape: (1, 256, 64, 64)
@@ -186,6 +210,8 @@ class SAMManager:
                 self.scale_factor = scale
                 self._is_computing = False
 
+            if progress_cb:
+                progress_cb(100, "Varita IA lista.")
             logger.info(f"MobileSAM: Embedding calculado para imagen de {w}x{h} px.")
             return True
 
