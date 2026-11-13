@@ -1,20 +1,45 @@
 """
 TimoitaseBG - Descargador automático de binarios de GitHub Releases hacia la carpeta local `releases/`.
-Descarga los instaladores compilados por GitHub Actions:
+Descarga los instaladores compilados por GitHub Actions y valida SHA256SUMS.txt si está presente:
 - TimoitaseBG-Windows-x64.msix
+- TimoitaseBG-Windows-arm64.msix
 - TimoitaseBG-macOS-arm64.dmg (macOS 15 Apple Silicon)
 - TimoitaseBG-macOS-x64.dmg (macOS 15 Intel)
 - TimoitaseBG-Linux-x64.AppImage
+- TimoitaseBG-Linux-arm64.AppImage
 """
+import argparse
+import hashlib
 import json
 import sys
 import urllib.request
 from pathlib import Path
 
+from app.config import APP_VERSION
+
 REPO = "Eliather/TimoitaseBG"
 
 
-def download_latest_release(tag: str = "v1.2.3") -> int:
+def _sha256_file(path: Path) -> str:
+    h = hashlib.sha256()
+    with open(path, "rb") as fh:
+        for chunk in iter(lambda: fh.read(1024 * 1024), b""):
+            h.update(chunk)
+    return h.hexdigest().lower()
+
+
+def _parse_checksums(checksums_path: Path) -> dict[str, str]:
+    sums: dict[str, str] = {}
+    if not checksums_path.exists():
+        return sums
+    for line in checksums_path.read_text(encoding="utf-8", errors="ignore").splitlines():
+        parts = line.strip().split(None, 1)
+        if len(parts) == 2:
+            sums[parts[1].lstrip("*")] = parts[0].lower()
+    return sums
+
+
+def download_latest_release(tag: str) -> int:
     root = Path(__file__).resolve().parent.parent
     releases_dir = root / "releases"
     releases_dir.mkdir(parents=True, exist_ok=True)
@@ -53,11 +78,28 @@ def download_latest_release(tag: str = "v1.2.3") -> int:
                 f.write(chunk)
         print(f"  [OK] Guardado en {dest}")
 
+    checksums = _parse_checksums(releases_dir / "SHA256SUMS.txt")
+    for fname, expected_hash in checksums.items():
+        fpath = releases_dir / fname
+        if fpath.exists():
+            actual = _sha256_file(fpath)
+            if actual != expected_hash:
+                print(f"  [ERROR] Checksum inválido para {fname}")
+                return 1
+            print(f"  [SHA-256 OK] {fname}")
+
     print(f"\nTodos los paquetes fueron descargados en: {releases_dir}")
     return 0
 
 
 if __name__ == "__main__":
-    target_tag = sys.argv[1] if len(sys.argv) > 1 else "v1.2.3"
-    sys.exit(download_latest_release(target_tag))
+    parser = argparse.ArgumentParser(description="Descarga instaladores de GitHub Releases.")
+    parser.add_argument(
+        "tag",
+        nargs="?",
+        default=f"v{APP_VERSION}",
+        help=f"Etiqueta de release a descargar (por defecto: v{APP_VERSION})",
+    )
+    args = parser.parse_args()
+    sys.exit(download_latest_release(args.tag))
 

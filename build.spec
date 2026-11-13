@@ -3,11 +3,24 @@
 TimoitaseBG - Especificación de empaquetado PyInstaller multiplataforma.
 Genera ejecutables autocontenidos en modo COLLECT (--onedir) para Windows, macOS y Linux.
 """
+import re
 import sys
 from pathlib import Path
 from PyInstaller.utils.hooks import collect_all, collect_data_files, collect_submodules
 
 block_cipher = None
+
+
+def _read_app_version() -> str:
+    cfg = Path("app/config.py")
+    if cfg.exists():
+        m = re.search(r'^APP_VERSION\s*=\s*["\']([^"\']+)["\']', cfg.read_text(encoding="utf-8"), re.MULTILINE)
+        if m:
+            return m.group(1)
+    return "1.2.3"
+
+
+APP_VERSION = _read_app_version()
 
 
 def safe_collect_all(package_name):
@@ -18,9 +31,10 @@ def safe_collect_all(package_name):
         return [], [], []
 
 
-# 1. Datos estáticos de la aplicación (QSS, iconos vectoriales y activos)
+# 1. Datos estáticos de la aplicación (QSS, iconos vectoriales, traducciones y activos)
 datas = [
     ('app/ui', 'app/ui'),
+    ('app/locales', 'app/locales'),
 ]
 
 # Incluir modelos pesados de app/models ÚNICAMENTE si TIMOITASE_BUNDLE_MODELS == "1"
@@ -101,6 +115,9 @@ a = Analysis(
 
 pyz = PYZ(a.pure, a.zipped_data, cipher=block_cipher)
 
+_win_icon = Path('build/app_icon.ico')
+_mac_icon = Path('build/app_icon.icns') if Path('build/app_icon.icns').exists() else Path('build/app_icon.png')
+
 exe = EXE(
     pyz,
     a.scripts,
@@ -117,6 +134,7 @@ exe = EXE(
     target_arch=None,
     codesign_identity=None,
     entitlements_file=None,
+    icon=str(_win_icon) if sys.platform == 'win32' and _win_icon.exists() else None,
 )
 
 coll = COLLECT(
@@ -135,14 +153,14 @@ if sys.platform == "darwin":
     app = BUNDLE(
         coll,
         name='TimoitaseBG.app',
-        icon=None,
+        icon=str(_mac_icon) if _mac_icon.exists() else None,
         bundle_identifier='com.eliather.timoitasebg',
         info_plist={
             'CFBundleName': 'TimoitaseBG',
             'CFBundleDisplayName': 'TimoitaseBG',
             'CFBundleIdentifier': 'com.eliather.timoitasebg',
-            'CFBundleVersion': '1.2.3',
-            'CFBundleShortVersionString': '1.2.3',
+            'CFBundleVersion': APP_VERSION,
+            'CFBundleShortVersionString': APP_VERSION,
             'NSHumanReadableCopyright': 'Copyright © 2026 Eliather (Autora)',
             'NSHighResolutionCapable': True,
             'NSRequiresAquaSystemAppearance': False,

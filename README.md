@@ -1,477 +1,496 @@
 # TimoitaseBG
 
-<p align="center">
-  <a href="https://github.com/Eliather/TimoitaseBG/tags">
-    <img src="https://img.shields.io/github/v/tag/Eliather/TimoitaseBG?style=for-the-badge&logo=github&label=Versi%C3%B3n&color=FF4F79&sort=semver" alt="Versión">
-  </a>
-  <a href="https://github.com/Eliather/TimoitaseBG/stargazers">
-    <img src="https://img.shields.io/github/stars/Eliather/TimoitaseBG?style=for-the-badge&logo=github&label=Estrellas&color=FFD700" alt="Estrellas">
-  </a>
-  <a href="https://github.com/Eliather/TimoitaseBG/network/members">
-    <img src="https://img.shields.io/github/forks/Eliather/TimoitaseBG?style=for-the-badge&logo=github&label=Forks&color=28A745" alt="Forks">
-  </a>
-  <a href="https://github.com/Eliather/TimoitaseBG/blob/main/LICENSE">
-    <img src="https://img.shields.io/github/license/Eliather/TimoitaseBG?style=for-the-badge&logo=gnu&logoColor=white&label=Licencia&color=326CE5" alt="Licencia GNU AGPLv3">
-  </a>
-  <a href="https://github.com/Eliather/TimoitaseBG/commits/main">
-    <img src="https://img.shields.io/github/last-commit/Eliather/TimoitaseBG?style=for-the-badge&logo=git&logoColor=white&label=%C3%9Altimo%20Commit&color=6366F1" alt="Último Commit">
-  </a>
-</p>
+![Version](https://img.shields.io/badge/Version-1.2.3-7c3aed?style=for-the-badge)
+![License](https://img.shields.io/badge/License-GNU_AGPLv3-blue?style=for-the-badge)
+![Python](https://img.shields.io/badge/Python-3.11%2B-3776ab?style=for-the-badge&logo=python&logoColor=white)
+![PySide6](https://img.shields.io/badge/GUI-PySide6_Qt6-41cd52?style=for-the-badge&logo=qt&logoColor=white)
+![Platform](https://img.shields.io/badge/OS-Windows_%7C_macOS_%7C_Linux-lightgrey?style=for-the-badge)
+![Inference](https://img.shields.io/badge/Inference-ONNX_Runtime_Local-005a9e?style=for-the-badge)
 
-<p align="center">
-  <img src="https://img.shields.io/badge/Versi%C3%B3n-1.2.3-FF4F79?style=for-the-badge" alt="Versión 1.2.3">
-  <img src="https://img.shields.io/badge/Autora-Eliather-8B5CF6?style=for-the-badge&logo=github&logoColor=white" alt="Autora Eliather">
-  <img src="https://img.shields.io/badge/Python-3.11%2B-3776AB?style=for-the-badge&logo=python&logoColor=white" alt="Python">
-  <img src="https://img.shields.io/badge/Framework-PySide6%20%2F%20Qt6-41CD52?style=for-the-badge&logo=qt&logoColor=white" alt="PySide6">
-  <img src="https://img.shields.io/badge/Multiplataforma-Windows%20%7C%20macOS%20%7C%20Linux%20%7C%20ARM64-0078D4?style=for-the-badge&logo=linux&logoColor=white" alt="Multiplataforma">
-  <img src="https://img.shields.io/badge/Aceleraci%C3%B3n-CUDA%20%7C%20ROCm%20%7C%20CoreML%20%7C%20DirectML%20%7C%20QNN-FF6F00?style=for-the-badge&logo=nvidia&logoColor=white" alt="Aceleración">
-  <img src="https://img.shields.io/badge/Privacidad-100%25%20Local%20%26%20Offline-6366F1?style=for-the-badge&logo=shield&logoColor=white" alt="Privacidad">
-</p>
-
-<p align="center">
-  <b>Estación de trabajo de escritorio local y multiplataforma para eliminación de fondos en imágenes, GIFs y videos con IA y retoque digital de alta precisión.</b><br>
-  <i>Creada y desarrollada por <b><a href="https://github.com/Eliather">Eliather</a></b> (Autora) • Versión <b>v1.2.3</b></i>
-</p>
-
----
-
-## Descripción General
-
-**TimoitaseBG** (creada por la autora **[Eliather](https://github.com/Eliather)**) es una solución de escritorio **100% local, multiplataforma**, moderna y de alto rendimiento desarrollada con **PySide6 / Qt6** y **ONNX Runtime**. Diseñada para ilustradores, artistas de anime y manga, diseñadores gráficos, editores de video y fotógrafos, integra los modelos de visión por computadora más avanzados (**BiRefNet**, **MobileSAM**, **YOLO11-seg**, **InSPyReNet**, **IS-Net Anime** y **Real-ESRGAN**) con herramientas profesionales de selección manual y enmascarado subpíxel estilo Photoshop.
-
-La aplicación ofrece compatibilidad nativa integral con una amplia gama de arquitecturas y aceleradores de hardware:
-- **Windows (x86_64 y ARM64):** NVIDIA CUDA, AMD Radeon / Intel Arc vía DirectML, y procesadores **Qualcomm Snapdragon X Elite / X Plus** con aceleración NPU Hexagon (**QNN**) y GPU Adreno (**DirectML ARM64**).
-- **macOS (Apple Silicon e Intel):** Aceleración nativa **CoreML** en GPUs y Apple Neural Engine de chips M1, M2, M3, M4 y M5, así como Macs Intel con gráficos integrados o GPUs dedicadas AMD Radeon Pro.
-- **Linux (x86_64 y ARM64 `aarch64`):** NVIDIA CUDA (Desktop y **NVIDIA Jetson Orin / Nano**), **AMD ROCm / MIOpen**, y microcomputadoras/SoCs ARM (**Raspberry Pi 5**, Rockchip) con aceleración vectorial NEON.
-- **Protección Automática para Memoria Unificada (UMA / APUs):** Reconocimiento inteligente de memoria compartida en APUs AMD Ryzen, Intel iGPU, Apple Silicon y SoCs ARM para activar procesamiento por bloques (*tiling*) y prevenir saturaciones de RAM.
-
-Todo el procesamiento se realiza de manera totalmente local en el equipo del usuario: sin dependencia de servicios en la nube, sin suscripciones periódicas y garantizando la privacidad absoluta de los datos e imágenes.
+**TimoitaseBG** es una aplicación de escritorio multiplataforma para la eliminación de fondos, segmentación interactiva de objetos y restauración de imágenes, animaciones y secuencias de video de forma completamente local. Está construida sobre **Python 3.11+**, **PySide6 (Qt6)** y **ONNX Runtime**, organizada bajo una arquitectura modular por capas con aislamiento de procesos para inferencia acelerada por hardware y herramientas de edición pixel a pixel sobre el lienzo.
 
 ---
 
 ## Tabla de Contenidos
 
-1. [¿Por qué TimoitaseBG?](#por-qué-timoitasebg)
-2. [Compatibilidad de Hardware y Aceleradores](#compatibilidad-de-hardware-y-aceleradores)
-3. [Características Principales](#características-principales)
-   - [Eliminación de Fondos por IA](#1-eliminación-de-fondos-por-ia)
-   - [Varita Mágica Híbrida (Color e IA)](#2-varita-mágica-híbrida-color-e-ia)
-   - [Detección y Aislamiento Multiobjeto](#3-detección-y-aislamiento-multiobjeto-yolo11-seg)
-   - [Restauración y Super-Resolución](#4-restauración-y-super-resolución-real-esrgan)
-   - [Herramientas de Edición Manual](#5-herramientas-de-edición-manual)
-   - [Lienzo Interactivo y Comparación](#6-lienzo-interactivo-y-comparación)
-   - [Procesamiento por Lotes](#7-procesamiento-por-lotes)
-   - [Diseño e Internacionalización](#8-diseño-e-internacionalización)
-   - [Paginación y Edición Frame-by-Frame en Animaciones y Videos](#9-paginación-y-edición-frame-by-frame-en-animaciones-y-videos)
-4. [Arquitectura y Concurrencia Defensiva](#arquitectura-y-concurrencia-defensiva)
-5. [Requisitos del Sistema](#requisitos-del-sistema)
-6. [Instalación y Puesta en Marcha](#instalación-y-puesta-en-marcha)
-   - [Windows (x86_64 y ARM64 Snapdragon)](#opción-a-windows-x86_64-y-arm64-snapdragon)
-   - [macOS (Apple Silicon e Intel)](#opción-b-macos-apple-silicon-e-intel)
-   - [Linux (x86_64, NVIDIA Jetson y Raspberry Pi)](#opción-c-linux-x86_64-nvidia-jetson-y-raspberry-pi-arm64)
-7. [Pruebas Automatizadas](#pruebas-automatizadas)
-8. [Compilación a Ejecutable (.exe)](#compilación-a-ejecutable-exe)
-9. [Atribución, Licencias de Modelos y Citas Académicas](#atribución-licencias-de-modelos-y-citas-académicas)
-10. [Licencia del Software](#licencia-del-software)
+- [Descripción General](#descripción-general)
+- [Características Principales](#características-principales)
+- [Compatibilidad de Hardware y Aceleradores](#compatibilidad-de-hardware-y-aceleradores)
+- [Arquitectura y Funcionamiento Interno](#arquitectura-y-funcionamiento-interno)
+  - [Estructura del Proyecto](#estructura-del-proyecto)
+  - [Arquitectura Modular por Capas](#arquitectura-modular-por-capas)
+  - [Ciclo de Ejecución y Aislamiento de GPU](#ciclo-de-ejecución-y-aislamiento-de-gpu)
+  - [Detección de Hardware y Gestión de Memoria](#detección-de-hardware-y-gestión-de-memoria)
+  - [Pipelines de Visión y Edición de Imagen](#pipelines-de-visión-y-edición-de-imagen)
+  - [Modelos ONNX, Cuantización INT8, Reanudación HTTP e Integridad](#modelos-onnx-cuantización-int8-reanudación-http-e-integridad)
+- [Atajos de Teclado y Ratón](#atajos-de-teclado-y-ratón)
+- [Requisitos del Sistema](#requisitos-del-sistema)
+- [Instalación y Ejecución](#instalación-y-ejecución)
+- [Pruebas Automatizadas](#pruebas-automatizadas)
+- [Compilación y Empaquetado Multiplataforma](#compilación-y-empaquetado-multiplataforma)
+- [Atribución y Licencias de Terceros](#atribución-y-licencias-de-terceros)
+- [Autora y Licencia](#autora-y-licencia)
 
 ---
 
-## ¿Por qué TimoitaseBG?
+## Descripción General
 
-- **Privacidad Absoluta:** Procesamiento local sin telemetría, analíticas ni envío de información a servidores externos.
-- **Aceleración Multiplataforma Nativa:** Soporte universal para aceleradores CUDA (NVIDIA), ROCm (AMD Linux), CoreML (Apple Silicon), DirectML (Windows x64 / ARM64) y QNN (Qualcomm Hexagon NPU).
-- **Aislamiento en Subproceso con Watchdog:** Supervisor continuo contra fallos de controlador gráfico (TDR en Windows, bloqueos CUDA/ROCm en Linux o desbordamientos de memoria) con conmutación instantánea a CPU.
-- **Gestión Inteligente de Memoria Unificada (UMA):** Ajuste automático de segmentación por bloques (*tiling*) en APUs AMD Ryzen, Intel Iris/UHD, Apple Silicon y SoCs ARM para evitar sobrecargar la memoria RAM compartida.
-- **Optimización para CPUs Heterogéneas (big.LITTLE):** Asignación controlada de hilos (`intra_op_num_threads <= 4`) y supresión de giro activo (*no-spinning*) en procesadores ARM para optimizar consumo energético y prevenir sobrecalentamiento.
-- **Fidelidad Cromática del 100%:** Conserva la paleta de colores RGB íntegra sin conversiones destructivas ni alteración en el canal alfa.
-- **Flujo de Trabajo No Destructivo:** Historial continuo de deshacer/rehacer con soporte multicanal y portapapeles bidireccional.
+TimoitaseBG ejecuta modelos neuronales de segmentación, detección y superresolución directamente en el dispositivo del usuario sin telemetría, sin límites de resolución impuestos por servidores externos y sin subir archivos a la nube. Los modelos ONNX se descargan bajo demanda con reanudación HTTP (`Range`), verificación de integridad `SHA256` y soporte nativo para variantes cuantizadas `INT8`, permitiendo trabajar con ilustraciones, anime, fotografía de producto, retratos humanos, animaciones GIF/WebP/APNG y secuencias de video.
 
----
-
-## Compatibilidad de Hardware y Aceleradores
-
-TimoitaseBG integra una capa de detección de hardware multiplataforma que sondea en tiempo de ejecución los buses del sistema (PCIe, SoC, WMI, sysctl, DirectML, CUDA, ROCm y CoreML), asignando el proveedor óptimo de ONNX Runtime con conmutación en caliente (*hot-swap fallback*) ante fallos:
-
-| Plataforma / OS | Arquitectura | Hardware / Acelerador | Proveedor ONNX Runtime | Manejo de Memoria |
-| :--- | :--- | :--- | :--- | :--- |
-| **Windows 10 / 11** | `x86_64` (AMD64) | NVIDIA GeForce / RTX | `CUDAExecutionProvider` / `DmlExecutionProvider` | VRAM Dedicada |
-| **Windows 10 / 11** | `x86_64` (AMD64) | AMD Radeon RX / Vega | `DmlExecutionProvider` (DirectX 12) | VRAM Dedicada |
-| **Windows 10 / 11** | `x86_64` (AMD64) | Intel Arc / Iris Xe | `DmlExecutionProvider` (DirectX 12) | VRAM Dedicada |
-| **Windows 10 / 11** | `x86_64` (AMD64) | **APU AMD Ryzen (Radeon Graphics)** | `DmlExecutionProvider` (DirectX 12) | Memoria Compartida (UMA) 🛡️ |
-| **Windows 10 / 11** | `x86_64` (AMD64) | **Intel Graphics (UHD / HD)** | `DmlExecutionProvider` (DirectX 12) | Memoria Compartida (UMA) 🛡️ |
-| **Windows on ARM** | `ARM64` | **Qualcomm Snapdragon X Elite / Plus** | `QNNExecutionProvider` (NPU Hexagon) | Memoria Unificada (UMA) 🛡️ |
-| **Windows on ARM** | `ARM64` | **GPU Qualcomm Adreno** | `DmlExecutionProvider` (DirectML ARM64) | Memoria Unificada (UMA) 🛡️ |
-| **macOS 12+** | `arm64` | **Apple Silicon (M1, M2, M3, M4, M5)** | `CoreMLExecutionProvider` (GPU + NPU) | Memoria Unificada (UMA) 🛡️ |
-| **macOS 12+** | `x86_64` | Mac Intel con AMD Radeon Pro | `CoreMLExecutionProvider` (GPU) | VRAM Dedicada |
-| **macOS 12+** | `x86_64` | Mac Intel con Iris / UHD | `CoreMLExecutionProvider` / CPU | Memoria Compartida (UMA) 🛡️ |
-| **Linux (Ubuntu, etc.)** | `x86_64` | NVIDIA GeForce / RTX / Tesla | `CUDAExecutionProvider` | VRAM Dedicada |
-| **Linux (Ubuntu, etc.)** | `x86_64` | **AMD Radeon (ROCm / MIOpen)** | `ROCMExecutionProvider` | VRAM Dedicada |
-| **Linux ARM64** | `aarch64` | **NVIDIA Jetson (Orin, Xavier, Nano)** | `CUDAExecutionProvider` (JetPack) | Memoria Unificada (UMA) 🛡️ |
-| **Linux ARM64** | `aarch64` | **Raspberry Pi 5 / Rockchip RK3588** | `CPUExecutionProvider` (Vectorial NEON) | Memoria Unificada (UMA) 🛡️ |
-| **Universal (Fallback)**| Cualquiera | Procesador Intel / AMD / ARM | `CPUExecutionProvider` (Multihilo) | Memoria RAM Sistema |
-
-> 🛡️ **Protección Automática de Memoria Unificada (UMA / APUs):**  
-> En arquitecturas de memoria compartida (APUs AMD Ryzen, gráficos Intel integrados, Apple Silicon, Qualcomm Snapdragon y SoCs ARM en Linux), la función `is_integrated_gpu()` retorna `True`, forzando el procesamiento por mosaicos (*tiling 512×512*) en Real-ESRGAN y liberando buffers entre fases para impedir saturaciones de la RAM del sistema.
+El flujo de trabajo combina inferencia automática (cuatro arquitecturas especializadas de eliminación de fondo, detección de sujetos con YOLO11-seg, segmentación por puntos con MobileSAM y escalado con Real-ESRGAN) con retoque manual no destructivo mediante pinceles de restauración/borrado, varita mágica de color o IA, operaciones booleanas de selección e historial de estados por imagen o fotograma.
 
 ---
 
 ## Características Principales
 
-### 1. Eliminación de Fondos por IA
+### 1. Eliminación de Fondo y Protección Semántica de Vestimenta
 
-Pipeline de segmentación de última generación ejecutado sobre **ONNX Runtime** con posprocesamiento morfológico adaptativo:
+El motor de segmentación expone cuatro modelos ONNX seleccionables según el tipo de contenido:
 
-- **BiRefNet (General High Definition 1024×1024 - MIT):** Arquitectura dicotómica SOTA de máxima precisión para la extracción de detalles complejos como cabello, pelaje, texturas finas y bordes translúcidos.
-- **InSPyReNet (Swin-B Plus Ultra):** Red neuronal piramidal para refinamiento subpíxel y corrección cromática en bordes (*despill*).
-- **IS-Net Anime:** Modelo especializado en arte digital 2D, manga, cómics y cel-shading.
-- **U2-Net Human:** Segmentación anatómica enfocada en el aislamiento integral de personas.
-- **Detector Semántico de Ropa:** Filtro inteligente para evitar perforaciones accidentales en vestimentas claras sobre fondos de tonalidad similar.
+| Identificador | Arquitectura | Uso Recomendado |
+| :--- | :--- | :--- |
+| `isnet-anime` | IS-Net (Anime) | Ilustración 2D, anime, manga, line-art y gráficos con bordes definidos. |
+| `inspyrenet` | InSPyReNet Swin-B | Uso general de alta fidelidad (fotografía, cabello complejo y detalle fino). |
+| `birefnet-general` | BiRefNet General | Escenas de alta complejidad y objetos con contornos intricados. |
+| `u2net_human_seg` | U2-Net Human Seg | Segmentación especializada de siluetas humanas y vestimenta. |
 
-### 2. Varita Mágica Híbrida (Color e IA)
+- **Protección Semántica de Ropa**: Opción activable para `inspyrenet` y `birefnet-general` que ejecuta `u2net_human_seg` en paralelo para reforzar la retención de prendas blancas o de bajo contraste frente a fondos claros mediante inyección exclusiva en el núcleo erosionado, evitando halos externos.
+- **Preservación Exacta de RGB**: Las máscaras alpha generadas se aplican respetando los canales RGB de la imagen original, con postprocesamiento morfológico, recuperación topológica de huecos internos y suavizado de bordes.
 
-Motor dual de selección con dos modos de operación complementarios:
+### 2. Segmentación Semántica e Interacción por Sujetos
 
-#### A. Modo IA (MobileSAM)
-- **Selección Semántica Interactiva:** Genera máscaras de alta precisión al hacer clic sobre cualquier objeto con tiempos de respuesta inferiores a **15 ms**.
-- **Arquitectura Optimizada:** El codificador de imagen (*Image Encoder*) precalcula la representación en un hilo secundario de fondo, permitiendo decodificaciones instantáneas (*Mask Decoder*).
+- **Detección Multi-Sujeto (`YOLO11n-seg`)**: Detecta hasta 80 categorías de objetos COCO en una pasada, generando fichas interactivas estilizadas por tema en el panel lateral para inspeccionar, seleccionar o aislar individualmente cada elemento presente en la escena.
+- **Segmentación Interactiva (`MobileSAM`)**: Codifica la imagen una sola vez (`(1, 256, 64, 64)`) y mantiene el embedding en memoria para ejecutar decodificaciones guiadas por clic en menos de 15 ms, además de colaborar con YOLO11-seg en el aislamiento fino de sujetos individuales (propagable a todos los fotogramas de una secuencia).
 
-#### B. Modo Color (Estilo Photoshop)
-- **Tolerancia Configurable (0–255):** Ajuste de sensibilidad basado en distancia euclidiana en el espacio cromático RGB.
-- **Modos Contiguo y Global:** Selección de áreas continuas conectadas o islas de color distribuidas en toda la imagen.
-- **Suavizado (Anti-Aliasing):** Atenuación perimetral para evitar bordes dentados (*aliased edges*).
+### 3. Restauración y Escalado de Alta Resolución
 
-#### Operaciones Booleanas y Hormigas Marchantes
-- **4 Modos de Combinación:** Nueva Selección, Añadir (`Shift`), Restar (`Alt`) e Intersecar (`∩`).
-- **Límite Animado (Marching Ants):** Contorno vectorial animado a 25 FPS para delimitar con precisión la selección activa.
-- **Atajos Directos:** Borrar selección (`Supr`), Invertir (`Ctrl+Shift+I`), Seleccionar todo (`Ctrl+A`) y Deseleccionar (`Ctrl+D` / `Esc`).
+- **Superresolución (`Real-ESRGAN x4plus Anime 6B`)**: Soporta modos de mejora sin cambio de tamaño (`enhance_only` 1x), escalado `x2` y escalado `x4`, incluyendo propagación completa sobre todos los fotogramas de animaciones y videos mediante `SequenceRestoreWorker`.
+- **Canal Alfa Independiente**: El canal de transparencia se separa del RGB antes de la inferencia neuronal y se escala por separado con interpolación Lanczos para conservar contornos limpios sin artefactos alrededor de áreas transparentes.
+- **Tiling Adaptativo**: Procesa la imagen por mosaicos con solapamiento en GPU (incluso por encima de `1920x1080` cuando `use_tiling=True`), aplicando límite seguro de VRAM en pasadas sin tiling (`MAX_GPU_PIXELS`) y respaldo automático en CPU para evitar saturación de memoria en GPUs discretas o integradas.
 
-### 3. Detección y Aislamiento Multiobjeto (YOLO11-seg)
+### 4. Lienzo Interactivo, Pinceles y Varita Híbrida
 
-- **Segmentación Multiobjeto:** Detección e identificación simultánea de hasta 80 clases de objetos mediante **YOLO11-seg**.
-- **Panel Lateral Interactivo:** Presentación de objetos detectados con su respectiva etiqueta, porcentaje de confianza y color identificativo.
-- **Acciones Rápidas:** Aislamiento del sujeto con un solo clic o conversión del contorno a selección activa para edición manual.
+- **Herramienta Pintar (Restauración)**: Recupera píxeles directamente desde la referencia original (`original_qimage`) asociada al estado actual, con controles de tamaño (`2` a `200 px`), suavizado (`0` a `100 %`), opacidad (`1` a `100 %`), dureza (`0` a `100 %`) y presets rápidos (`2, 10, 25, 50, 100 px`).
+- **Herramienta Borrador**: Normaliza automáticamente imágenes fuente sin canal alfa a `Format_RGBA8888` para que el borrado manual (`CompositionMode_DestinationOut`) genere transparencia real con recorte estricto dentro de selecciones activas.
+- **Varita Mágica (Color e IA)** (`SelectionTool`):
+  - *Modo Color*: Selección por similitud RGBA con tolerancia ajustable (`0–255`), opción contigua mediante `floodFill` de 4 vecinos y suavizado anti-alias gaussiano.
+  - *Modo IA*: Utiliza MobileSAM para seleccionar semánticamente el objeto bajo el cursor con un clic.
+  - *Operaciones Booleanas*: Soporta modos `Nuevo`, `Añadir`, `Restar` e `Intersecar` (con atajos Shift/Alt), además de `Seleccionar todo`, `Invertir selección`, `Deseleccionar` y `Eliminar píxeles seleccionados`.
+- **Inspección Visual, Drag & Drop y Acabado**: Zoom fluido hasta `30x`, paneo, cortina interactiva de comparación Antes/Después, recorte automático (`Autocrop` aplicado sobre la envolvente unión de la secuencia), visualización sobre tablero de ajedrez, aplicación de fondos sólidos y carga por arrastre de archivos o imágenes en memoria (`mime.hasImage()`).
 
-### 4. Restauración y Super-Resolución (Real-ESRGAN)
+### 5. Secuencias Animadas y Video
 
-- **Modelo RealESRGAN_x4plus_anime_6B:** Reducción de ruido, eliminación de artefactos JPEG y reescalado de ilustraciones con líneas de tinta definidas.
-- **Modos de Trabajo:** Mejora de nitidez (1x), aumento 2x y aumento 4x.
-- **Procesamiento por Bloques (Tiling 512×512):** Manejo eficiente de memoria en imágenes de alta resolución.
-- **Protección de VRAM:** Conmutación automática a CPU si la imagen supera el umbral de memoria seguro (~2.07 Mpx).
+- **Animaciones Raster**: Lectura y exportación frame por frame con soporte de canal alfa nativo para **GIF** (cuantización en paralelo por `ThreadPoolExecutor` preservando paleta de 255 colores + índice transparente), **WebP** y **APNG**.
+- **Soporte de Video**: Importación de archivos `.mp4`, `.mov`, `.webm`, `.mkv`, `.avi`, `.m4v`, `.wmv`, `.flv`, `.mpeg`, `.mpg`, `.ogv`, `.3gp` y `.ts` con submuestreo uniforme hasta un máximo de `600` fotogramas.
+- **Estabilidad Temporal**: Filtro condicional de suavizado temporal (`temporal_smoothing = 0.22`) entre fotogramas consecutivos para mitigar parpadeo de máscaras cuando la variación media de alpha es moderada (`< 45.0`).
+- **Exportación Asíncrona**: `SaveSequenceWorker` ejecuta en segundo plano la exportación de **PNGs transparentes en `.zip`**, video con canal alfa nativo mediante FFmpeg CLI (`.webm` VP9 `yuva420p`, `.mkv` FFV1 `bgra`, `.mov` PNG `rgba`) o video directo vía `cv2.VideoWriter` sobre el fondo sólido elegido o Verde Chroma `#00FF00`.
 
-### 5. Herramientas de Edición Manual
+### 6. Procesamiento por Lotes, Cancelación y Portapapeles RGBA
 
-- **Pincel Restaurador:** Recuperación selectiva de áreas originales de la imagen.
-- **Borrador de Precisión:** Eliminación manual sobre capas y máscaras.
-- **Parámetros Ajustables:** Tamaño (2–200 px), suavizado (0–100%), opacidad (1–100%) y dureza (0–100%).
+- **Lotes Asíncronos con Reporte Detallado**: `BatchWorkerThread` procesa múltiples archivos en cola con barra de progreso global, acumula los fallos por archivo y emite un resumen detallado de archivos no procesados al finalizar.
+- **Cancelación Cooperativa**: El botón Cancelar en la barra de estado propaga `requestInterruption()` a los hilos activos y `cancel_check` a descargas de modelos en curso para detener operaciones de forma segura sin bloquear la interfaz.
+- **Portapapeles Completo**: `Ctrl+C` copia el lienzo conservando el canal alfa en formatos compatibles; `Ctrl+V` admite datos de imagen del sistema (`QImage`), flujos PNG binarios con transparencia y URLs de archivos locales.
 
-### 6. Lienzo Interactivo y Comparación
+### 7. Interfaz Modular, Temas e Internacionalización
 
-- **Deslizador Antes/Después:** Comparación interactiva en tiempo real entre la imagen original y el resultado procesado.
-- **Ajuste Automático (Auto-Crop):** Recorte de bordes transparentes con un margen configurable de 10 px.
-- **Visualización de Fondo:** Alternancia entre fondo transparente, colores sólidos (blanco, negro, gris) o valores personalizados RGB/HEX.
-- **Control de Navegación:** Zoom fluido, ajuste a pantalla y desplazamiento libre (*pan*) mediante arrastre.
-
-### 7. Procesamiento por Lotes
-
-- Procesamiento automático de carpetas completas de imágenes estáticas (`.png`, `.jpg`, `.webp`, `.bmp`), animaciones (`.gif`, `.webp`, `.apng`) y videos (`.mp4`, `.mov`, `.webm`, `.mkv`, `.avi`, `.m4v`, `.wmv`, `.flv`, `.mpeg`, `.ogv`, `.3gp`, `.ts`) sin intervención manual.
-- Aplicación uniforme del modelo de IA seleccionado y la protección de prendas con estabilización temporal anti-flicker.
-- Exportación secuencial preservando transparencia o contenedor libre con barra de progreso en tiempo real.
-
-### 8. Diseño e Internacionalización
-
-- **Iconografía Vectorial SVG (Lucide Icons):** Interfaz adaptativa e independiente de la resolución o escala DPI de pantalla.
-- **Temas Visuales:** Modos oscuro y claro implementados mediante Qt Style Sheets (QSS).
-- **Soporte Multilingüe (i18n):** Español (`es`), Inglés (`en`), Ruso (`ru`) y Chino Simplificado (`zh`).
-
-### 9. Paginación y Edición Frame-by-Frame en Animaciones y Videos
-
-- **Soporte Amplio de Formatos de Video y Animación:** Apertura directa y por arrastrar/soltar de videos **MP4, MOV, WebM, MKV, AVI, M4V, WMV, FLV, MPEG, MPG, OGV, 3GP, TS** y animaciones **GIF, WebP, APNG**.
-- **Navegación Cuadro a Cuadro:** Inspección y control de secuencias mediante la barra HUD inferior flotante (`SequenceSession`) con preservación del FPS original.
-- **Edición Individual Aislada e Historial por Fotograma:** Modificación directa de cualquier fotograma con pincel, borrador, varita MobileSAM o YOLO11, manteniendo deshacer/rehacer (`Ctrl+Z`/`Ctrl+Y`) y comparación *Antes/Después* en cada cuadro.
-- **Estabilización Temporal Anti-Flicker:** Suavizado dinámico de bordes en inferencia secuencial para eliminar la vibración (*jitter*) entre fotogramas consecutivos.
-- **Exportación a Formatos 100% Libres / Sin Licencias de Pago:**
-  - **WebM Libre (`.webm`):** Códec abierto y libre de regalías VP8/VP9 (soporta alfa nativo `yuva420p` si `ffmpeg` está en el PATH, o fondo sólido / Chroma Key).
-  - **Matroska Libre (`.mkv`):** Códec abierto sin pérdida `FFV1` o `VP8`.
-  - **QuickTime MOV / MP4 / AVI (`.mov`, `.mp4`, `.avi`):** Codificación integrada libre (`mp4v` y Motion JPEG `MJPG`) sin depender de codificadores propietarios ni DLLs de pago.
-  - **WebP Animado HD (`.webp`) y APNG (`.apng`):** Transparencia alfa continua de 8 bits (0–255) sin bordes dentados.
-  - **GIF Animado (`.gif`):** Paleta adaptativa de 255 colores + canal alfa limpio de 1-bit.
-  - **Secuencia PNG Transparente en ZIP (`.zip`):** Fotogramas numerados (`frame_00001.png`...) con alfa RGBA de 8 bits listos para importar en DaVinci Resolve, Premiere, After Effects o Blender.
+- **Componentes Independientes**: Ventana principal sin marco (`Frameless`) con `TopBar`, barra de reproducción `SequenceBar`, barra de estado `StatusBar` (con indicador interactivo GPU/CPU, porcentaje determinista `0–100 %` y control de cancelación), ayuda de atajos en `shortcuts_setup.py` y panel lateral `ToolSidebar` compuesto por cuatro subpaneles dedicados (`BackgroundPanel`, `RestorePanel`, `BrushPanel`, `BatchPanel`).
+- **Temas e Iconografía Vectorial**: Hojas de estilos QSS (`style.qss` oscuro y `style_light.qss` claro) sincronizadas mediante `apply_theme(is_dark)` en todos los paneles y barras, con iconos vectoriales SVG (Lucide) cacheados en `icons.py`.
+- **Multi-idioma en Vivo y Persistencia Nativa**: Diccionarios JSON externalizados en `app/locales/` (`es`, `en`, `ru`, `zh`) con contrato uniforme `retranslate_ui()` en los componentes visuales y preferencia de idioma persistida en `QSettings` a través de `app/i18n.py`.
 
 ---
 
-## Arquitectura y Concurrencia Defensiva
+## Compatibilidad de Hardware y Aceleradores
 
-TimoitaseBG implementa una arquitectura defensiva dividida en subprocesos para garantizar la estabilidad continua del entorno en todas las plataformas:
+TimoitaseBG evalúa las capacidades del equipo al iniciar y configura la cadena de proveedores de ejecución de ONNX Runtime en orden de prioridad desde `app/core/hardware.py`:
+
+| Plataforma / Fabricante | Proveedor ONNX (`Provider`) | Notas de Ejecución |
+| :--- | :--- | :--- |
+| NVIDIA (Windows / Linux) | `CUDAExecutionProvider` | Aceleración CUDA directa con respaldo en CPU. |
+| AMD Radeon (Linux) | `ROCMExecutionProvider` | Aceleración ROCm en sistemas Linux compatibles. |
+| Qualcomm Snapdragon (Windows ARM64) | `QNNExecutionProvider` | Aceleración por NPU/HTP con optimización ARM de hilos y spinning. |
+| Apple Silicon / Intel Mac (macOS) | `CoreMLExecutionProvider` | Aceleración nativa mediante CoreML y Metal/ANE. |
+| AMD / Intel / NVIDIA (Windows DX12) | `DmlExecutionProvider` | DirectML con detección rápida de GPU discreta vs. integrada vía Registro de Windows. |
+| Cualquier x86_64 / ARM64 | `CPUExecutionProvider` | Ejecución universal en CPU con límite óptimo de hilos intra-op (`<= 4`). |
+
+Los usuarios pueden conmutar entre GPU/NPU y CPU desde la interfaz; al desactivar la aceleración GPU, `AICoordinator` descarga las sesiones activas de MobileSAM y YOLO11 y cierra de forma no bloqueante el subproceso GPU para liberar VRAM inmediatamente.
+
+---
+
+## Arquitectura y Funcionamiento Interno
+
+### Estructura del Proyecto
 
 ```text
-┌─────────────────────────────────────────────────────────────────────────┐
-│                           Proceso Principal                             │
-│               (Interfaz Gráfica PySide6 / Event Loop Qt)                │
-│  - Renderizado nativo a 60 FPS (Hardware acelerado)                     │
-│  - CanvasWidget (Hormigas marchantes, zoom, pincel, selección)          │
-│  - MainWindow, SequenceSession (GIFs y Videos) & ToolSidebar            │
-└────────────────────┬────────────────────────────────┬───────────────────┘
-                     │                                │
-              (IPC Queue / Mutex)             (QThreads Controlados)
-                     ▼                                ▼
-┌───────────────────────────────────────┐  ┌──────────────────────────────┐
-│       GPU Worker Aislado (IPC)        │  │     Workers de Fondo UI      │
-│         (Subproceso dedicado)         │  │ - SamEmbeddingWorker         │
-│  - Backends: CUDA | ROCm | CoreML |   │  │ - YoloDetectionWorker        │
-│    DirectML (x64/ARM64) | QNN (NPU)   │  │ - BatchWorkerThread          │
-│  - BiRefNet General 1024×1024 (MIT)   │  │ Prioridad: LowPriority       │
-│  - InSPyReNet Swin-B                  │  │ CPU Thread Cap: <= 4         │
-│  - Real-ESRGAN x4plus (Tiling 512)    │  │ Afinidad ARM: allow_spin=0   │
-│  - Watchdog Supervisor & Auto-Kill    │  │ Re-entrancia bloqueada       │
-│  - Fallback Dinámico a CPU            │  │                              │
-└───────────────────────────────────────┘  └──────────────────────────────┘
+TimoitaseBG/
+├── app/
+│   ├── main.py                      # Arranque QApplication, spawn POSIX y carga de style*.qss
+│   ├── config.py                    # Rutas (portable/OS), SSL CA, APP_VERSION y constantes globales
+│   ├── i18n.py                      # Cargador ligero JSON con persistencia en QSettings
+│   ├── locales/
+│   │   ├── es.json                  # Traducciones en español
+│   │   ├── en.json                  # Traducciones en inglés
+│   │   ├── ru.json                  # Traducciones en ruso
+│   │   └── zh.json                  # Traducciones en chino
+│   ├── controllers/
+│   │   ├── document_controller.py   # Estado de documento/secuencia, undo/redo, autocrop e I/O
+│   │   └── ai_coordinator.py        # Orquestación de workers IA, cancelación y ciclo GPU/VRAM
+│   ├── core/
+│   │   ├── hardware.py              # Enumeración de GPU (Registro/sysfs/sysctl) y providers ONNX
+│   │   ├── postprocess.py           # Pre/postproceso puro: letterbox, guided filter y protección ropa
+│   │   ├── bg_remover.py            # Sesiones ONNX y despacho BiRefNet, InSPyReNet, IS-Net, U2-Net
+│   │   ├── restorer.py              # Superresolución Real-ESRGAN con tiling adaptativo y alpha
+│   │   ├── sam_manager.py           # Codificador y decodificador MobileSAM (soporta *_int8.onnx)
+│   │   ├── yolo_detector.py         # Detección multiobjeto YOLO11-seg y refine_yolo_subject_mask
+│   │   ├── selection.py             # Varita mágica RGBA, floodFill y operaciones booleanas
+│   │   ├── image_state.py           # ImageState (historial acotado) y SequenceSession
+│   │   ├── image_utils.py           # Puente stride-safe Qt/NumPy, autocrop, checkerboard y alfa
+│   │   ├── gif_processor.py         # Extracción de fotogramas y codificación GIF/WebP/APNG
+│   │   ├── video_processor.py       # Submuestreo OpenCV, suavizado temporal y export FFmpeg/OpenCV
+│   │   ├── gpu_manager.py           # Orquestador singleton GPUWorkerManager, watchdog y kill tree
+│   │   ├── gpu_worker.py            # Subproceso PersistentGPUWorker aislado por IPC
+│   │   ├── model_fetcher.py         # Descarga HTTP Range 206, SHA256, SSL y load_rembg_session
+│   │   └── workers.py               # QThread de baja prioridad, cancelación cooperativa y secuencias
+│   └── ui/
+│       ├── main_window.py           # Shell de ventana principal y coordinación de vistas
+│       ├── canvas_widget.py         # Cámara, zoom/pan, cortina Antes/Después y composición
+│       ├── canvas/
+│       │   ├── brush_engine.py      # Motor de pincel restaurador/borrador con _scratch_buf
+│       │   └── selection_tool.py    # Superposición de selección, marching ants y varita mágica
+│       ├── toolbar.py               # Contenedor ToolSidebar con señales unificadas de los paneles
+│       ├── panels/
+│       │   ├── bg_panel.py          # Controles de eliminación de fondo, YOLO y MobileSAM
+│       │   ├── restore_panel.py     # Controles de superresolución y tiling
+│       │   ├── brush_panel.py       # Controles de pinceles, borrador, varita y recortes
+│       │   └── batch_panel.py       # Cola de procesamiento por lotes
+│       ├── components/
+│       │   ├── top_bar.py           # Barra de título frameless, tema, idioma y diálogos pop-up
+│       │   ├── sequence_bar.py      # Controles de reproducción y navegación de fotogramas
+│       │   ├── status_bar.py        # Estado, progreso, botón Cancelar y badge GPU/CPU
+│       │   └── shortcuts_setup.py   # Registro centralizado de QShortcut
+│       ├── widgets/
+│       │   └── toggles.py           # ToggleSwitch, GpuToggle y AutoResizingStackedWidget
+│       ├── drop_zone.py             # Zona inicial con soporte de rutas y mime.hasImage()
+│       ├── shortcuts_dialog.py      # Modal de ayuda con tabla de atajos
+│       ├── icons.py                 # Carga y caché en memoria de iconos SVG Lucide
+│       ├── style.qss                # Hoja de estilos oscura
+│       ├── style_light.qss          # Hoja de estilos clara
+│       └── assets/                  # Recursos gráficos vectoriales
+├── scripts/
+│   ├── quantize_models.py           # Cuantización dinámica a *_int8.onnx con validación ONNX
+│   ├── package_release.py           # Empaquetado nativo (.msix multi-idioma, .AppImage e iconos)
+│   └── download_releases.py         # Descargador de releases desde GitHub con validación SHA256
+├── tests/                           # Suite pytest (pipelines, IPC, watchdog, modularidad y UI)
+├── .github/workflows/
+│   └── release_build.yml            # CI/CD: compuerta test (compileall + pytest) y build matriz
+├── build.spec                       # Receta PyInstaller con APP_VERSION dinámica e iconos
+├── iniciar.bat                      # Lanzador de entorno virtual en Windows
+└── requirements.txt                 # Dependencias Python del proyecto
 ```
 
-1. **Aislamiento del Subproceso GPU (`PersistentGPUWorker`):** La inferencia en GPU/NPU se ejecuta en un proceso de sistema operativo independiente (`multiprocessing.Process`). Ante un fallo del controlador gráfico (TDR en Windows DirectX/DirectML, kernel panics en Linux CUDA/ROCm, o excepciones de operadores no soportados en drivers ARM), el watchdog termina el subproceso colgado y conmuta de forma transparente a CPU sin congelar la interfaz ni perder el trabajo en curso.
-2. **Priorización y Conmutación en Cascada:**
-   `CUDA` ➔ `ROCm` ➔ `QNN` ➔ `CoreML` ➔ `DirectML` ➔ `CPU (NEON/AVX2)`.
-   Si un modelo falla al compilar operadores en NPU o GPU Adreno, conmuta automáticamente a DirectML o CPU en el mismo worker sin colapsar el sistema.
-3. **Control Térmico y Energético en CPUs Heterogéneas (big.LITTLE):** En procesadores ARM (Snapdragon, Apple Silicon, Raspberry Pi), ONNX Runtime restringe los hilos (`intra_op_num_threads <= 4`) y desactiva el giro activo (`session.intra_op.allow_spinning = 0`) para evitar que hilos intensivos caigan en núcleos lentos de eficiencia, previniendo drenaje de batería y estrangulamiento térmico (*thermal throttling*).
-4. **Sincronización:** Uso de cerrojos reentrantes (`RLock`) para gestionar las peticiones a la GPU de manera estrictamente secuencial y segura.
-5. **Finalización Controlada:** Manejo de eventos de cierre (`closeEvent`) para asegurar la detención limpia y liberación de VRAM antes de salir.
+### Arquitectura Modular por Capas
+
+El sistema separa de forma estricta la presentación gráfica, el control de flujo de documento/IA, los algoritmos puros de visión por computadora y la ejecución aislada de modelos en GPU:
+
+```text
++---------------------------------------------------------------------------------+
+| Capa de Presentación (app/ui/)                                                  |
+|   MainWindow (shell)                                                            |
+|     +-- TopBar / SequenceBar / StatusBar (con Cancelar y badge GPU/CPU)         |
+|     +-- ToolSidebar -> BackgroundPanel | RestorePanel | BrushPanel | BatchPanel |
+|     +-- CanvasWidget -> BrushEngine + SelectionTool + DropZoneWidget            |
++---------------------------------------+-----------------------------------------+
+                                        | Comandos de UI y señales tipadas
+                                        v
++---------------------------------------------------------------------------------+
+| Capa de Controladores / Coordinadores (app/controllers/)                        |
+|   - DocumentController: ImageState, SequenceSession, Undo/Redo, I/O y autocrop  |
+|   - AICoordinator: QThread workers, cancelación cooperativa, descarga/VRAM      |
++-------------------+-----------------------------------------+-------------------+
+                    | Operación síncrona / pura               | QThread (LowPriority)
+                    v                                         v
++---------------------------------------+   +-------------------------------------+
+| Capa Core Pura (app/core/)            |   | Workers y Subproceso GPU            |
+|   - postprocess.py / image_utils.py   |   |   - workers.py -> GPUWorkerManager  |
+|   - selection.py / gif & video proc.  |   |   - gpu_worker.py (IPC spawn)       |
+|   - hardware.py / model_fetcher.py    |   |   - bg_remover / restorer / sam /   |
++---------------------------------------+   |     yolo_detector                   |
+                                            +-------------------------------------+
+```
+
+### Ciclo de Ejecución y Aislamiento de GPU
+
+Para impedir que un error del controlador gráfico (TDR en Windows) o una fuga de VRAM en proveedores nativos cierre o bloquee la interfaz de usuario, las operaciones pesadas de GPU se ejecutan fuera del proceso principal:
+
+```text
++-------------------------------------------------------------------------+
+| Proceso Principal (Qt GUI - app/main.py & MainWindow)                   |
+|   - CanvasWidget / BrushEngine (recorte activo y repintados QRect)      |
+|   - AICoordinator & DocumentController                                  |
++------------------------------------+------------------------------------+
+                                     | Señales Qt (progressPercent, result, cancelled, error)
+                                     v
++-------------------------------------------------------------------------+
+| Hilos QThread de Baja Prioridad (app/core/workers.py)                   |
+|   - WorkerThread, SequenceRestoreWorker, SaveSequenceWorker             |
+|   - BatchWorkerThread (finishedWithErrors), GifWorkerThread             |
+|   - SamEmbeddingWorker, YoloDetectionWorker                             |
++------------------------------------+------------------------------------+
+                                     | Llama con RLock y timeouts dinámicos
+                                     v
++-------------------------------------------------------------------------+
+| GPUWorkerManager (app/core/gpu_manager.py - Singleton + atexit)         |
+|   - Supervisa latidos {"status": "progress"} reiniciando el watchdog    |
+|   - Termina árbol completo en timeout (taskkill /F /T / os.killpg)      |
+|   - Conmuta automáticamente a cpu_fallback_fn si hay proceso huérfano   |
++------------------------------------+------------------------------------+
+                                     | Colas multiprocessing (spawn)
+                                     v
++-------------------------------------------------------------------------+
+| PersistentGPUWorker (app/core/gpu_worker.py - Subproceso Aislado)       |
+|   - Sincroniza MODELS_DIR y certificados SSL al arrancar                |
+|   - Carga sesiones vía load_rembg_session (incluyendo *_int8.onnx)      |
+|   - Cachea sesiones ONNX y libera modelos pesados al cambiar de tarea   |
+|   - Cascada interna de respaldo (QNN -> DirectML -> CPU)                |
++-------------------------------------------------------------------------+
+```
+
+1. **Prioridad de Interfaz**: Los `QThread` arrancan con `QThread.Priority.LowPriority` para ceder ciclos de CPU al bucle de eventos de Qt, manteniendo fluido el zoom, el paneo y la cancelación.
+2. **Watchdog con Latidos de Progreso**: `GPUWorkerManager` calcula un timeout dinámico por tarea (`50 s` base, `+15 s` con protección de ropa, `+40 s` para InSPyReNet o BiRefNet, `60 s` para Real-ESRGAN y `+20 s` adicionales cuando el lado mayor supera `2000 px`). Cada actualización de progreso enviada desde el subproceso reinicia el temporizador del watchdog (`t0`).
+3. **Recuperación ante Fallos y Cierre No Bloqueante**: Si el subproceso no responde o muere de forma inesperada, `kill_worker()` destruye todo el árbol de procesos (`taskkill /F /T /PID` en Windows u `os.killpg`/`SIGKILL` en POSIX) y delega transparentemente en la CPU del proceso principal (`cpu_fallback_fn`). Al conmutar a CPU o cerrar la ventana, `shutdown(blocking=False)` libera el subproceso y la VRAM sin congelar la UI.
+
+### Detección de Hardware y Gestión de Memoria
+
+- **Enumeración Rápida en Windows** (`app/core/hardware.py`): `_query_windows_gpus_fast()` consulta directamente la rama Display del Registro de Windows (filtrando adaptadores virtuales) con respaldo WMI, permitiendo identificar si el equipo cuenta con GPU dedicada o integrada (`is_integrated_gpu()`) y seleccionar el `device_id` óptimo para DirectML (`get_best_dml_device_id()`). En macOS consulta `sysctl` y en Linux inspecciona `sysfs`/árbol de dispositivos ARM.
+- **Gestión Diferenciada de Caché (Discreta vs. UMA)**: En GPUs integradas con arquitectura de memoria unificada (UMA), `PersistentGPUWorker` libera las sesiones anteriores al alternar entre modelos y fuerza el procesamiento por mosaicos en Real-ESRGAN.
+- **Optimización de Sesiones ONNX**: `get_optimized_session_options()` activa `ORT_ENABLE_ALL`, limita `intra_op_num_threads` a un máximo de `4` hilos, fija `inter_op_num_threads = 1` y desactiva `session.intra_op.allow_spinning` en arquitecturas ARM para reducir el consumo energético.
+
+### Pipelines de Visión y Edición de Imagen
+
+#### Eliminación de Fondo (`app/core/bg_remover.py` y `app/core/postprocess.py`)
+- **InSPyReNet Swin-B**: Preprocesa sobre tensores de `1024x1024` (normalización ImageNet), escala la salida por interpolación bicúbica y ejecuta `postprocess_inspyrenet()` con eliminación vectorizada de ruido por componentes conectados, recuperación topológica de orificios internos mediante `cv2.floodFill` y anti-aliasing con filtro bilateral.
+- **BiRefNet e IS-Net**: Ejecutan pre/postprocesamiento con refinamiento por banda perimetral usando `apply_guided_filter()` (`cv2.ximgproc.guidedFilter`, con respaldo `boxFilter`), cierre morfológico guiado por histéresis Canny y relleno acotado de agujeros.
+- **Protección Semántica de Ropa**: Reutiliza `u2net_human_seg` (escalando internamente imágenes mayores a `640 px`) e inyecta la máscara de vestimenta únicamente dentro de su núcleo erosionado (`fuse_clothing_protection_core_only()`), protegiendo prendas claras sin introducir halos externos.
+
+#### Aislamiento por Objeto en Tres Etapas (`app/core/yolo_detector.py` + `app/core/sam_manager.py`)
+1. **Detección Global**: `YOLODetector` normaliza la imagen en letterbox de `640x640`, aplica supresión de no máximos (`cv2.dnn.NMSBoxes`) y proyecta los coeficientes de máscara contra los prototipos (`(N, 32) @ (32, 25600)`) recortados al cuadro delimitador de cada objeto.
+2. **Codificación y Decodificación MobileSAM**: `SAMManager` calcula una sola vez el embedding (`1024x1024` preservando relación de aspecto) mediante `mobile_sam_image_encoder.onnx` y decodifica el punto interior (`cv2.distanceTransform`) + bounding box en `sam_mask_decoder_single.onnx`.
+3. **Refinamiento Puro de Bordes**: `refine_yolo_subject_mask()` (alojada fuera de la UI, en `app/core/yolo_detector.py`) fusiona MobileSAM cuando el IoU supera `0.40` y aplica `apply_guided_filter()` sobre la ROI expandida alrededor del sujeto.
+
+#### Superresolución Real-ESRGAN (`app/core/restorer.py`)
+- Separa RGB y alpha (`separate_alpha()`), procesa las teselas escribiendo en un único búfer HWC `uint8` preasignado para evitar picos de memoria en fusiones, y reescala el canal alfa de forma independiente una sola vez con Lanczos. Con `use_tiling=True` ejecuta incluso imágenes mayores a `1920x1080` en GPU de forma segura; únicamente desactiva GPU hacia CPU cuando la resolución excede `MAX_GPU_PIXELS` sin tiling habilitado.
+
+#### Motor de Estado, Historial y Lienzo (`image_state.py`, `document_controller.py`, `canvas/`)
+- **Historial Acotado**: `ImageState` mantiene una referencia base (`_original_image`) y una pila undo/redo de hasta `MAX_HISTORY_STATES = 25` tuplas `(current_image, brush_reference_image)`, restaurando la imagen de referencia exacta para que el pincel `Pintar` sea coherente tras aplicar escalados o cambios globales.
+- **Comprobación Rápida de Transparencia**: `has_transparency()` inspecciona `img.getextrema()[3][0] < 255` en `O(1)` sin recorrer matrices NumPy completas.
+- **Secuencias**: `SequenceSession` encapsula un `ImageState` independiente por fotograma; `DocumentController` propaga sobre todos los fotogramas operaciones de autocrop (`apply_autocrop()` con bounding box unión), aislamiento por sujeto (`apply_isolate_subject_sequence()`) y restauración.
+- **Puente Seguro Qt / NumPy y Dibujo Parcial**: `qimage_to_numpy()` y `numpy_to_qimage()` manejan explícitamente `bytesPerLine`. `BrushEngine` reutiliza un búfer temporal (`_scratch_buf`) con composición restringida al rectángulo sucio del trazo y recorte opcional por selección, mientras `SelectionTool` mantiene la superposición y el contorno animado a `25 FPS`.
+
+### Modelos ONNX, Cuantización INT8, Reanudación HTTP e Integridad
+
+- **Resolución de Directorio de Modelos (`resolve_models_dir()`)**:
+  - En binarios empaquetados (`sys.frozen`), detecta automáticamente una carpeta `./models` junto al ejecutable si ya contiene archivos `.onnx` o tiene permisos de escritura (modo portable).
+  - En instalaciones estándar o de solo lectura junto al binario, utiliza la ruta nativa de datos de usuario: `%LOCALAPPDATA%\TimoitaseBG\models` (Windows), `~/Library/Application Support/TimoitaseBG/models` (macOS) o `$XDG_DATA_HOME/TimoitaseBG/models` (Linux).
+  - En ejecución desde código fuente, emplea `app/models`.
+- **Resolución Unificada y Cuantización `INT8`**: `resolve_local_model()` en `app/core/model_fetcher.py` prioriza automáticamente variantes locales `<nombre>_int8.onnx` válidas (`> 1 MB`) para todos los motores (`bg_remover.py`, `gpu_worker.py`, `restorer.py`, `yolo_detector.py` y `sam_manager.py`). `load_rembg_session()` carga pesos locales (incluyendo `_int8.onnx`) sin disparar descargas redundantes en `pooch`. `scripts/quantize_models.py` convierte modelos a `*_int8.onnx` y valida la sesión resultante en `onnxruntime.InferenceSession`.
+- **Reanudación HTTP `Range`, `SHA256` y Cancelación**: `ensure_model_file()` escribe sobre archivos `.tmp` parciales reutilizando descargas interrumpidas mediante cabeceras HTTP `Range` (`206 Partial Content`), soporta interrupción cooperativa vía `cancel_check` y valida el digest cuando está configurado en `MODEL_SHA256` (`verify_sha256()`).
+- **Resolución SSL Multiplataforma**: `configure_ssl_certificates()` localiza automáticamente el almacén CA entre `certifi.where()` y rutas estándar del sistema en Linux y macOS. Ante un fallo de verificación SSL del entorno, `ensure_model_file()` registra una advertencia explícita y expone el parámetro `allow_insecure_fallback`.
+
+---
+
+## Atajos de Teclado y Ratón
+
+El registro centralizado (`app/ui/components/shortcuts_setup.py`), el modal integrado (`F1` o `Ctrl+/`) y el lienzo soportan los siguientes controles:
+
+| Atajo / Acción | Función |
+| :--- | :--- |
+| `F1` / `Ctrl + /` | Mostrar ventana de ayuda y atajos de teclado |
+| `Ctrl + O` | Abrir imagen, GIF, WebP/APNG animado o video |
+| `Ctrl + S` | Guardar resultado actual |
+| `Ctrl + C` | Copiar imagen al portapapeles conservando canal alfa RGBA |
+| `Ctrl + V` | Pegar imagen, flujo PNG o ruta local desde el portapapeles |
+| `Ctrl + Z` | Deshacer último cambio (hasta 25 estados) |
+| `Ctrl + Y` / `Ctrl + Shift + Z` | Rehacer cambio |
+| `Ctrl + 0` | Ajustar la imagen al tamaño de la ventana |
+| `Ctrl + 1` | Restablecer zoom real al 100 % (1:1) |
+| `Supr` / `Backspace` | Borrar píxeles dentro de la selección activa |
+| `Ctrl + D` / `Esc` | Deseleccionar o cancelar selección actual |
+| `Ctrl + A` | Seleccionar todo el lienzo |
+| `Ctrl + Shift + I` | Invertir la selección activa |
+| `Rueda del ratón` | Zoom progresivo centrado en el cursor (hasta 30x) |
+| `Clic central` o `Espacio + Arrastrar` | Desplazar (paneo) el lienzo ampliado |
+| `Espacio` (en animaciones/video) | Reproducir o pausar secuencia de fotogramas |
+| `Flecha Izquierda` / `Flecha Derecha` | Retroceder o avanzar un fotograma |
+| `Inicio` / `Fin` | Ir al primer o último fotograma de la secuencia |
 
 ---
 
 ## Requisitos del Sistema
 
-- **Sistemas Operativos Soportados:**
-  - **Windows:** Windows 10 y Windows 11 (arquitecturas `x86_64` y `ARM64`).
-  - **macOS:** macOS 12 Monterey, macOS 13 Ventura, macOS 14 Sonoma y macOS 15 Sequoia (Nativo en `Apple Silicon` M1–M5 e Intel Mac `x86_64`).
-  - **Linux:** Distribuciones modernas (Ubuntu 22.04+, Debian 12+, Arch Linux, Fedora) en `x86_64` y `aarch64` / `armv8` (NVIDIA Jetson, Raspberry Pi 5).
-- **Procesador (CPU):** Intel Core i3 / AMD Ryzen 3 / Apple Silicon / Snapdragon X / ARMv8 o superior (4 núcleos recomendados).
-- **Memoria RAM:** 8 GB mínimo (16 GB recomendados para imágenes 4K).
-- **Aceleradores Soportados (Opcional, con fallback automático a CPU):**
-  - **NVIDIA:** GeForce GTX/RTX, Quadro, Tesla, o NVIDIA Jetson (CUDA 11.8+ / 12+).
-  - **AMD:** Radeon RX 400+, Vega, RDNA/RDNA2/RDNA3 (DirectML en Windows o ROCm en Linux).
-  - **Apple:** GPU de 8 a 40 núcleos y Neural Engine (M1–M5) mediante CoreML nativo.
-  - **Qualcomm:** Snapdragon X Elite / Plus con NPU Hexagon (QNN) y GPU Adreno (DirectML ARM64).
-  - **Intel:** Intel Arc Alchemist / Battlemage o gráficos integrados Iris Xe / UHD.
-  - **APUs y Gráficos Integrados:** Compatibilidad nativa total con auto-tiling para proteger la memoria compartida.
-- **Almacenamiento:** ~1.5 GB de espacio disponible para dependencias y modelos ONNX locales.
+- **Sistema Operativo**: Windows 10/11 (x64 o ARM64), macOS 12+ (Apple Silicon / Intel) o Linux (x86_64 / aarch64).
+- **Python (solo ejecución desde fuente)**: Python 3.11 o superior.
+- **Memoria RAM**: 8 GB mínimo (16 GB recomendados para `birefnet-general`, secuencias de video o `Real-ESRGAN x4`).
+- **Almacenamiento**: ~500 MB para el entorno base más ~1 GB–2.5 GB adicionales según los modelos ONNX descargados.
+- **FFmpeg (opcional)**: Recomendado en `PATH` únicamente si se requiere exportar archivos de video `.webm`, `.mkv` o `.mov` con canal alfa nativo; la importación y exportación estándar de video funciona directamente mediante OpenCV.
 
 ---
 
-## Instalación y Puesta en Marcha
+## Instalación y Ejecución
 
-> [!IMPORTANT]
-> **Evite conflictos entre variantes de ONNX Runtime:**  
-> En Python, los paquetes `onnxruntime`, `onnxruntime-directml`, `onnxruntime-gpu`, `onnxruntime-rocm` y `onnxruntime-qnn` comparten el mismo espacio de nombres (`onnxruntime`). `requirements.txt` instala automáticamente `onnxruntime-directml` en Windows y `onnxruntime` en macOS/Linux. Si desea cambiar a otro proveedor específico (como CUDA, ROCm o QNN), desinstale primero el paquete base antes de instalar el nuevo.
+### Opción 1: Ejecución Directa en Windows (`iniciar.bat`)
 
-### Opción A: Windows (x86_64 y ARM64 Snapdragon)
+Una vez creado el entorno virtual e instaladas las dependencias de `requirements.txt`, puedes iniciar la aplicación con el lanzador `iniciar.bat` (que reutiliza `.venv` e inyecta su `PYTHONPATH` para evitar bloqueos de Device Guard / AppLocker sobre ejecutables en carpetas de usuario):
 
-1. **Clonar el repositorio:**
-   ```bash
-   git clone https://github.com/Eliather/TimoitaseBG.git
-   cd TimoitaseBG
-   ```
+```cmd
+iniciar.bat
+```
 
-2. **Inicio Rápido (con script automático):**
-   ```bat
-   iniciar.bat
-   ```
+### Opción 2: Instalación Manual Multiplataforma (Windows, macOS y Linux)
 
-3. **O Instalación Manual:**
-   ```bash
-   python -m venv .venv
-   .venv\Scripts\activate
-   pip install -r requirements.txt
-   # Opcional para Windows ARM64 (Snapdragon X Elite / Plus con NPU Hexagon):
-   # pip uninstall -y onnxruntime-directml && pip install onnxruntime-qnn
-   # Opcional para GPUs NVIDIA dedicadas usando CUDA nativo en lugar de DirectML:
-   # pip uninstall -y onnxruntime-directml && pip install onnxruntime-gpu
-   python app/main.py
-   ```
+```bash
+git clone https://github.com/Eliather/TimoitaseBG.git
+cd TimoitaseBG
 
-### Opción B: macOS (Apple Silicon e Intel)
+python -m venv .venv
+```
 
-En macOS, `onnxruntime` incluye soporte nativo para **CoreML** (`CoreMLExecutionProvider`) sin necesidad de paquetes externos:
+Activa el entorno virtual según tu sistema:
 
-1. **Clonar e ingresar al repositorio:**
-   ```bash
-   git clone https://github.com/Eliather/TimoitaseBG.git
-   cd TimoitaseBG
-   ```
+- **Windows (PowerShell)**: `.\.venv\Scripts\Activate.ps1`
+- **macOS / Linux**: `source .venv/bin/activate`
 
-2. **Crear y activar el entorno virtual:**
-   ```bash
-   python3 -m venv .venv
-   source .venv/bin/activate
-   ```
+Instala las dependencias base:
 
-3. **Instalar dependencias y ejecutar:**
-   ```bash
-   pip install -r requirements.txt
-   python app/main.py
-   ```
+```bash
+pip install --upgrade pip
+pip install -r requirements.txt
+```
 
-### Opción C: Linux (x86_64, NVIDIA Jetson y Raspberry Pi ARM64)
+Configura el paquete de ONNX Runtime acorde a tu acelerador de hardware antes de iniciar si deseas reemplazar `onnxruntime` genérico:
 
-1. **Instalar dependencias del sistema (librerías multimedia para Qt y OpenCV):**
-   *En Ubuntu / Debian / Raspberry Pi OS:*
-   ```bash
-   sudo apt update
-   sudo apt install -y python3-venv python3-pip libgl1 libglib2.0-0 libegl1
-   ```
+- **Windows (DirectML para AMD / Intel / NVIDIA)**: `pip install onnxruntime-directml`
+- **NVIDIA CUDA (Windows / Linux)**: `pip install onnxruntime-gpu`
+- **Windows ARM64 (Qualcomm QNN)**: `pip install onnxruntime-qnn`
+- **macOS (CoreML) / Linux CPU**: incluido en `onnxruntime` estándar (`requirements.txt`).
 
-2. **Clonar y preparar entorno virtual:**
-   ```bash
-   git clone https://github.com/Eliather/TimoitaseBG.git
-   cd TimoitaseBG
-   python3 -m venv .venv
-   source .venv/bin/activate
-   pip install -r requirements.txt
-   ```
+Inicia la aplicación:
 
-3. **Aceleración Específica por Hardware (Opcional):**
-   - **Para GPU NVIDIA en Linux (x86_64 o NVIDIA Jetson Orin/Nano aarch64):**
-     ```bash
-     pip uninstall -y onnxruntime && pip install onnxruntime-gpu
-     ```
-   - **Para GPU AMD ROCm en Linux:**
-     ```bash
-     pip uninstall -y onnxruntime && pip install onnxruntime-rocm --extra-index-url https://aiinfra.pkgs.visualstudio.com/PublicPackages/_packaging/onnxruntime-rocm-release/pypi/simple/
-     ```
-   - **Para Raspberry Pi 5 y SBCs ARM64:** El paquete oficial `onnxruntime` instala wheels compiladas para `manylinux_2_27_aarch64` con aceleración vectorial NEON integrada de fábrica.
+```bash
+python -m app.main
+```
 
-4. **Ejecutar:**
-   ```bash
-   python app/main.py
-   ```
+### Cuantización Opcional de Modelos a INT8
+
+Si ya has descargado modelos en `MODELS_DIR` y deseas generar variantes `INT8` (`*_int8.onnx`) validadas en ONNX Runtime para reducir uso de disco o mejorar velocidad en CPU:
+
+```bash
+python -m scripts.quantize_models
+```
 
 ---
 
 ## Pruebas Automatizadas
 
-El proyecto cuenta con una suite integral de pruebas unitarias y de integración, incluyendo validaciones simuladas multiplataforma (Windows ARM64, macOS Apple Silicon, Linux ROCm/ARM SoCs y APUs integradas):
+La configuración en `pytest.ini` ejecuta la suite sobre `tests/` cubriendo pre/postprocesamiento de BiRefNet e InSPyReNet, procesador de video, rutas de distribución portable/OS, watchdog del subproceso GPU, selección MobileSAM, detección YOLO11-seg, seguridad de hilos, regresión modular y portapapeles:
 
 ```bash
-# Ejecutar la suite completa de pruebas:
-pytest -v
+pytest tests/ -v
+```
 
-# Ejecutar la suite de pruebas del Watchdog Aislado y Detección Multiplataforma:
-pytest tests/test_gpu_worker_watchdog.py -v
+En entornos headless o sin acceso al portapapeles de escritorio del sistema operativo (como CI Linux sin servidor X):
 
-# Ejecutar pruebas de Estabilidad de Hilos, Concurrencia y Modelos de Segmentación:
-pytest tests/test_thread_and_resource_safety.py tests/test_sam_selection.py tests/test_yolo_detection.py tests/test_birefnet.py -v
+```bash
+pytest tests/ -k "not copy_to_clipboard" -v
 ```
 
 ---
 
-## Compilación a Ejecutable (.exe)
+## Compilación y Empaquetado Multiplataforma
 
-Para generar la distribución binaria independiente para Windows mediante **PyInstaller**:
+El repositorio incluye receta de PyInstaller (`build.spec`), empaquetador nativo (`scripts/package_release.py`), descargador de lanzamientos (`scripts/download_releases.py`) y flujo automatizado en GitHub Actions (`.github/workflows/release_build.yml`).
+
+- **Compuerta de CI**: El job `test` ejecuta verificación de sintaxis (`python -m compileall -q app scripts tests`) y pruebas automatizadas headless (`pytest tests/ -k "not copy_to_clipboard" -v`) antes de compilar los binarios de distribución en la matriz multiplataforma y generar `SHA256SUMS.txt`.
+- **Modo Estándar vs. Modelos Embebidos**: Definir la variable de entorno `TIMOITASE_BUNDLE_MODELS=1` al compilar incluye dentro del artefacto los pesos `.onnx` presentes en `app/models` para crear distribuciones completamente offline. Por defecto empaqueta `app/ui`, `app/locales` y lee `APP_VERSION` e iconos de plataforma de forma automática.
+- **Generación de Iconos y Compilación con PyInstaller**:
 
 ```bash
-uv pip install pyinstaller
-pyinstaller build.spec
+python -m scripts.package_release icons
+pyinstaller build.spec --clean -y
 ```
 
-El binario resultante se ubicará en: `dist/TimoitaseBG/TimoitaseBG.exe`.
+- **Generación de Instaladores Nativos (`scripts/package_release.py`)**:
+
+| Plataforma | Arquitecturas | Formato Generado | Notas |
+| :--- | :--- | :--- | :--- |
+| Windows | `x64`, `arm64` | Paquete `.msix` / ejecutable PyInstaller | `AppxManifest.xml` con recursos declarados para `es-ES`, `en-US`, `ru-RU` y `zh-CN`. |
+| macOS | `arm64` (Apple Silicon), `x64` (Intel) | Imagen de disco `.dmg` | Paquete `.app` con icono nativo `.icns` e infolists. |
+| Linux | `x64`, `aarch64` | Ejecutable portable `.AppImage` | Estructura `AppDir` con `.desktop`, `AppRun` y certificado CA resuelto en runtime. |
+
+- **Descarga Verificada de Releases (`scripts/download_releases.py`)**:
+
+```bash
+python -m scripts.download_releases
+```
+
+Descarga los artefactos publicados en GitHub Releases para la versión definida en `APP_VERSION` (o una etiqueta específica pasada como argumento) en `releases/` y verifica su integridad contra `SHA256SUMS.txt`.
 
 ---
 
-## Atribución, Licencias de Modelos y Citas Académicas
+## Atribución y Licencias de Terceros
 
-TimoitaseBG hace uso de modelos y librerías de código abierto de la comunidad científica e industrial. Ningún modelo incluido impone restricciones no comerciales (`CC BY-NC`):
+TimoitaseBG integra exclusivamente modelos de pesos abiertos e inferencia local con licencias compatibles con distribución libre:
 
-### Tabla de Atribución de Componentes
-
-| Componente / Modelo | Autores / Organización | Licencia Original | Función en TimoitaseBG | Referencia |
-| :--- | :--- | :--- | :--- | :--- |
-| **BiRefNet** | Zheng et al. | **MIT License** | Eliminación dicotómica de fondos en alta resolución (1024×1024) | [GitHub](https://github.com/ZhengPeng7/BiRefNet) |
-| **InSPyReNet** | Kim et al. (POSTECH) | **MIT License** | Eliminación de fondo con pirámide inversa y anti-aliasing | [GitHub](https://github.com/plemeri/InSPyReNet) |
-| **IS-Net Anime** | SkyTNT / Qin et al. | **Apache 2.0** | Segmentación especializada en ilustración 2D, manga y cel-shading | [Hugging Face](https://huggingface.co/skytnt/anime-seg) |
-| **MobileSAM** | Zhang et al. (Kyung Hee Univ.) | **Apache 2.0** | Varita mágica por IA interactiva (<15 ms) | [GitHub](https://github.com/ChaoningZhang/MobileSAM) |
-| **Segment Anything (SAM)** | Meta AI Research | **Apache 2.0** | Modelo base y decodificador de máscaras | [GitHub](https://github.com/facebookresearch/segment-anything) |
-| **YOLO11-seg** | Ultralytics Inc. | **GNU AGPLv3** | Detección y segmentación multiobjeto (hasta 80 clases) | [GitHub](https://github.com/ultralytics/ultralytics) |
-| **Real-ESRGAN** | Wang et al. (Tencent PCG) | **BSD 3-Clause** | Super-resolución 2x/4x y restauración de nitidez | [GitHub](https://github.com/xinntao/Real-ESRGAN) |
-| **U²-Net Human Seg** | Qin et al. (Univ. of Alberta) | **Apache 2.0** | Segmentación semántica de personas y filtro protector de prendas claras (`u2net_human_seg`) | [GitHub](https://github.com/xuebinqin/U-2-Net) |
-| **Lucide Icons** | Lucide Project | **ISC License** | Iconografía vectorial SVG | [Lucide.dev](https://lucide.dev) |
-| **PySide6 / Qt** | The Qt Company | **LGPLv3** | Interfaz gráfica nativa multiplataforma | [Qt.io](https://www.qt.io) |
-
-Para detalles exhaustivos, fuentes de descarga y hashes de verificación, consulte el archivo [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).
-
-### Citas Académicas (BibTeX)
+- **BiRefNet** (`birefnet-general`): *Bilateral Reference for High-Resolution Dichotomous Image Segmentation* — Peng Zheng et al. (MIT License).
+- **InSPyReNet** (`inspyrenet`): *Revisiting Image Pyramid Structure for High Resolution Salient Object Detection* — Taehun Kim et al. (MIT License).
+- **IS-Net** (`isnet-anime`) y **U2-Net** (`u2net_human_seg`): *Highly Accurate Dichotomous Image Segmentation* / *U2-Net: Going Deeper with Nested U-Structure for Salient Object Detection* — Xuebin Qin et al. (Apache 2.0 License).
+- **MobileSAM**: *Faster Segment Anything: Towards Lightweight SAM for Mobile Applications* — Chaoning Zhang et al. (Apache 2.0 License).
+- **YOLO11-seg** (`yolo11n-seg`): Ultralytics YOLO11 Segmentation (GNU AGPLv3 License).
+- **Real-ESRGAN** (`RealESRGAN_x4plus_anime_6B`): *Training Real-World Blind Super-Resolution with Pure Synthetic Data* — Xintao Wang et al. (BSD 3-Clause License).
+- **Lucide Icons**: Colección de iconografía vectorial SVG (MIT License).
+- **Ecosistema Base**: PySide6 / Qt6 (LGPLv3), ONNX Runtime (MIT), OpenCV (Apache 2.0), Pillow (HPND) y NumPy (BSD 3-Clause).
 
 ```bibtex
-@article{zheng2024birefnet,
-  title={Bilateral Reference for High-Resolution Dichotomous Image Segmentation},
-  author={Zheng, Peng and Fan, Deng-Ping and Tian, Xiao-Bin and others},
-  journal={CAAI Artificial Intelligence Research},
-  year={2024}
-}
-
-@article{zhang2023mobilesam,
-  title={Faster Segment Anything: Towards Lightweight SAM for Mobile Applications},
-  author={Zhang, Chaoning and Han, Dongshen and Qiao, Yu and Kim, Jung Uk and Bae, Sung-Ho and Lee, SeungKyu and Cho, Choongsang},
-  journal={arXiv preprint arXiv:2306.14289},
-  year={2023}
-}
-
-@software{yolo11_ultralytics,
-  author={Glenn Jocher and Jing Qiu},
-  title={Ultralytics YOLO11},
-  version={11.0.0},
-  year={2024}
-}
-
-@InProceedings{wang2021realesrgan,
-  author={Xintao Wang and Liangbin Xie and Chao Dong and Ying Shan},
-  title={Real-ESRGAN: Training Real-World Blind Super-Resolution with Pure Synthetic Data},
-  booktitle={International Conference on Computer Vision Workshops (ICCVW)},
-  year={2021}
+@inproceedings{zheng2024birefnet,
+  title     = {Bilateral Reference for High-Resolution Dichotomous Image Segmentation},
+  author    = {Zheng, Peng and Gao, Dehong and Fan, Deng-Ping and Liu, Li and Laaksonen, Jorma and Ouyang, Wanli and Sebe, Nicu},
+  journal   = {CAAI Artificial Intelligence Research},
+  year      = {2024}
 }
 
 @inproceedings{kim2022inspyrenet,
-  title={InSPyReNet: Inverse Saliency Pyramid Recurrent Network for Salient Object Detection},
-  author={Kim, Taehun and Kim, Kunhee and Lee, Joonyeong and Cha, Dongmin and Lee, Jiho and Kim, Daijin},
-  booktitle={ACM International Conference on Multimedia},
-  year={2022}
+  title     = {Revisiting Image Pyramid Structure for High Resolution Salient Object Detection},
+  author    = {Kim, Taehun and Kim, Kunhee and Lee, Joonyeong and Cha, Dongmin and Lee, Jiho and Kim, Daijin},
+  booktitle = {Proceedings of the Asian Conference on Computer Vision (ACCV)},
+  year      = {2022}
 }
 
-@InProceedings{qin2022dis,
-  title={Highly Accurate Dichotomous Image Segmentation},
-  author={Qin, Xuebin and Dai, Hang and Tian, Xiaobin and Fan, Deng-Ping and Shao, Ling and Van Gool, Luc},
-  booktitle={European Conference on Computer Vision (ECCV)},
-  year={2022}
+@inproceedings{qin2022highly,
+  title     = {Highly Accurate Dichotomous Image Segmentation},
+  author    = {Qin, Xuebin and Dai, Hang and Hu, Xiaobin and Fan, Deng-Ping and Shao, Ling and Van Gool, Luc},
+  booktitle = {European Conference on Computer Vision (ECCV)},
+  year      = {2022}
+}
+
+@article{zhang2023faster,
+  title     = {Faster Segment Anything: Towards Lightweight SAM for Mobile Applications},
+  author    = {Zhang, Chaoning and Han, Dongshen and Qiao, Yu and Kim, Jung Uk and Bae, Sung-Ho and Lee, Seungkyu and Hong, Choong Seon},
+  journal   = {arXiv preprint arXiv:2306.14289},
+  year      = {2023}
+}
+
+@inproceedings{wang2021realesrgan,
+  title     = {Real-ESRGAN: Training Real-World Blind Super-Resolution with Pure Synthetic Data},
+  author    = {Wang, Xintao and Xie, Liangbin and Dong, Chao and Shan, Ying},
+  booktitle = {International Conference on Computer Vision Workshops (ICCVW)},
+  year      = {2021}
 }
 ```
+
+El detalle completo de avisos y licencias se encuentra en [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).
 
 ---
 
-## Autora y Licencia del Software
+## Autora y Licencia
 
-- **Autora:** **[Eliather](https://github.com/Eliather)**
-- **Versión Actual:** `1.2.3`
-- **Apoyar el proyecto:** [Ko-fi de Eliather](https://ko-fi.com/eliather)
+**TimoitaseBG v1.2.3** ha sido desarrollado por **Eliather** bajo la licencia **GNU Affero General Public License v3.0 (GNU AGPLv3)**. Consulta el archivo [LICENSE](LICENSE) para conocer las condiciones completas de uso, modificación y redistribución.
 
-Este programa es software libre y de código abierto distribuido bajo los términos de la **GNU Affero General Public License Version 3 (GNU AGPLv3)**. Para más detalles, consulte el archivo [LICENSE](LICENSE).
-
-```text
-TimoitaseBG v1.2.3 - Copyright (C) 2026 Eliather (Autora)
-
-This program is free software: you can redistribute it and/or modify
-it under the terms of the GNU Affero General Public License as published by
-the Free Software Foundation, either version 3 of the License, or
-(at your option) any later version.
-
-This program is distributed in the hope that it will be useful,
-but WITHOUT ANY WARRANTY; without even the implied warranty of
-MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
-GNU Affero General Public License for more details.
-
-You should have received a copy of the GNU Affero General Public License
-along with this program.
-```
-
-### Relación con Licencias de Componentes y Modelos de Terceros
-
-- **Licencia del Código Fuente:** El código de TimoitaseBG está licenciado bajo **GNU AGPLv3**. Cualquier persona o entidad es libre de usar, estudiar, modificar y redistribuir la aplicación (incluso para fines comerciales), bajo la condición de que las versiones modificadas o desplegadas en red compartan su código fuente bajo esta misma licencia.
-- **Independencia de Licencias de Modelos:** Cada modelo de inteligencia artificial de terceros conserva su propia licencia otorgada por sus respectivos autores (MIT, Apache 2.0, BSD 3-Clause, AGPL-3.0). La licencia AGPLv3 de TimoitaseBG cubre el código de la aplicación y la integración, no sustituye ni modifica las licencias originales de los pesos pre-entrenados.
-- **100% Libre de Restricciones Comerciales (Sin CC BY-NC):** Todos los modelos incorporados o descargados bajo demanda permiten el uso comercial y la libre redistribución. No existen obstáculos de licencias no comerciales para recibir donaciones, comercializar soluciones derivadas o utilizar la herramienta en flujos profesionales.
-- Para consultar los avisos completos, procedencia de datasets y términos individuales, consulte [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).
+Apoyo al desarrollo del proyecto: [https://ko-fi.com/eliather](https://ko-fi.com/eliather)

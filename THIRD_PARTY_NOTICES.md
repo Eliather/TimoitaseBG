@@ -1,7 +1,7 @@
 # Avisos de Terceros, Licencias y Atribución de Modelos de IA
 ## Third-Party Software and Machine Learning Models Notices
 
-**TimoitaseBG v1.2.0** — Autora: **[Eliather](https://github.com/Eliather)**  
+**TimoitaseBG v1.2.3** — Autora: **[Eliather](https://github.com/Eliather)**  
 TimoitaseBG es software libre distribuido bajo la licencia **GNU Affero General Public License v3.0 (GNU AGPLv3)**.
 
 El código fuente de TimoitaseBG se rige por su propia licencia, mientras que las librerías externas y los modelos de visión por computadora de terceros conservan sus respectivas licencias originales concedidas por sus autores. Este documento detalla la atribución, procedencia, licencias y términos de uso de cada componente y conjunto de pesos (*weights*).

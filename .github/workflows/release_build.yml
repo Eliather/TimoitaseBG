@@ -17,8 +17,45 @@ permissions:
   contents: write
 
 jobs:
+  test:
+    name: Syntax & Unit Tests
+    runs-on: ubuntu-22.04
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Setup Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+
+      - name: Install Linux Qt Dependencies for Headless Tests
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            libgl1 libegl1 libglib2.0-0 libfontconfig1 libxkbcommon-x11-0 \
+            libxcb-cursor0 libxcb-icccm4 libxcb-image0 libxcb-keysyms1 \
+            libxcb-randr0 libxcb-render-util0 libxcb-shape0 libxcb-sync1 \
+            libxcb-xfixes0 libxcb-xinerama0 libxcb-xkb1 libsm6 libxext6
+
+      - name: Install Dependencies & Test Runner
+        run: |
+          python -m pip install --upgrade pip setuptools wheel
+          python -m pip install --prefer-binary --only-binary=llvmlite,numba -r requirements.txt
+          python -m pip install --prefer-binary pytest
+
+      - name: Verify Python Syntax
+        run: python -m compileall -q app scripts tests
+
+      - name: Run Automated Test Suite
+        env:
+          QT_QPA_PLATFORM: offscreen
+        run: pytest tests/ -k "not copy_to_clipboard" -v
+
   build:
     name: Build ${{ matrix.platform_name }} (${{ matrix.arch }})
+    needs: test
     runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
@@ -108,6 +145,7 @@ jobs:
 
       - name: Run PyInstaller Build
         run: |
+          python -m scripts.package_release icons
           pyinstaller --noconfirm --clean build.spec
 
       - name: Package Windows Application (.msix)
@@ -181,8 +219,11 @@ jobs:
           path: release-artifacts
           merge-multiple: true
 
-      - name: List Artifacts
-        run: ls -la release-artifacts
+      - name: List Artifacts & Generate Checksums
+        run: |
+          ls -la release-artifacts
+          (cd release-artifacts && sha256sum * > SHA256SUMS.txt)
+          cat release-artifacts/SHA256SUMS.txt
 
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2

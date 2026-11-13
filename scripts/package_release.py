@@ -90,6 +90,9 @@ def prepare_msix_stage(dist_dir: Path, stage_dir: Path, arch: str = "x64") -> No
   </Dependencies>
   <Resources>
     <Resource Language="es-ES" />
+    <Resource Language="en-US" />
+    <Resource Language="ru-RU" />
+    <Resource Language="zh-CN" />
   </Resources>
   <Applications>
     <Application Id="TimoitaseBG" Executable="TimoitaseBG.exe" EntryPoint="Windows.FullTrustApplication">
@@ -151,9 +154,31 @@ exec "${HERE}/usr/bin/TimoitaseBG" "$@"
     print(f"[AppImage] Estructura AppDir preparada en: {appdir}")
 
 
+def prepare_icons(build_dir: Path) -> None:
+    """Genera iconos PNG, ICO (Windows) y .icns (macOS si iconutil está disponible) en build_dir."""
+    build_dir.mkdir(parents=True, exist_ok=True)
+    png_path = build_dir / "app_icon.png"
+    generate_brand_icon(512, png_path)
+
+    base = Image.open(png_path)
+    ico_path = build_dir / "app_icon.ico"
+    base.save(ico_path, format="ICO", sizes=[(16, 16), (32, 32), (48, 48), (64, 64), (128, 128), (256, 256)])
+
+    if sys.platform == "darwin":
+        iconset_dir = build_dir / "TimoitaseBG.iconset"
+        iconset_dir.mkdir(parents=True, exist_ok=True)
+        for sz in (16, 32, 64, 128, 256, 512):
+            generate_brand_icon(sz, iconset_dir / f"icon_{sz}x{sz}.png")
+            if sz <= 256:
+                generate_brand_icon(sz * 2, iconset_dir / f"icon_{sz}x{sz}@2x.png")
+        os.system(f'iconutil -c icns "{iconset_dir}" -o "{build_dir / "app_icon.icns"}"')
+
+    print(f"[Icons] Iconos generados en: {build_dir}")
+
+
 if __name__ == "__main__":
     if len(sys.argv) < 2:
-        print("Uso: python -m scripts.package_release [msix|appimage] [arch]")
+        print("Uso: python -m scripts.package_release [msix|appimage|icons] [arch]")
         sys.exit(1)
 
     mode = sys.argv[1].lower()
@@ -165,6 +190,8 @@ if __name__ == "__main__":
         prepare_msix_stage(dist_folder, root / "build" / "msix_stage", arch=target_arch)
     elif mode == "appimage":
         prepare_appimage_stage(dist_folder, root / "build" / "TimoitaseBG.AppDir")
+    elif mode == "icons":
+        prepare_icons(root / "build")
     else:
         print(f"Modo desconocido: {mode}")
         sys.exit(1)
