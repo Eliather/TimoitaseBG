@@ -62,20 +62,10 @@ def numpy_to_qimage(arr: np.ndarray) -> QImage:
 
 def pil_to_qimage(pil_img: Image.Image) -> QImage:
     """Convierte una imagen PIL a QImage de forma segura usando NumPy contiguo."""
-    if pil_img.mode == "RGBA":
-        arr = np.ascontiguousarray(np.array(pil_img, dtype=np.uint8))
-        return numpy_to_qimage(arr)
-    elif pil_img.mode == "RGB":
-        arr = np.ascontiguousarray(np.array(pil_img, dtype=np.uint8))
-        return numpy_to_qimage(arr)
-    elif pil_img.mode in ("L", "1"):
-        converted = pil_img.convert("RGBA")
-        arr = np.ascontiguousarray(np.array(converted, dtype=np.uint8))
-        return numpy_to_qimage(arr)
-    else:
-        converted = pil_img.convert("RGBA")
-        arr = np.ascontiguousarray(np.array(converted, dtype=np.uint8))
-        return numpy_to_qimage(arr)
+    if pil_img.mode in ("RGBA", "RGB"):
+        return numpy_to_qimage(np.asarray(pil_img, dtype=np.uint8))
+    converted = pil_img.convert("RGBA")
+    return numpy_to_qimage(np.asarray(converted, dtype=np.uint8))
 
 
 def pil_to_qpixmap(pil_img: Image.Image) -> QPixmap:
@@ -140,7 +130,7 @@ def autocrop_image(img: Image.Image, padding: int = 10) -> Optional[Image.Image]
     """
     if img.mode != "RGBA":
         return None
-    alpha = img.split()[-1]
+    alpha = img.getchannel("A")
     bbox = alpha.getbbox()
     if bbox is None:
         return None

@@ -16,34 +16,6 @@ from app.core.model_fetcher import ensure_model_file
 logger = logging.getLogger("TimoitaseBG.Restorer")
 
 
-def _probe_restorer_gpu_worker(model_path_str: str, providers_list: list) -> None:
-    """
-    Sonda aislada en subproceso independiente para validar que Real-ESRGAN
-    puede inicializarse y ejecutar un tensor de prueba en la GPU sin colgar
-    el driver D3D12/TDR ni congelar el sistema operativo.
-    Libera explícitamente la memoria VRAM antes de salir.
-    """
-    import sys
-    import gc
-    import numpy as np
-    session = None
-    try:
-        import onnxruntime as ort
-        session = ort.InferenceSession(model_path_str, providers=providers_list)
-        dummy_in = np.zeros((1, 3, 32, 32), dtype=np.float32)
-        in_name = session.get_inputs()[0].name
-        session.run(None, {in_name: dummy_in})
-        # Liberar recursos y VRAM de inmediato
-        del session
-        gc.collect()
-        sys.exit(0)
-    except Exception:
-        if session is not None:
-            del session
-        gc.collect()
-        sys.exit(1)
-
-
 class ImageRestorer:
     """
     Restaura y aumenta la resolución de imágenes estilo anime/ilustración usando Real-ESRGAN.
@@ -113,15 +85,17 @@ class ImageRestorer:
             use_tiling = True
 
         # Protección Automática Anti-Saturación de VRAM:
-        # Límite seguro para GPU: aprox 2.07 megapíxeles (ej. 1920x1080 o 1440x1440).
-        # Imágenes mayores a este límite fuerzan fallback automático a CPU
-        # para evitar colapsar la VRAM de tarjetas estándar o disparar TDRs.
+        # Límite seguro para GPU sin tiling: aprox 2.07 megapíxeles (1920x1080).
+        # Con tiling activo la GPU procesa por bloques seguros sin saturar VRAM.
         MAX_GPU_PIXELS = 1920 * 1080
         total_pixels = orig_w * orig_h
-        force_cpu_safety = total_pixels > MAX_GPU_PIXELS
-        
+        force_cpu_safety = (total_pixels > MAX_GPU_PIXELS) and not use_tiling
+
         if force_cpu_safety:
-            logger.info(f"Protección Anti-Saturación: Imagen de {orig_w}x{orig_h} ({total_pixels} px) excede límite seguro de GPU. Forzando fallback a CPU.")
+            logger.info(
+                f"Protección Anti-Saturación: Imagen de {orig_w}x{orig_h} ({total_pixels} px) "
+                "excede límite seguro sin tiling. Forzando fallback a CPU."
+            )
 
         # Si ya se encuentra dentro del proceso aislado GPU Worker, ejecutar directamente
         # para no intentar re-despachar a otro subproceso daemon hijo.
@@ -243,12 +217,7 @@ class ImageRestorer:
         if progress_cb:
             progress_cb(94, "Ajustando resolución final y canal alfa...")
 
-        # Si había canal alfa original, redimensionarlo forzadamente a las dimensiones EXACTAS de out_4x
-        if alpha_channel is not None:
-            alpha_4x = alpha_channel.resize(out_4x.size, resample=Image.Resampling.LANCZOS)
-            out_4x = combine_alpha(out_4x, alpha_4x)
-
-        # Aplicar modo de escala solicitado
+        # Aplicar primero modo de escala solicitado sobre RGB (evita doble resize 4x -> 2x/1x en RGBA)
         if scale_mode == "x4":
             result = out_4x
         elif scale_mode == "x2":
@@ -260,8 +229,8 @@ class ImageRestorer:
         else:
             result = out_4x
 
-        # Asegurar consistencia final del canal alfa
-        if alpha_channel is not None and result.mode != "RGBA":
+        # Si había canal alfa original, redimensionarlo una única vez directamente al tamaño final
+        if alpha_channel is not None:
             target_alpha = alpha_channel.resize(result.size, resample=Image.Resampling.LANCZOS)
             result = combine_alpha(result, target_alpha)
 

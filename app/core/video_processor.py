@@ -178,7 +178,8 @@ def process_video_frames(
         )
 
         if temporal_smoothing > 0.0:
-            arr = np.array(out_rgba.convert("RGBA"), dtype=np.uint8)
+            rgba_frame = out_rgba if out_rgba.mode == "RGBA" else out_rgba.convert("RGBA")
+            arr = np.array(rgba_frame, dtype=np.uint8)
             curr_alpha = arr[:, :, 3].astype(np.float32)
             if prev_alpha is not None and prev_alpha.shape == curr_alpha.shape:
                 diff = np.abs(curr_alpha - prev_alpha)
@@ -302,19 +303,32 @@ def _save_png_zip_sequence(
     Exporta todos los fotogramas como una secuencia numerada de PNGs (`frame_00001.png`...)
     dentro de un archivo `.zip` manteniendo transparencia RGBA de 8 bits.
     """
-    with zipfile.ZipFile(output_path, mode="w", compression=zipfile.ZIP_STORED) as zf:
-        for idx, frm in enumerate(frames_rgba, start=1):
-            rgba_img = frm.convert("RGBA")
-            if bg_color_rgb is not None:
-                bg = Image.new("RGBA", rgba_img.size, (*bg_color_rgb, 255))
-                bg.alpha_composite(rgba_img)
-                out_img = bg.convert("RGB")
-            else:
-                out_img = rgba_img
+    def _encode_png_frame(frm: Image.Image) -> bytes:
+        rgba_img = frm if frm.mode == "RGBA" else frm.convert("RGBA")
+        if bg_color_rgb is not None:
+            bg = Image.new("RGBA", rgba_img.size, (*bg_color_rgb, 255))
+            bg.alpha_composite(rgba_img)
+            out_img = bg.convert("RGB")
+        else:
+            out_img = rgba_img
 
-            buf = io.BytesIO()
-            out_img.save(buf, format="PNG")
-            zf.writestr(f"frame_{idx:05d}.png", buf.getvalue())
+        buf = io.BytesIO()
+        out_img.save(buf, format="PNG")
+        return buf.getvalue()
+
+    if len(frames_rgba) > 4:
+        import os
+        from concurrent.futures import ThreadPoolExecutor
+
+        workers = max(1, min(4, os.cpu_count() or 2))
+        with ThreadPoolExecutor(max_workers=workers) as pool:
+            encoded_pngs = list(pool.map(_encode_png_frame, frames_rgba))
+    else:
+        encoded_pngs = [_encode_png_frame(frm) for frm in frames_rgba]
+
+    with zipfile.ZipFile(output_path, mode="w", compression=zipfile.ZIP_STORED) as zf:
+        for idx, png_bytes in enumerate(encoded_pngs, start=1):
+            zf.writestr(f"frame_{idx:05d}.png", png_bytes)
 
 
 def save_video_sequence(

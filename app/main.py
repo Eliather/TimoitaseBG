@@ -19,7 +19,7 @@ else:
 def load_stylesheet() -> str:
     """Carga la hoja de estilos QSS desde el archivo correspondiente."""
     from app.config import APP_DIR
-    for qss_name in ("styles.qss", "style.qss", "style_light.qss"):
+    for qss_name in ("style.qss", "style_light.qss"):
         qss_path = APP_DIR / "ui" / qss_name
         if qss_path.exists():
             with open(qss_path, "r", encoding="utf-8") as f:

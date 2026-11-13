@@ -439,6 +439,40 @@ QPushButton#brushToolModeButton:checked, QPushButton#presetButton:checked, QPush
     border-color: #FECDD3;
     background-color: #FFF1F2;
 }
+#statusCancelButton {
+    background-color: #FFF1F2;
+    color: #E11D48;
+    border: 1px solid #FDA4AF;
+    border-radius: 6px;
+    padding: 3px 10px;
+    font-size: 11px;
+    font-weight: 600;
+}
+#statusCancelButton:hover {
+    background-color: #F43F5E;
+    color: #FFFFFF;
+}
+#deviceBadgeGpu, #deviceBadgeCpu, #deviceBadgeBlocked {
+    border-radius: 6px;
+    padding: 4px 10px;
+    font-size: 11px;
+    font-weight: 600;
+}
+#deviceBadgeGpu {
+    background-color: #ECFDF5;
+    color: #047857;
+    border: 1px solid #6EE7B7;
+}
+#deviceBadgeCpu {
+    background-color: #F1F5F9;
+    color: #475569;
+    border: 1px solid #CBD5E1;
+}
+#deviceBadgeBlocked {
+    background-color: #FEF2F2;
+    color: #B91C1C;
+    border: 1px solid #FCA5A5;
+}
 #shortcutBadge {
     background-color: #F1F5F9;
     color: #334155;

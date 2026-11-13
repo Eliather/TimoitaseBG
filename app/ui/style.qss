@@ -573,6 +573,40 @@ QScrollBar::add-page:horizontal, QScrollBar::sub-page:horizontal {
     border-color: #F43F5E;
     background-color: #3B1219;
 }
+#statusCancelButton {
+    background-color: #3B1219;
+    color: #FB7185;
+    border: 1px solid #F43F5E;
+    border-radius: 6px;
+    padding: 3px 10px;
+    font-size: 11px;
+    font-weight: 600;
+}
+#statusCancelButton:hover {
+    background-color: #F43F5E;
+    color: #FFFFFF;
+}
+#deviceBadgeGpu, #deviceBadgeCpu, #deviceBadgeBlocked {
+    border-radius: 6px;
+    padding: 4px 10px;
+    font-size: 11px;
+    font-weight: 600;
+}
+#deviceBadgeGpu {
+    background-color: #064E3B;
+    color: #6EE7B7;
+    border: 1px solid #10B981;
+}
+#deviceBadgeCpu {
+    background-color: #1E293B;
+    color: #CBD5E1;
+    border: 1px solid #334155;
+}
+#deviceBadgeBlocked {
+    background-color: #450A0A;
+    color: #FCA5A5;
+    border: 1px solid #EF4444;
+}
 #shortcutBadge {
     background-color: #0F172A;
     color: #E2E8F0;

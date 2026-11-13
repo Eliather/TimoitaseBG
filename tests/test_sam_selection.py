@@ -143,3 +143,74 @@ def test_canvas_wand_ai_interaction(qapp):
         assert sel.shape == (100, 100)
         assert sel[50, 50] == 255
         assert sel[5, 5] == 0
+
+
+def test_sam_predict_mask_from_yolo_subject_roi():
+    mgr = SAMManager()
+    orig_w, orig_h = 300, 200
+    img = Image.new("RGB", (orig_w, orig_h), (80, 120, 160))
+
+    mock_encoder = MagicMock()
+    enc_inp = MagicMock()
+    enc_inp.name = "image"
+    mock_encoder.get_inputs.return_value = [enc_inp]
+    mock_encoder.run.return_value = [np.zeros((1, 256, 64, 64), dtype=np.float32)]
+
+    mock_decoder = MagicMock()
+    inp_names = ["image_embeddings", "point_coords", "point_labels", "mask_input", "has_mask_input", "orig_im_size"]
+    mock_inputs = []
+    for n in inp_names:
+        m = MagicMock()
+        m.name = n
+        mock_inputs.append(m)
+    mock_decoder.get_inputs.return_value = mock_inputs
+
+    dummy_logits = np.full((1, 1, 256, 256), -4.0, dtype=np.float32)
+    dummy_logits[0, 0, 20:120, 20:120] = 4.0
+    mock_decoder.run.return_value = [dummy_logits, np.array([[0.90]], dtype=np.float32)]
+
+    mgr.encoder_session = mock_encoder
+    mgr.decoder_session = mock_decoder
+    mgr.prepare_image(img)
+
+    coarse = np.zeros((orig_h, orig_w), dtype=bool)
+    coarse[40:140, 60:180] = True
+    prob = mgr.predict_mask_from_yolo_subject(
+        bbox=(60, 40, 180, 140),
+        coarse_mask=coarse,
+        orig_img_size=(orig_w, orig_h),
+    )
+    assert prob is not None
+    assert prob.shape == (orig_h, orig_w)
+    assert prob.dtype == np.float32
+    assert float(prob.max()) > 0.9
+
+
+def test_magic_wand_region_inrange_and_image_state_extrema():
+    from app.core.selection import magic_wand_region
+    from app.core.image_state import ImageState
+
+    rgba = np.zeros((40, 40, 4), dtype=np.uint8)
+    rgba[:, :] = [100, 150, 200, 255]
+    rgba[10:30, 10:30] = [10, 20, 30, 255]
+
+    mask_contig = magic_wand_region(rgba, 15, 15, tolerance=5, contiguous=True)
+    assert bool(mask_contig[15, 15]) is True
+    assert bool(mask_contig[5, 5]) is False
+
+    mask_noncontig = magic_wand_region(rgba, 5, 5, tolerance=5, contiguous=False)
+    assert bool(mask_noncontig[5, 5]) is True
+    assert bool(mask_noncontig[15, 15]) is False
+
+    state = ImageState()
+    opaque = Image.new("RGBA", (32, 32), (255, 255, 255, 255))
+    state.load_new_image(opaque)
+    assert not state.has_transparency
+
+    transp = opaque.copy()
+    transp.putpixel((0, 0), (255, 255, 255, 0))
+    state.push_state(transp, "Fondo eliminado")
+    assert state.has_transparency
+    state.push_state(opaque, "Color de fondo sólido")
+    assert not state.has_transparency
+    assert state.get_last_transparent_state() is not None

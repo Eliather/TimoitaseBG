@@ -17,6 +17,7 @@ class WorkerThread(QThread):
     progress = Signal(str)
     progressPercent = Signal(int, str)    # (porcentaje_0_100, mensaje_etapa)
     finishedResult = Signal(object, str)  # (result_image, action_description)
+    cancelled = Signal()
     failed = Signal(str)                  # error_message
 
     def __init__(self, task_fn: Callable[..., Image.Image], *args, description: str = "Procesando", **kwargs):
@@ -39,19 +40,30 @@ class WorkerThread(QThread):
             self._emit_progress(5, f"Iniciando {self.description}...")
 
             call_kwargs = dict(self.kwargs)
-            if "progress_cb" not in call_kwargs:
-                try:
-                    sig = inspect.signature(self.task_fn)
-                    if "progress_cb" in sig.parameters or any(
-                        p.kind == inspect.Parameter.VAR_KEYWORD for p in sig.parameters.values()
-                    ):
-                        call_kwargs["progress_cb"] = self._emit_progress
-                except Exception:
-                    pass
+            try:
+                sig = inspect.signature(self.task_fn)
+                has_var_kw = any(
+                    p.kind == inspect.Parameter.VAR_KEYWORD for p in sig.parameters.values()
+                )
+                if "progress_cb" not in call_kwargs and ("progress_cb" in sig.parameters or has_var_kw):
+                    call_kwargs["progress_cb"] = self._emit_progress
+                if "cancel_check" not in call_kwargs and ("cancel_check" in sig.parameters or has_var_kw):
+                    call_kwargs["cancel_check"] = self.isInterruptionRequested
+            except Exception:
+                pass
+
+            if self.isInterruptionRequested():
+                self.cancelled.emit()
+                return
 
             result = self.task_fn(*self.args, **call_kwargs)
+            if self.isInterruptionRequested():
+                self.cancelled.emit()
+                return
             self._emit_progress(100, f"{self.description} completado.")
             self.finishedResult.emit(result, self.description)
+        except InterruptedError:
+            self.cancelled.emit()
         except Exception as e:
             import traceback
             traceback.print_exc()
@@ -59,11 +71,13 @@ class WorkerThread(QThread):
 
 class BatchWorkerThread(QThread):
     """
-    QThread para procesar múltiples imágenes en lote secuencialmente.
+    QThread para procesar múltiples imágenes y videos en lote secuencialmente.
     """
     progress = Signal(int, int) # actual, total
     progressText = Signal(str)
     finishedResult = Signal(int, int) # success, total
+    finishedWithErrors = Signal(int, int, list)  # success, total, list[(filename, reason)]
+    cancelled = Signal()
     failed = Signal(str)
 
     def __init__(self, input_dir: str, output_dir: str, model_name: str, enable_clothing_protection: bool):
@@ -72,6 +86,7 @@ class BatchWorkerThread(QThread):
         self.output_dir = output_dir
         self.model_name = model_name
         self.enable_clothing_protection = enable_clothing_protection
+        self.errors: list[tuple[str, str]] = []
 
     def run(self):
         from pathlib import Path
@@ -96,8 +111,10 @@ class BatchWorkerThread(QThread):
             valid_exts = {".png", ".jpg", ".jpeg", ".webp", ".bmp", ".gif", ".apng", *VIDEO_EXTENSIONS}
             files = [f for f in input_path.iterdir() if f.is_file() and f.suffix.lower() in valid_exts]
             total = len(files)
-            
+            self.errors = []
+
             if total == 0:
+                self.finishedWithErrors.emit(0, 0, [])
                 self.finishedResult.emit(0, 0)
                 return
 
@@ -188,9 +205,15 @@ class BatchWorkerThread(QThread):
                     success_count += 1
                 except Exception as e:
                     print(f"Error procesando {f.name}: {e}")
-                    
+                    self.errors.append((f.name, str(e)))
+
+            if self.isInterruptionRequested():
+                self.cancelled.emit()
+                return
+
             self.progressText.emit("Proceso completado")
             self.progress.emit(total, total)
+            self.finishedWithErrors.emit(success_count, total, list(self.errors))
             self.finishedResult.emit(success_count, total)
 
         except Exception as e:
@@ -283,6 +306,7 @@ class GifWorkerThread(QThread):
     progress = Signal(int, int)             # (frame_actual, total_frames)
     progressText = Signal(str)
     finishedGif = Signal(list, str)         # (frames_rgba_procesados, descripcion)
+    cancelled = Signal()
     failed = Signal(str)
 
     def __init__(
@@ -314,6 +338,7 @@ class GifWorkerThread(QThread):
 
             for idx, frame in enumerate(self.frames):
                 if self.isInterruptionRequested():
+                    self.cancelled.emit()
                     return
 
                 self.progressText.emit(
@@ -351,9 +376,91 @@ class GifWorkerThread(QThread):
                 processed_frames,
                 f"GIF sin fondo ({total} frames • {self.model_name})",
             )
+        except InterruptedError:
+            self.cancelled.emit()
         except Exception as e:
             traceback.print_exc()
             self.failed.emit(str(e))
+
+
+class SequenceRestoreWorker(QThread):
+    """QThread para escalar o mejorar nitidez de todos los fotogramas de una secuencia."""
+
+    progress = Signal(int, int)
+    progressText = Signal(str)
+    finishedGif = Signal(list, str)
+    cancelled = Signal()
+    failed = Signal(str)
+
+    def __init__(
+        self,
+        frames: List[Image.Image],
+        scale_mode: str = "x2",
+        use_tiling: bool = True,
+        description: str = "Escalado",
+        media_label: str = "GIF",
+    ):
+        super().__init__()
+        self.frames = frames
+        self.scale_mode = scale_mode
+        self.use_tiling = use_tiling
+        self.description = description
+        self.media_label = media_label
+
+    def run(self):
+        from app.core.restorer import get_image_restorer
+        import traceback
+
+        try:
+            self.setPriority(QThread.Priority.LowPriority)
+            restorer = get_image_restorer()
+            total = len(self.frames)
+            processed_frames: List[Image.Image] = []
+
+            for idx, frame in enumerate(self.frames):
+                if self.isInterruptionRequested():
+                    self.cancelled.emit()
+                    return
+                self.progressText.emit(
+                    f"⏳ {self.description} {self.media_label} ({idx + 1}/{total})..."
+                )
+                self.progress.emit(idx + 1, total)
+                out_img = restorer.restore_image(
+                    frame,
+                    scale_mode=self.scale_mode,
+                    use_tiling=self.use_tiling,
+                )
+                processed_frames.append(out_img)
+
+            self.finishedGif.emit(processed_frames, f"{self.description} ({total} frames)")
+        except InterruptedError:
+            self.cancelled.emit()
+        except Exception as e:
+            traceback.print_exc()
+            self.failed.emit(str(e))
+
+
+class SaveSequenceWorker(QThread):
+    """QThread para exportar secuencias animadas o video sin congelar la interfaz."""
+
+    saved = Signal(object)  # Path
+    failed = Signal(str)
+
+    def __init__(self, save_fn: Callable[[], Any]):
+        super().__init__()
+        self._save_fn = save_fn
+
+    def run(self):
+        import traceback
+
+        try:
+            self.setPriority(QThread.Priority.LowPriority)
+            saved_path = self._save_fn()
+            self.saved.emit(saved_path)
+        except Exception as e:
+            traceback.print_exc()
+            self.failed.emit(str(e))
+
 
 
 

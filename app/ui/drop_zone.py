@@ -16,6 +16,7 @@ class DropZoneWidget(QFrame):
     """Área central estilizada para arrastrar y soltar imágenes o hacer clic para abrir."""
     clicked = Signal()
     fileDropped = Signal(str)
+    imageDropped = Signal(object)
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -93,11 +94,23 @@ class DropZoneWidget(QFrame):
             event.ignore()
 
     def dropEvent(self, event):
-        if event.mimeData().hasUrls():
-            urls = event.mimeData().urls()
+        mime = event.mimeData()
+        if mime.hasUrls():
+            urls = mime.urls()
             if urls:
                 file_path = urls[0].toLocalFile()
-                self.fileDropped.emit(file_path)
+                if file_path:
+                    self.fileDropped.emit(file_path)
+                    event.acceptProposedAction()
+                    return
+        if mime.hasImage():
+            from PySide6.QtGui import QImage
+            from app.core.image_utils import qimage_to_pil
+
+            img_data = mime.imageData()
+            qimg = img_data if isinstance(img_data, QImage) else QImage(img_data)
+            if not qimg.isNull():
+                self.imageDropped.emit(qimage_to_pil(qimg))
                 event.acceptProposedAction()
                 return
         event.ignore()

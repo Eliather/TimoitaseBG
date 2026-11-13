@@ -100,9 +100,10 @@ def test_extract_video_frames_max_frames_stride(tmp_path: Path):
 def test_save_video_sequence_to_transparent_formats(tmp_path: Path, ext: str):
     """
     Verifica que una secuencia de video con fondo eliminado pueda exportarse a formatos
-    libres con transparencia nativa (.webp, .apng, .gif y secuencia PNG en .zip).
+    libres con transparencia nativa (.webp, .apng, .gif y secuencia PNG en .zip),
+    incluyendo la ruta paralelizada con >4 fotogramas.
     """
-    transparent_frames = _make_transparent_frames(count=4, size=(80, 60))
+    transparent_frames = _make_transparent_frames(count=6, size=(80, 60))
     out_path = tmp_path / f"exported_transparent{ext}"
 
     save_video_sequence(transparent_frames, out_path, fps=20.0, bg_color_rgb=None)
@@ -112,8 +113,9 @@ def test_save_video_sequence_to_transparent_formats(tmp_path: Path, ext: str):
     if ext == ".zip":
         with zipfile.ZipFile(out_path, "r") as zf:
             names = sorted(zf.namelist())
-            assert len(names) == 4
+            assert len(names) == 6
             assert names[0] == "frame_00001.png"
+            assert names[-1] == "frame_00006.png"
             with Image.open(zf.open(names[0])) as first_png:
                 assert first_png.mode == "RGBA"
                 assert first_png.getpixel((0, 0))[3] == 0

@@ -1,867 +1,118 @@
+"""
+TimoitaseBG - Carga ligera de internacionalización desde archivos JSON en app/locales/.
+"""
 import json
+import logging
 import os
 from pathlib import Path
+from typing import Dict, List, Tuple
 
-TRANSLATIONS = {
-    "es": {
-        "lang_name": "Español",
-        "btn_open": "Abrir",
-        "btn_save": "Guardar",
-        "btn_compare": "Comparar",
-        "btn_zoom_fit": "Ajustar",
-        "btn_kofi": "Apoyar a Eliather",
-        "tooltip_open": "Abrir imagen desde el explorador (Ctrl+O) o pegar con Ctrl+V",
-        "tooltip_save": "Guardar imagen procesada en disco (Ctrl+S)",
-        "tooltip_theme": "Cambiar entre tema Claro/Oscuro",
-        "tooltip_lang": "Cambiar idioma",
-        "tooltip_undo": "Deshacer última acción (Ctrl+Z)",
-        "tooltip_redo": "Rehacer acción (Ctrl+Y)",
-        "tooltip_reset": "Recuperar Original (Restaura la imagen inicial)",
-        "tooltip_zoom_out": "Reducir zoom",
-        "tooltip_zoom_in": "Aumentar zoom",
-        "tooltip_zoom_fit": "Ajustar imagen completa a la ventana",
-        "tooltip_zoom_100": "Zoom al 100%",
-        "tooltip_compare": "Comparar antes/después con cortina interactiva",
-        "tooltip_kofi": "Cómprame un café en Ko-fi para apoyar el desarrollo",
-        "tooltip_device": "Haz clic para alternar entre aceleración GPU y modo CPU seguro",
-        "status_ready": "Listo. Arrastra una imagen o pulsa 'Abrir Imagen'.",
-        "status_saved": "Imagen guardada en: {name}",
-        "status_loaded": "Cargada: {name}",
-        "status_undo": "Deshecho: {action}",
-        "status_redo": "Rehecho: {action}",
-        "status_reset": "Se restauró la imagen original.",
-        "status_device_changed": "Modo de dispositivo cambiado a: {device}",
-        "status_no_clipboard": "El portapapeles no contiene una imagen.",
-        "status_copied_clipboard": "📋 Imagen copiada al portapapeles (con transparencia)",
-        "status_open_first": "Abre una imagen primero.",
-        "status_no_changes_compare": "No hay cambios que comparar.",
-        "status_compare_active": "Modo comparación activo: arrastra la barra divisoria para comparar con el original.",
-        "status_compare_inactive": "Modo comparación desactivado.",
-        "status_crop_first_remove": "Aplica primero Quitar Fondo para recortar al contenido.",
-        "status_crop_none": "No se detectó contenido para recortar.",
-        "status_crop_already": "La imagen ya está ajustada al contenido.",
-        "status_batch_preparing": "Preparando lote...",
-        "status_batch_finished": "Procesamiento por lote finalizado.",
-        "status_batch_error": "Error en lote.",
-        "popup_save_success_title": "Guardado con éxito",
-        "popup_save_success_msg": "La imagen se ha guardado correctamente en:\n{path}",
-        "popup_no_image_title": "Sin imagen",
-        "popup_no_image_msg": "No hay ninguna imagen activa para guardar.",
-        "popup_error_save_title": "Error al guardar",
-        "popup_error_save_msg": "No se pudo guardar la imagen:\n{error}",
-        "popup_device_title": "Dispositivo Actualizado",
-        "popup_device_msg": "El procesamiento ahora se realizará en: {device}",
-        "popup_lang_changed_title": "Idioma cambiado",
-        "popup_lang_changed_msg": "Reinicia la aplicación para aplicar los cambios de idioma.",
-        
-        "brush_settings": "Ajustes del Pincel",
-        "lbl_size_thick": "Grosor:",
-        "header_detected_subjects": "Sujetos Detectados por IA",
-        "btn_detect_subjects": "🔍 Detectar Sujetos (YOLO11)",
-        "detect_status_idle": "Detecta personas u objetos individuales para aislarlos.",
-        "detect_status_computing": "Detectando con YOLO11...",
-        "btn_isolate_subject": "Aislar Sujeto",
-        "btn_select_subject": "Seleccionar",
-        "detect_none_found": "No se detectaron sujetos.",
-        "header_batch": "Procesamiento por Lotes:",
-        "batch_desc": "Quita el fondo a múltiples imágenes automáticamente.",
-        "btn_batch_input": "Seleccionar carpeta origen...",
-        "batch_no_folder": "No hay carpeta seleccionada",
-        "btn_batch_output": "Seleccionar carpeta destino...",
-        "lbl_batch_model": "Modelo a usar:",
-        "chk_batch_clothing": "Detector avanzado de ropa",
-        "btn_run_batch": "Iniciar Proceso en Lote",
-        "batch_input_path": "Origen: {path}",
-        "batch_output_path": "Destino: {path}",
-        
-        "model_isnet-anime": "Anime (IS-Net)",
-        "model_inspyrenet": "General (InSPyReNet)",
-        "model_birefnet-general": "Alta Definición (BiRefNet)",
-        "model_u2net_human_seg": "Personas y Ropa (U2-Net)",
-        
-        "scale_x2": "Escalar 2x",
-        "scale_x4": "Escalar 4x (Máxima resolución)",
-        "scale_enhance_only": "Solo nitidez (Sin cambiar tamaño)",
+from app.config import APP_DIR, APP_AUTHOR, APP_NAME
 
-        "btn_ok": "Aceptar",
-        
-        "canvas_drop_title": "Arrastra una imagen, GIF o video aquí",
-        "canvas_drop_subtitle": "o haz clic para explorar • pega con Ctrl+V",
-        "canvas_drop_formats": "Soporta PNG, JPG, WEBP, GIF, MP4, MOV, WEBM, MKV, AVI y más",
-        
-        "sidebar_title": "Herramientas",
-        "sidebar_subtitle": "Edición y mejora con IA local",
-        "sidebar_tab_bg": "Quitar Fondo",
-        "sidebar_tab_restore": "Escalar",
-        "sidebar_tab_brush": "Pincel",
-        "sidebar_tab_batch": "Lotes",
-        "sidebar_shortcuts_col": "▸ Atajos rápidos",
-        "sidebar_shortcuts_exp": "▾ Atajos rápidos",
-        "btn_shortcuts": "Atajos de teclado",
-        "tooltip_shortcuts": "Ver atajos de teclado y gestos (F1 / Ctrl+/)",
-        "shortcuts_modal_title": "Atajos de Teclado y Gestos",
-        "shortcuts_cat_nav": "Navegación y Vista",
-        "shortcuts_cat_edit": "Edición y Archivo",
-        "shortcuts_cat_selection": "Varita y Selección",
-        "shortcut_zoom": "Rueda del ratón",
-        "shortcut_zoom_desc": "Zoom in / out",
-        "shortcut_pan": "Clic central / Espacio",
-        "shortcut_pan_desc": "Mover y desplazar lienzo",
-        "shortcut_fit": "Ctrl + 0",
-        "shortcut_fit_desc": "Ajustar al visor",
-        "shortcut_100": "Ctrl + 1",
-        "shortcut_100_desc": "Zoom tamaño real (100%)",
-        "shortcut_open": "Ctrl + O",
-        "shortcut_open_desc": "Abrir archivo de imagen",
-        "shortcut_save": "Ctrl + S",
-        "shortcut_save_desc": "Guardar imagen resultante",
-        "shortcut_copy": "Ctrl + C",
-        "shortcut_copy_desc": "Copiar imagen (con transparencia)",
-        "shortcut_paste": "Ctrl + V",
-        "shortcut_paste_desc": "Pegar desde portapapeles",
-        "shortcut_undo": "Ctrl + Z",
-        "shortcut_undo_desc": "Deshacer última acción",
-        "shortcut_redo": "Ctrl + Y / Ctrl+Shift+Z",
-        "shortcut_redo_desc": "Rehacer acción",
-        "shortcut_del": "Supr / Retroceso",
-        "shortcut_del_desc": "Borrar selección activa",
-        "shortcut_deselect": "Ctrl + D / Esc",
-        "shortcut_deselect_desc": "Deseleccionar",
-        "shortcut_select_all": "Ctrl + A",
-        "shortcut_select_all_desc": "Seleccionar todo el lienzo",
-        "shortcut_invert": "Ctrl + Shift + I",
-        "shortcut_invert_desc": "Invertir selección actual",
-        "btn_close_shortcuts": "Entendido",
-        
-        "header_model": "Modelo de segmentación:",
-        "model_desc": "Elimina el fondo dejando transparencia limpia optimizada para ilustraciones y anime.",
-        "chk_clothing": "Detector avanzado de ropa (evita agujeros en prendas blancas)",
-        "chk_clothing_tooltip": "Combina la segmentación con un detector semántico de personas y prendas para proteger playeras, camisas y mangas blancas contra fondos claros.",
-        "btn_remove_now": "Quitar Fondo Ahora",
-        
-        "header_crop": "Ajuste de Lienzo:",
-        "btn_autocrop_now": "Recortar al Contenido",
-        "btn_autocrop_tooltip": "Aplica primero Quitar Fondo",
-        
-        "header_bg": "Fondo:",
-        "swatch_transparent": "Transparente / Ninguno (Restaurar canal alfa)",
-        "swatch_white": "Fondo Blanco (#FFFFFF)",
-        "swatch_black": "Fondo Negro (#000000)",
-        "swatch_gray": "Fondo Gris (#E2E8F0)",
-        "swatch_custom": "Elegir color personalizado...",
-        "color_white": "Blanco (#FFFFFF)",
-        "color_black": "Negro (#000000)",
-        "color_gray": "Gris (#E2E8F0)",
-        
-        "header_scale": "Factor de mejora:",
-        "scale_desc": "Mejora la nitidez y resolución usando Real-ESRGAN especializado en arte e ilustración.",
-        "chk_tiling": "Procesar por bloques (Tiling inteligente)",
-        "chk_tiling_tooltip": "Evita problemas de memoria en imágenes de alta resolución.",
-        "btn_scale_now": "Escalar Imagen",
-        
-        "header_brush": "Pincel Mágico:",
-        "brush_desc": "Pinta sobre cualquier elemento u objeto que desees eliminar y la IA lo rellenará de forma coherente.",
-        "btn_brush_mode": "Modo Pincel",
-        "btn_paint": "Pintar",
-        "btn_erase": "Borrador",
-        "lbl_size": "Tamaño:",
-        "lbl_smoothness": "Suavizar:",
-        "lbl_hardness": "Dureza:",
-        "btn_clear_mask": "Limpiar Trazo",
-        "btn_apply_inpaint": "Aplicar Relleno IA",
-        
-        "btn_wand": "Varita",
-        "tip_wand": "Varita mágica de selección estilo Photoshop (selecciona colores similares o por IA)",
-        "wand_settings": "Ajustes de la Varita",
-        "wand_type_color": "Color",
-        "wand_type_ai": "IA (Objeto)",
-        "tip_wand_color": "Selección tradicional basada en tolerancia de color (flood-fill)",
-        "tip_wand_ai": "Selección inteligente por IA: haz clic en cualquier objeto para seleccionarlo",
-        "wand_ai_desc": "Haz clic en cualquier objeto sobre el lienzo para que la IA lo identifique y seleccione automáticamente.",
-        "wand_ai_ready": "IA lista para seleccionar",
-        "wand_ai_computing": "Analizando imagen con IA...",
-        "lbl_wand_mode": "Modo de selección:",
-        "tip_wand_new": "Nueva selección",
-        "tip_wand_add": "Añadir a la selección (Shift)",
-        "tip_wand_subtract": "Restar de la selección (Alt)",
-        "tip_wand_intersect": "Intersecar con la selección (Shift+Alt)",
-        "lbl_tolerance": "Tolerancia:",
-        "tip_tolerance": "Tolerancia de color de 0 a 255 (igual que Photoshop)",
-        "chk_anti_alias": "Suavizar",
-        "tip_anti_alias": "Suaviza los bordes de la selección (Anti-alias)",
-        "chk_contiguous": "Contiguo",
-        "tip_contiguous": "Selecciona solo píxeles adyacentes conectados",
-        "wand_hint": "Clic para seleccionar. Supr para borrar. Shift: sumar, Alt: restar, Ctrl+D: deseleccionar.",
-        "selection_box": "Acciones de Selección",
-        "selection_none": "No hay ninguna selección activa.",
-        "selection_info": "{px} px seleccionados ({pct}% de la imagen)",
-        "btn_delete_selection": "Borrar lo Seleccionado",
-        "tip_delete_selection": "Borra el área seleccionada haciéndola transparente (Tecla Supr / Backspace)",
-        "btn_invert_selection": "Invertir",
-        "tip_invert_selection": "Invierte la selección actual (Ctrl+Shift+I)",
-        "btn_select_all": "Todo",
-        "tip_select_all": "Selecciona toda la imagen (Ctrl+A)",
-        "btn_clear_selection": "Deseleccionar",
-        "tip_clear_selection": "Quita la selección actual (Ctrl+D o Esc)",
-        "status_selection_deleted": "Selección eliminada (píxeles hechos transparentes).",
-        "status_selection_nothing": "No hay selección activa para borrar.",
-        "history_delete_selection": "Borrar Selección",
-        "compare_before": "ANTES",
-        "compare_after": "DESPUÉS",
-    },
-    "en": {
-        "lang_name": "English",
-        "btn_open": "Open",
-        "btn_save": "Save",
-        "btn_compare": "Compare",
-        "btn_zoom_fit": "Fit",
-        "btn_kofi": "Support Eliather",
-        "tooltip_open": "Open image from explorer (Ctrl+O) or paste with Ctrl+V",
-        "tooltip_save": "Save processed image to disk (Ctrl+S)",
-        "tooltip_theme": "Toggle Light/Dark theme",
-        "tooltip_lang": "Change language",
-        "tooltip_undo": "Undo last action (Ctrl+Z)",
-        "tooltip_redo": "Redo action (Ctrl+Y)",
-        "tooltip_reset": "Restore Original (Restores the initial image)",
-        "tooltip_zoom_out": "Zoom out",
-        "tooltip_zoom_in": "Zoom in",
-        "tooltip_zoom_fit": "Fit entire image to window",
-        "tooltip_zoom_100": "Zoom to 100%",
-        "tooltip_compare": "Compare before/after with interactive curtain",
-        "tooltip_kofi": "Buy me a coffee on Ko-fi to support development",
-        "tooltip_device": "Click to toggle between GPU acceleration and safe CPU mode",
-        "status_ready": "Ready. Drag an image or click 'Open Image'.",
-        "status_saved": "Image saved to: {name}",
-        "status_loaded": "Loaded: {name}",
-        "status_undo": "Undone: {action}",
-        "status_redo": "Redone: {action}",
-        "status_reset": "Original image restored.",
-        "status_device_changed": "Device mode changed to: {device}",
-        "status_no_clipboard": "Clipboard does not contain an image.",
-        "status_copied_clipboard": "📋 Image copied to clipboard (with transparency)",
-        "status_open_first": "Open an image first.",
-        "status_no_changes_compare": "No changes to compare.",
-        "status_compare_active": "Comparison mode active: drag the divider to compare with the original.",
-        "status_compare_inactive": "Comparison mode deactivated.",
-        "status_crop_first_remove": "Apply Remove Background first to crop to content.",
-        "status_crop_none": "No content detected to crop.",
-        "status_crop_already": "Image is already fitted to content.",
-        "status_batch_preparing": "Preparing batch...",
-        "status_batch_finished": "Batch processing finished.",
-        "status_batch_error": "Batch processing error.",
-        "popup_save_success_title": "Saved Successfully",
-        "popup_save_success_msg": "The image was successfully saved to:\n{path}",
-        "popup_no_image_title": "No Image",
-        "popup_no_image_msg": "There is no active image to save.",
-        "popup_error_save_title": "Save Error",
-        "popup_error_save_msg": "Could not save the image:\n{error}",
-        "popup_device_title": "Device Updated",
-        "popup_device_msg": "Processing will now be performed on: {device}",
-        "popup_lang_changed_title": "Language changed",
-        "popup_lang_changed_msg": "Please restart the application to apply language changes.",
-        
-        "brush_settings": "Brush Settings",
-        "lbl_size_thick": "Thickness:",
-        "header_detected_subjects": "AI Detected Subjects",
-        "btn_detect_subjects": "🔍 Detect Subjects (YOLO11)",
-        "detect_status_idle": "Detect individual persons or objects to isolate them.",
-        "detect_status_computing": "Detecting with YOLO11...",
-        "btn_isolate_subject": "Isolate Subject",
-        "btn_select_subject": "Select",
-        "detect_none_found": "No subjects detected.",
-        "header_batch": "Batch Processing:",
-        "batch_desc": "Remove background from multiple images automatically.",
-        "btn_batch_input": "Select source folder...",
-        "batch_no_folder": "No folder selected",
-        "btn_batch_output": "Select destination folder...",
-        "lbl_batch_model": "Model to use:",
-        "chk_batch_clothing": "Advanced clothing detector",
-        "btn_run_batch": "Start Batch Process",
-        "batch_input_path": "Source: {path}",
-        "batch_output_path": "Destination: {path}",
-        
-        "model_isnet-anime": "Anime (IS-Net)",
-        "model_inspyrenet": "General (InSPyReNet)",
-        "model_birefnet-general": "High Definition (BiRefNet)",
-        "model_u2net_human_seg": "People & Clothes (U2-Net)",
-        
-        "scale_x2": "Upscale 2x",
-        "scale_x4": "Upscale 4x (Maximum resolution)",
-        "scale_enhance_only": "Sharpen only (No resize)",
+logger = logging.getLogger("TimoitaseBG.i18n")
 
-        "btn_ok": "OK",
-        
-        "canvas_drop_title": "Drag an image, GIF or video here",
-        "canvas_drop_subtitle": "or click to explore • paste with Ctrl+V",
-        "canvas_drop_formats": "Supports PNG, JPG, WEBP, GIF, MP4, MOV, WEBM, MKV, AVI & more",
-        
-        "sidebar_title": "Tools",
-        "sidebar_subtitle": "Local AI editing and enhancement",
-        "sidebar_tab_bg": "Remove BG",
-        "sidebar_tab_restore": "Upscale",
-        "sidebar_tab_brush": "Brush",
-        "sidebar_tab_batch": "Batch",
-        "sidebar_shortcuts_col": "▸ Quick shortcuts",
-        "sidebar_shortcuts_exp": "▾ Quick shortcuts",
-        "btn_shortcuts": "Keyboard Shortcuts",
-        "tooltip_shortcuts": "View keyboard shortcuts and gestures (F1 / Ctrl+/)",
-        "shortcuts_modal_title": "Keyboard Shortcuts & Gestures",
-        "shortcuts_cat_nav": "Navigation & View",
-        "shortcuts_cat_edit": "Edit & File",
-        "shortcuts_cat_selection": "Wand & Selection",
-        "shortcut_zoom": "Mouse Wheel",
-        "shortcut_zoom_desc": "Zoom in / out",
-        "shortcut_pan": "Middle Click / Space",
-        "shortcut_pan_desc": "Pan and move canvas",
-        "shortcut_fit": "Ctrl + 0",
-        "shortcut_fit_desc": "Fit to viewport",
-        "shortcut_100": "Ctrl + 1",
-        "shortcut_100_desc": "Actual size (100%)",
-        "shortcut_open": "Ctrl + O",
-        "shortcut_open_desc": "Open image file",
-        "shortcut_save": "Ctrl + S",
-        "shortcut_save_desc": "Save processed image",
-        "shortcut_copy": "Ctrl + C",
-        "shortcut_copy_desc": "Copy image (with transparency)",
-        "shortcut_paste": "Ctrl + V",
-        "shortcut_paste_desc": "Paste from clipboard",
-        "shortcut_undo": "Ctrl + Z",
-        "shortcut_undo_desc": "Undo last action",
-        "shortcut_redo": "Ctrl + Y / Ctrl+Shift+Z",
-        "shortcut_redo_desc": "Redo action",
-        "shortcut_del": "Delete / Backspace",
-        "shortcut_del_desc": "Delete selected area",
-        "shortcut_deselect": "Ctrl + D / Esc",
-        "shortcut_deselect_desc": "Deselect",
-        "shortcut_select_all": "Ctrl + A",
-        "shortcut_select_all_desc": "Select all canvas",
-        "shortcut_invert": "Ctrl + Shift + I",
-        "shortcut_invert_desc": "Invert selection",
-        "btn_close_shortcuts": "Got it",
-        
-        "header_model": "Segmentation Model:",
-        "model_desc": "Removes background leaving clean transparency optimized for anime and illustrations.",
-        "chk_clothing": "Advanced clothing detector (prevents holes in white clothes)",
-        "chk_clothing_tooltip": "Combines segmentation with semantic detection to protect white shirts and sleeves against bright backgrounds.",
-        "btn_remove_now": "Remove Background Now",
-        
-        "header_crop": "Canvas Fit:",
-        "btn_autocrop_now": "Crop to Content",
-        "btn_autocrop_tooltip": "Apply Remove Background first",
-        
-        "header_bg": "Background:",
-        "swatch_transparent": "Transparent / None (Restore Alpha)",
-        "swatch_white": "White Background (#FFFFFF)",
-        "swatch_black": "Black Background (#000000)",
-        "swatch_gray": "Gray Background (#E2E8F0)",
-        "swatch_custom": "Choose custom color...",
-        "color_white": "White (#FFFFFF)",
-        "color_black": "Black (#000000)",
-        "color_gray": "Gray (#E2E8F0)",
-        
-        "header_scale": "Enhancement Factor:",
-        "scale_desc": "Improves sharpness and resolution using Real-ESRGAN specialized in art.",
-        "chk_tiling": "Process by blocks (Smart Tiling)",
-        "chk_tiling_tooltip": "Prevents memory issues on high-res images.",
-        "btn_scale_now": "Upscale Image",
-        
-        "header_brush": "Magic Brush:",
-        "brush_desc": "Paint over any object you want to remove and the AI will cohesively inpaint it.",
-        "btn_brush_mode": "Brush Mode",
-        "btn_paint": "Paint",
-        "btn_erase": "Eraser",
-        "lbl_size": "Size:",
-        "lbl_smoothness": "Smooth:",
-        "lbl_hardness": "Hardness:",
-        "btn_clear_mask": "Clear Stroke",
-        "btn_apply_inpaint": "Apply AI Fill",
-        
-        "btn_wand": "Wand",
-        "tip_wand": "Photoshop-style Magic Wand selection tool (selects similar colors or by AI)",
-        "wand_settings": "Magic Wand Settings",
-        "wand_type_color": "Color",
-        "wand_type_ai": "AI (Object)",
-        "tip_wand_color": "Traditional color tolerance selection (flood-fill)",
-        "tip_wand_ai": "Smart AI selection: click any object to select it",
-        "wand_ai_desc": "Click any object on the canvas and AI will automatically detect and select it.",
-        "wand_ai_ready": "AI ready to select",
-        "wand_ai_computing": "Analyzing image with AI...",
-        "lbl_wand_mode": "Selection Mode:",
-        "tip_wand_new": "New selection",
-        "tip_wand_add": "Add to selection (Shift)",
-        "tip_wand_subtract": "Subtract from selection (Alt)",
-        "tip_wand_intersect": "Intersect with selection (Shift+Alt)",
-        "lbl_tolerance": "Tolerance:",
-        "tip_tolerance": "Color tolerance from 0 to 255 (same as Photoshop)",
-        "chk_anti_alias": "Anti-alias",
-        "tip_anti_alias": "Smooths the edges of the selection",
-        "chk_contiguous": "Contiguous",
-        "tip_contiguous": "Selects only adjacent connected pixels",
-        "wand_hint": "Click to select. Del to erase. Shift: add, Alt: subtract, Ctrl+D: deselect.",
-        "selection_box": "Selection Actions",
-        "selection_none": "No active selection.",
-        "selection_info": "{px} px selected ({pct}% of image)",
-        "btn_delete_selection": "Delete Selection",
-        "tip_delete_selection": "Deletes selected area making it transparent (Del / Backspace key)",
-        "btn_invert_selection": "Invert",
-        "tip_invert_selection": "Inverts current selection (Ctrl+Shift+I)",
-        "btn_select_all": "Select All",
-        "tip_select_all": "Selects entire image (Ctrl+A)",
-        "btn_clear_selection": "Deselect",
-        "tip_clear_selection": "Clears current selection (Ctrl+D or Esc)",
-        "status_selection_deleted": "Selection deleted (pixels made transparent).",
-        "status_selection_nothing": "No active selection to delete.",
-        "history_delete_selection": "Delete Selection",
-        "compare_before": "BEFORE",
-        "compare_after": "AFTER",
-    },
-    "ru": {
-        "lang_name": "Русский",
-        "btn_open": "Открыть",
-        "btn_save": "Сохранить",
-        "btn_compare": "Сравнить",
-        "btn_zoom_fit": "Вместить",
-        "btn_kofi": "Поддержать Eliather",
-        "tooltip_open": "Открыть из проводника (Ctrl+O) или вставить через Ctrl+V",
-        "tooltip_save": "Сохранить на диск (Ctrl+S)",
-        "tooltip_theme": "Переключить тему",
-        "tooltip_lang": "Изменить язык",
-        "tooltip_undo": "Отменить (Ctrl+Z)",
-        "tooltip_redo": "Повторить (Ctrl+Y)",
-        "tooltip_reset": "Восстановить оригинал",
-        "tooltip_zoom_out": "Уменьшить",
-        "tooltip_zoom_in": "Увеличить",
-        "tooltip_zoom_fit": "Вместить в окно",
-        "tooltip_zoom_100": "Масштаб 100%",
-        "tooltip_compare": "Интерактивное сравнение до/после",
-        "tooltip_kofi": "Поддержите разработку на Ko-fi",
-        "tooltip_device": "Переключение GPU / CPU",
-        "status_ready": "Готово. Перетащите изображение или нажмите 'Открыть'.",
-        "status_saved": "Сохранено в: {name}",
-        "status_loaded": "Загружено: {name}",
-        "status_undo": "Отменено: {action}",
-        "status_redo": "Повторено: {action}",
-        "status_reset": "Оригинал восстановлен.",
-        "status_device_changed": "Режим изменен на: {device}",
-        "status_no_clipboard": "В буфере обмена нет изображения.",
-        "status_copied_clipboard": "📋 Изображение скопировано в буфер обмена (с прозрачностью)",
-        "status_open_first": "Сначала откройте изображение.",
-        "status_no_changes_compare": "Нет изменений для сравнения.",
-        "status_compare_active": "Режим сравнения активен: двигайте разделитель для сравнения с оригиналом.",
-        "status_compare_inactive": "Режим сравнения отключен.",
-        "status_crop_first_remove": "Сначала удалите фон, чтобы обрезать по контенту.",
-        "status_crop_none": "Содержимое для обрезки не обнаружено.",
-        "status_crop_already": "Изображение уже подогнано под содержимое.",
-        "status_batch_preparing": "Подготовка пакета...",
-        "status_batch_finished": "Пакетная обработка завершена.",
-        "status_batch_error": "Ошибка пакетной обработки.",
-        "popup_save_success_title": "Успешно",
-        "popup_save_success_msg": "Сохранено в:\n{path}",
-        "popup_no_image_title": "Нет изображения",
-        "popup_no_image_msg": "Нет изображения для сохранения.",
-        "popup_error_save_title": "Ошибка",
-        "popup_error_save_msg": "Не удалось сохранить:\n{error}",
-        "popup_device_title": "Устройство обновлено",
-        "popup_device_msg": "Обработка на: {device}",
-        "popup_lang_changed_title": "Язык изменен",
-        "popup_lang_changed_msg": "Перезапустите приложение.",
-        
-        "brush_settings": "Настройки кисти",
-        "lbl_size_thick": "Толщина:",
-        "header_detected_subjects": "Обнаруженные объекты (ИИ)",
-        "btn_detect_subjects": "🔍 Найти объекты (YOLO11)",
-        "detect_status_idle": "Обнаруживайте людей или объекты для изоляции.",
-        "detect_status_computing": "Анализ с YOLO11...",
-        "btn_isolate_subject": "Изолировать",
-        "btn_select_subject": "Выделить",
-        "detect_none_found": "Объекты не найдены.",
-        "header_batch": "Пакетная обработка:",
-        "batch_desc": "Автоматическое удаление фона с нескольких изображений.",
-        "btn_batch_input": "Выбрать исходную папку...",
-        "batch_no_folder": "Папка не выбрана",
-        "btn_batch_output": "Выбрать папку назначения...",
-        "lbl_batch_model": "Модель:",
-        "chk_batch_clothing": "Детектор одежды",
-        "btn_run_batch": "Начать пакетную обработку",
-        "batch_input_path": "Источник: {path}",
-        "batch_output_path": "Назначение: {path}",
-        
-        "model_isnet-anime": "Аниме (IS-Net)",
-        "model_inspyrenet": "Основная (InSPyReNet)",
-        "model_birefnet-general": "Высокая детализация (BiRefNet)",
-        "model_u2net_human_seg": "Люди и одежда (U2-Net)",
-        
-        "scale_x2": "Увеличить 2x",
-        "scale_x4": "Увеличить 4x (Макс. разрешение)",
-        "scale_enhance_only": "Только резкость (Без изменения размера)",
+_SUPPORTED_LANG_ORDER = ("es", "en", "ru", "zh")
 
-        "btn_ok": "ОК",
-        
-        "canvas_drop_title": "Перетащите изображение сюда",
-        "canvas_drop_subtitle": "или используйте кнопку 'Открыть' / Ctrl+V",
-        "canvas_drop_formats": "Поддерживает PNG, JPG, JPEG, WEBP и BMP",
-        
-        "sidebar_title": "Инструменты",
-        "sidebar_subtitle": "Редактирование и ИИ-улучшение",
-        "sidebar_tab_bg": "Удалить фон",
-        "sidebar_tab_restore": "Увеличить",
-        "sidebar_tab_brush": "Кисть",
-        "sidebar_tab_batch": "Пакет",
-        "sidebar_shortcuts_col": "▸ Горячие клавиши",
-        "sidebar_shortcuts_exp": "▾ Горячие клавиши",
-        "btn_shortcuts": "Горячие клавиши",
-        "tooltip_shortcuts": "Показать горячие клавиши и жесты (F1 / Ctrl+/)",
-        "shortcuts_modal_title": "Горячие клавиши и жесты",
-        "shortcuts_cat_nav": "Навигация и вид",
-        "shortcuts_cat_edit": "Правка и файл",
-        "shortcuts_cat_selection": "Выделение",
-        "shortcut_zoom": "Колесико мыши",
-        "shortcut_zoom_desc": "Масштаб +/-",
-        "shortcut_pan": "Ср. клик / Пробел",
-        "shortcut_pan_desc": "Панорамирование",
-        "shortcut_fit": "Ctrl + 0",
-        "shortcut_fit_desc": "Вписать в окно",
-        "shortcut_100": "Ctrl + 1",
-        "shortcut_100_desc": "Масштаб 100%",
-        "shortcut_open": "Ctrl + O",
-        "shortcut_open_desc": "Открыть файл",
-        "shortcut_save": "Ctrl + S",
-        "shortcut_save_desc": "Сохранить файл",
-        "shortcut_copy": "Ctrl + C",
-        "shortcut_copy_desc": "Копировать изображение (с прозрачностью)",
-        "shortcut_paste": "Ctrl + V",
-        "shortcut_paste_desc": "Вставить из буфера",
-        "shortcut_undo": "Ctrl + Z",
-        "shortcut_undo_desc": "Отменить действие",
-        "shortcut_redo": "Ctrl + Y / Ctrl+Shift+Z",
-        "shortcut_redo_desc": "Повторить действие",
-        "shortcut_del": "Del / Backspace",
-        "shortcut_del_desc": "Удалить выделенное",
-        "shortcut_deselect": "Ctrl + D / Esc",
-        "shortcut_deselect_desc": "Снять выделение",
-        "shortcut_select_all": "Ctrl + A",
-        "shortcut_select_all_desc": "Выделить всё",
-        "shortcut_invert": "Ctrl + Shift + I",
-        "shortcut_invert_desc": "Инвертировать выделение",
-        "btn_close_shortcuts": "Понятно",
-        
-        "header_model": "Модель сегментации:",
-        "model_desc": "Удаляет фон, оставляя чистую прозрачность (оптимизировано для аниме).",
-        "chk_clothing": "Защита белой одежды от удаления",
-        "chk_clothing_tooltip": "Семантический детектор одежды для предотвращения дыр на белых рубашках.",
-        "btn_remove_now": "Удалить фон",
-        
-        "header_crop": "Кадрирование:",
-        "btn_autocrop_now": "Кадрировать по контуру",
-        "btn_autocrop_tooltip": "Сначала удалите фон",
-        
-        "header_bg": "Фон:",
-        "swatch_transparent": "Прозрачный",
-        "swatch_white": "Белый (#FFFFFF)",
-        "swatch_black": "Черный (#000000)",
-        "swatch_gray": "Серый (#E2E8F0)",
-        "swatch_custom": "Выбрать цвет...",
-        "color_white": "Белый (#FFFFFF)",
-        "color_black": "Черный (#000000)",
-        "color_gray": "Серый (#E2E8F0)",
-        
-        "header_scale": "Фактор улучшения:",
-        "scale_desc": "Повышает резкость с помощью Real-ESRGAN.",
-        "chk_tiling": "Обработка блоками (Tiling)",
-        "chk_tiling_tooltip": "Предотвращает ошибки памяти на больших фото.",
-        "btn_scale_now": "Увеличить",
-        
-        "header_brush": "Волшебная кисть:",
-        "brush_desc": "Закрасьте нежелательные объекты, и ИИ удалит их.",
-        "btn_brush_mode": "Режим кисти",
-        "btn_paint": "Рисовать",
-        "btn_erase": "Ластик",
-        "lbl_size": "Размер:",
-        "lbl_smoothness": "Сглаживание:",
-        "lbl_hardness": "Жесткость:",
-        "btn_clear_mask": "Очистить",
-        "btn_apply_inpaint": "Применить",
-        
-        "btn_wand": "Палочка",
-        "tip_wand": "Инструмент выделения «Волшебная палочка» как в Photoshop",
-        "wand_settings": "Настройки палочки",
-        "wand_type_color": "По цвету",
-        "wand_type_ai": "ИИ (Объект)",
-        "tip_wand_color": "Традиционное выделение по цвету",
-        "tip_wand_ai": "Умное выделение с ИИ: нажмите на любой объект",
-        "wand_ai_desc": "Нажмите на любой объект на холсте, и ИИ автоматически выделит его.",
-        "wand_ai_ready": "ИИ готов к выделению",
-        "wand_ai_computing": "Анализ изображения с ИИ...",
-        "lbl_wand_mode": "Режим выделения:",
-        "tip_wand_new": "Новое выделение",
-        "tip_wand_add": "Добавить к выделению (Shift)",
-        "tip_wand_subtract": "Вычесть из выделения (Alt)",
-        "tip_wand_intersect": "Пересечение с выделением (Shift+Alt)",
-        "lbl_tolerance": "Допуск:",
-        "tip_tolerance": "Допуск цвета от 0 до 255 (как в Photoshop)",
-        "chk_anti_alias": "Сглаживание",
-        "tip_anti_alias": "Сглаживает края выделения",
-        "chk_contiguous": "Смежные",
-        "tip_contiguous": "Выделять только соединенные пиксели",
-        "wand_hint": "Клик для выбора. Del для удаления. Shift: добавить, Alt: вычесть, Ctrl+D: снять.",
-        "selection_box": "Действия с выделением",
-        "selection_none": "Нет активного выделения.",
-        "selection_info": "Выделено {px} пикс. ({pct}% изображения)",
-        "btn_delete_selection": "Удалить выделенное",
-        "tip_delete_selection": "Удаляет выделенную область, делая её прозрачной (Del / Backspace)",
-        "btn_invert_selection": "Инвертировать",
-        "tip_invert_selection": "Инвертировать выделение (Ctrl+Shift+I)",
-        "btn_select_all": "Выделить всё",
-        "tip_select_all": "Выделить всё изображение (Ctrl+A)",
-        "btn_clear_selection": "Снять выделение",
-        "tip_clear_selection": "Снять текущее выделение (Ctrl+D или Esc)",
-        "status_selection_deleted": "Выделение удалено (пиксели сделаны прозрачными).",
-        "status_selection_nothing": "Нет активного выделения для удаления.",
-        "history_delete_selection": "Удалить выделение",
-        "compare_before": "ДО",
-        "compare_after": "ПОСЛЕ",
-    },
-    "zh": {
-        "lang_name": "中文",
-        "btn_open": "打开",
-        "btn_save": "保存",
-        "btn_compare": "对比",
-        "btn_zoom_fit": "适应",
-        "btn_kofi": "支持 Eliather",
-        "tooltip_open": "打开图像 (Ctrl+O) 或 Ctrl+V",
-        "tooltip_save": "保存 (Ctrl+S)",
-        "tooltip_theme": "切换主题",
-        "tooltip_lang": "更改语言",
-        "tooltip_undo": "撤消 (Ctrl+Z)",
-        "tooltip_redo": "重做 (Ctrl+Y)",
-        "tooltip_reset": "恢复原始图像",
-        "tooltip_zoom_out": "缩小",
-        "tooltip_zoom_in": "放大",
-        "tooltip_zoom_fit": "适应窗口",
-        "tooltip_zoom_100": "缩放至 100%",
-        "tooltip_compare": "对比",
-        "tooltip_kofi": "支持开发",
-        "tooltip_device": "切换 GPU / CPU",
-        "status_ready": "准备就绪。拖动图像或点击“打开”。",
-        "status_saved": "已保存到：{name}",
-        "status_loaded": "已加载：{name}",
-        "status_undo": "已撤消：{action}",
-        "status_redo": "已重做：{action}",
-        "status_reset": "已恢复原始图像。",
-        "status_device_changed": "设备模式已更改为：{device}",
-        "status_no_clipboard": "剪贴板中没有图像。",
-        "status_copied_clipboard": "📋 图像已复制到剪贴板（带透明通道）",
-        "status_open_first": "请先打开一张图片。",
-        "status_no_changes_compare": "没有可对比的更改。",
-        "status_compare_active": "对比模式已激活：拖动分割线以与原图对比。",
-        "status_compare_inactive": "对比模式已停用。",
-        "status_crop_first_remove": "请先应用去除背景以按内容裁剪。",
-        "status_crop_none": "未检测到可裁剪的内容。",
-        "status_crop_already": "图像已贴合内容。",
-        "status_batch_preparing": "正在准备批处理...",
-        "status_batch_finished": "批处理已完成。",
-        "status_batch_error": "批处理出错。",
-        "popup_save_success_title": "保存成功",
-        "popup_save_success_msg": "已成功保存到：\n{path}",
-        "popup_no_image_title": "无图像",
-        "popup_no_image_msg": "没有图像可供保存。",
-        "popup_error_save_title": "保存错误",
-        "popup_error_save_msg": "无法保存：\n{error}",
-        "popup_device_title": "设备已更新",
-        "popup_device_msg": "处理设备：{device}",
-        "popup_lang_changed_title": "语言已更改",
-        "popup_lang_changed_msg": "请重新启动应用程序。",
-        
-        "brush_settings": "画笔设置",
-        "lbl_size_thick": "粗细：",
-        "header_detected_subjects": "AI 检测到的主体",
-        "btn_detect_subjects": "🔍 识别主体 (YOLO11)",
-        "detect_status_idle": "检测单个人物或物体以单独隔离处理。",
-        "detect_status_computing": "YOLO11 正在检测...",
-        "btn_isolate_subject": "隔离主体",
-        "btn_select_subject": "选中区域",
-        "detect_none_found": "未检测到主体。",
-        "header_batch": "批量处理：",
-        "batch_desc": "自动从多张图像中去除背景。",
-        "btn_batch_input": "选择源文件夹...",
-        "batch_no_folder": "未选择文件夹",
-        "btn_batch_output": "选择目标文件夹...",
-        "lbl_batch_model": "使用的模型：",
-        "chk_batch_clothing": "高级衣物检测器",
-        "btn_run_batch": "开始批量处理",
-        "batch_input_path": "源：{path}",
-        "batch_output_path": "目标：{path}",
-        
-        "model_isnet-anime": "动漫 (IS-Net)",
-        "model_inspyrenet": "通用 (InSPyReNet)",
-        "model_birefnet-general": "超清细节 (BiRefNet)",
-        "model_u2net_human_seg": "人物与衣物 (U2-Net)",
-        
-        "scale_x2": "放大 2x",
-        "scale_x4": "放大 4x（最大分辨率）",
-        "scale_enhance_only": "仅锐化（不改变大小）",
 
-        "btn_ok": "确定",
-        
-        "canvas_drop_title": "将图像拖至此处",
-        "canvas_drop_subtitle": "或使用“打开”按钮 / 粘贴 (Ctrl+V)",
-        "canvas_drop_formats": "支持 PNG, JPG, JPEG, WEBP 和 BMP",
-        
-        "sidebar_title": "工具",
-        "sidebar_subtitle": "本地 AI 编辑和增强",
-        "sidebar_tab_bg": "去背景",
-        "sidebar_tab_restore": "放大",
-        "sidebar_tab_brush": "画笔",
-        "sidebar_tab_batch": "批量",
-        "sidebar_shortcuts_col": "▸ 快捷键",
-        "sidebar_shortcuts_exp": "▾ 快捷键",
-        "btn_shortcuts": "快捷键指南",
-        "tooltip_shortcuts": "查看快捷键和手势 (F1 / Ctrl+/)",
-        "shortcuts_modal_title": "快捷键与手势指南",
-        "shortcuts_cat_nav": "导航与视图",
-        "shortcuts_cat_edit": "编辑与文件",
-        "shortcuts_cat_selection": "魔棒与选区",
-        "shortcut_zoom": "鼠标滚轮",
-        "shortcut_zoom_desc": "放大 / 缩小",
-        "shortcut_pan": "中键 / 空格拖动",
-        "shortcut_pan_desc": "平移画布",
-        "shortcut_fit": "Ctrl + 0",
-        "shortcut_fit_desc": "适应窗口",
-        "shortcut_100": "Ctrl + 1",
-        "shortcut_100_desc": "实际大小 (100%)",
-        "shortcut_open": "Ctrl + O",
-        "shortcut_open_desc": "打开图片",
-        "shortcut_save": "Ctrl + S",
-        "shortcut_save_desc": "保存结果",
-        "shortcut_copy": "Ctrl + C",
-        "shortcut_copy_desc": "复制图像（带透明通道）",
-        "shortcut_paste": "Ctrl + V",
-        "shortcut_paste_desc": "从剪贴板粘贴",
-        "shortcut_undo": "Ctrl + Z",
-        "shortcut_undo_desc": "撤消操作",
-        "shortcut_redo": "Ctrl + Y / Ctrl+Shift+Z",
-        "shortcut_redo_desc": "重做操作",
-        "shortcut_del": "Delete / Backspace",
-        "shortcut_del_desc": "清除所选内容",
-        "shortcut_deselect": "Ctrl + D / Esc",
-        "shortcut_deselect_desc": "取消选择",
-        "shortcut_select_all": "Ctrl + A",
-        "shortcut_select_all_desc": "全选",
-        "shortcut_invert": "Ctrl + Shift + I",
-        "shortcut_invert_desc": "反向选择",
-        "btn_close_shortcuts": "了解",
-        
-        "header_model": "分割模型：",
-        "model_desc": "去除背景，保留优化的透明度（适合动漫和插画）。",
-        "chk_clothing": "高级衣物保护（防止白色衣服破洞）",
-        "chk_clothing_tooltip": "结合语义检测，保护白色衬衫免受亮背景干扰。",
-        "btn_remove_now": "立即去除背景",
-        
-        "header_crop": "画布调整：",
-        "btn_autocrop_now": "裁剪至内容",
-        "btn_autocrop_tooltip": "请先应用去除背景",
-        
-        "header_bg": "背景：",
-        "swatch_transparent": "透明",
-        "swatch_white": "白色 (#FFFFFF)",
-        "swatch_black": "黑色 (#000000)",
-        "swatch_gray": "灰色 (#E2E8F0)",
-        "swatch_custom": "自定义颜色...",
-        "color_white": "白色 (#FFFFFF)",
-        "color_black": "黑色 (#000000)",
-        "color_gray": "灰色 (#E2E8F0)",
-        
-        "header_scale": "增强倍数：",
-        "scale_desc": "使用 Real-ESRGAN 提高清晰度和分辨率。",
-        "chk_tiling": "分块处理 (Tiling)",
-        "chk_tiling_tooltip": "防止高分辨率图像的内存问题。",
-        "btn_scale_now": "放大图像",
-        
-        "header_brush": "魔法画笔：",
-        "brush_desc": "涂抹您想移除的对象，AI 将智能修复。",
-        "btn_brush_mode": "画笔模式",
-        "btn_paint": "涂抹",
-        "btn_erase": "橡皮擦",
-        "lbl_size": "大小：",
-        "lbl_smoothness": "平滑：",
-        "lbl_hardness": "硬度：",
-        "btn_clear_mask": "清除涂抹",
-        "btn_apply_inpaint": "应用 AI 填充",
-        
-        "btn_wand": "魔棒",
-        "tip_wand": "Photoshop 风格魔棒选择工具（选择相似颜色或通过 AI）",
-        "wand_settings": "魔棒设置",
-        "wand_type_color": "按颜色",
-        "wand_type_ai": "AI (物体)",
-        "tip_wand_color": "基于颜色容差的传统选取",
-        "tip_wand_ai": "智能 AI 选取：点击任意物体即可分割",
-        "wand_ai_desc": "点击画布上的任意物体，AI 将自动识别并选中它。",
-        "wand_ai_ready": "AI 已就绪",
-        "wand_ai_computing": "正在使用 AI 分析图像...",
-        "lbl_wand_mode": "选区模式：",
-        "tip_wand_new": "新选区",
-        "tip_wand_add": "添加到选区 (Shift)",
-        "tip_wand_subtract": "从选区减去 (Alt)",
-        "tip_wand_intersect": "与选区交叉 (Shift+Alt)",
-        "lbl_tolerance": "容差：",
-        "tip_tolerance": "颜色容差 0 到 255（与 Photoshop 相同）",
-        "chk_anti_alias": "消除锯齿",
-        "tip_anti_alias": "平滑选区边缘",
-        "chk_contiguous": "连续",
-        "tip_contiguous": "仅选择相连的相邻像素",
-        "wand_hint": "单击以选择。Del 删除。Shift 添加，Alt 减去，Ctrl+D 取消选择。",
-        "selection_box": "选区操作",
-        "selection_none": "没有活动选区。",
-        "selection_info": "已选择 {px} 像素（图像的 {pct}%）",
-        "btn_delete_selection": "删除所选内容",
-        "tip_delete_selection": "删除所选区域并使其透明（Del / Backspace 键）",
-        "btn_invert_selection": "反选",
-        "tip_invert_selection": "反向选择当前选区 (Ctrl+Shift+I)",
-        "btn_select_all": "全选",
-        "tip_select_all": "全选整张图像 (Ctrl+A)",
-        "btn_clear_selection": "取消选择",
-        "tip_clear_selection": "取消当前选区 (Ctrl+D 或 Esc)",
-        "status_selection_deleted": "选区已删除（像素已变为透明）。",
-        "status_selection_nothing": "没有活动选区可删除。",
-        "history_delete_selection": "删除选区",
-        "compare_before": "对比前",
-        "compare_after": "对比后",
-    }
-}
+def _resolve_locales_dir() -> Path:
+    candidate = APP_DIR / "locales"
+    if candidate.is_dir():
+        return candidate
+    return Path(__file__).resolve().parent / "locales"
+
+
+def _load_translations() -> Dict[str, Dict[str, str]]:
+    locales_dir = _resolve_locales_dir()
+    loaded: Dict[str, Dict[str, str]] = {}
+
+    if locales_dir.is_dir():
+        json_files = sorted(
+            locales_dir.glob("*.json"),
+            key=lambda p: (
+                _SUPPORTED_LANG_ORDER.index(p.stem)
+                if p.stem in _SUPPORTED_LANG_ORDER
+                else len(_SUPPORTED_LANG_ORDER),
+                p.stem,
+            ),
+        )
+        for path in json_files:
+            try:
+                data = json.loads(path.read_text(encoding="utf-8"))
+                if isinstance(data, dict):
+                    loaded[path.stem] = {str(k): str(v) for k, v in data.items()}
+            except (OSError, json.JSONDecodeError) as e:
+                logger.warning(f"No se pudo cargar idioma '{path.name}': {e}")
+
+    return loaded
+
+
+TRANSLATIONS: Dict[str, Dict[str, str]] = _load_translations()
+
 
 class Translator:
     def __init__(self):
         self.current_lang = "es"
         self._load_lang_preference()
 
+    def _get_qsettings(self):
+        try:
+            from PySide6.QtCore import QSettings
+            return QSettings(APP_AUTHOR, APP_NAME)
+        except Exception:
+            return None
+
     def _load_lang_preference(self):
-        pref_file = Path(os.path.expanduser("~")) / ".timoitasebg_lang.json"
-        if pref_file.exists():
+        settings = self._get_qsettings()
+        if settings is not None:
             try:
-                with open(pref_file, "r", encoding="utf-8") as f:
-                    data = json.load(f)
-                    lang = data.get("lang", "es")
-                    if lang in TRANSLATIONS:
-                        self.current_lang = lang
-            except:
-                pass
+                saved = settings.value("ui/language", None)
+                if isinstance(saved, str) and saved in TRANSLATIONS:
+                    self.current_lang = saved
+                    return
+            except Exception as e:
+                logger.debug(f"No se pudo leer idioma desde QSettings: {e}")
+
+        # Migración silenciosa desde archivo legado ~/.timoitasebg_lang.json
+        legacy_file = Path(os.path.expanduser("~")) / ".timoitasebg_lang.json"
+        if legacy_file.is_file():
+            try:
+                data = json.loads(legacy_file.read_text(encoding="utf-8"))
+                lang = data.get("lang", "es")
+                if lang in TRANSLATIONS:
+                    self.current_lang = lang
+                    if settings is not None:
+                        settings.setValue("ui/language", lang)
+            except (OSError, json.JSONDecodeError) as e:
+                logger.debug(f"Error leyendo preferencia legada de idioma: {e}")
 
     def _save_lang_preference(self):
-        pref_file = Path(os.path.expanduser("~")) / ".timoitasebg_lang.json"
-        try:
-            with open(pref_file, "w", encoding="utf-8") as f:
-                json.dump({"lang": self.current_lang}, f)
-        except:
-            pass
+        settings = self._get_qsettings()
+        if settings is not None:
+            try:
+                settings.setValue("ui/language", self.current_lang)
+                settings.sync()
+                return
+            except Exception as e:
+                logger.warning(f"No se pudo guardar idioma en QSettings: {e}")
 
-    def set_language(self, lang_code):
+        legacy_file = Path(os.path.expanduser("~")) / ".timoitasebg_lang.json"
+        try:
+            legacy_file.write_text(
+                json.dumps({"lang": self.current_lang}),
+                encoding="utf-8",
+            )
+        except OSError as e:
+            logger.warning(f"No se pudo persistir preferencia de idioma: {e}")
+
+    def set_language(self, lang_code: str):
         if lang_code in TRANSLATIONS:
             self.current_lang = lang_code
             self._save_lang_preference()
 
-    def get(self, key, **kwargs):
-        lang_dict = TRANSLATIONS.get(self.current_lang, TRANSLATIONS["en"])
-        text = lang_dict.get(key, TRANSLATIONS["es"].get(key, key))
+    def get(self, key: str, **kwargs) -> str:
+        lang_dict = TRANSLATIONS.get(self.current_lang, TRANSLATIONS.get("en", {}))
+        fallback_es = TRANSLATIONS.get("es", {})
+        text = lang_dict.get(key, fallback_es.get(key, key))
         if kwargs:
             try:
                 return text.format(**kwargs)
@@ -869,16 +120,21 @@ class Translator:
                 return text
         return text
 
+
 _translator = Translator()
 
-def tr(key, **kwargs):
+
+def tr(key: str, **kwargs) -> str:
     return _translator.get(key, **kwargs)
 
-def get_current_language():
+
+def get_current_language() -> str:
     return _translator.current_lang
 
-def set_language(lang_code):
+
+def set_language(lang_code: str):
     _translator.set_language(lang_code)
 
-def get_available_languages():
-    return [(code, data["lang_name"]) for code, data in TRANSLATIONS.items()]
+
+def get_available_languages() -> List[Tuple[str, str]]:
+    return [(code, data.get("lang_name", code)) for code, data in TRANSLATIONS.items()]

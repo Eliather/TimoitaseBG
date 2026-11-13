@@ -88,7 +88,10 @@ class YOLODetector:
                     status_cb=status_cb,
                 )
                 import onnxruntime as ort
-                providers = get_inference_providers()
+                from app.core.gpu_manager import get_gpu_manager
+
+                gpu_mgr = get_gpu_manager()
+                providers = get_inference_providers() if gpu_mgr.is_gpu_enabled() else ["CPUExecutionProvider"]
                 sess_options = get_optimized_session_options() or ort.SessionOptions()
                 try:
                     self._session = ort.InferenceSession(
@@ -99,6 +102,14 @@ class YOLODetector:
                     self._session = ort.InferenceSession(
                         str(model_path), sess_options, providers=["CPUExecutionProvider"]
                     )
+
+    def unload_sessions(self) -> None:
+        """Libera la sesión ONNX activa de YOLO11-seg para desocupar VRAM o reiniciar en otro proveedor."""
+        with self._lock:
+            if self._session is not None:
+                self._session = None
+        import gc
+        gc.collect()
 
     def _preprocess(
         self, pil_img: Image.Image, target_size: int = 640
@@ -188,13 +199,12 @@ class YOLODetector:
         class_ids_filt = class_ids[keep_indices]
         coeffs_filt = mask_coeffs[keep_indices]
 
-        # Convertir cajas a formato [x1, y1, w, h] para cv2.dnn.NMSBoxes
-        boxes_for_nms = []
-        for box in boxes_filt:
-            cx, cy, bw, bh = box
-            x1 = cx - bw / 2.0
-            y1 = cy - bh / 2.0
-            boxes_for_nms.append([int(x1), int(y1), int(bw), int(bh)])
+        # Convertir cajas a formato [x1, y1, w, h] de forma vectorizada para cv2.dnn.NMSBoxes
+        x1_arr = (boxes_filt[:, 0] - boxes_filt[:, 2] * 0.5).astype(np.int32)
+        y1_arr = (boxes_filt[:, 1] - boxes_filt[:, 3] * 0.5).astype(np.int32)
+        bw_arr = boxes_filt[:, 2].astype(np.int32)
+        bh_arr = boxes_filt[:, 3].astype(np.int32)
+        boxes_for_nms = np.stack([x1_arr, y1_arr, bw_arr, bh_arr], axis=1).tolist()
 
         nms_indices = cv2.dnn.NMSBoxes(
             boxes_for_nms,
@@ -209,44 +219,41 @@ class YOLODetector:
         if isinstance(nms_indices, np.ndarray):
             nms_indices = nms_indices.flatten().tolist()
 
-        # Protomasks a shape (32, 160*160)
+        # Multiplicación matricial por lotes (N, 32) @ (32, 25600) -> (N, 160, 160)
         protos_flat = output1[0].reshape(32, 160 * 160)
+        nms_coeffs = coeffs_filt[nms_indices]
+        masks_160_all = np.dot(nms_coeffs, protos_flat).reshape(-1, 160, 160)
 
         results: List[DetectedSubject] = []
         for rank, idx in enumerate(nms_indices):
             cx, cy, bw, bh = boxes_filt[idx]
-            x1_640 = max(0, cx - bw / 2.0)
-            y1_640 = max(0, cy - bh / 2.0)
-            x2_640 = min(640, cx + bw / 2.0)
-            y2_640 = min(640, cy + bh / 2.0)
-
-            coeff = coeffs_filt[idx : idx + 1]  # (1, 32)
-            # Multiplicación matricial (1, 32) @ (32, 25600) -> (1, 25600)
-            mask_160_flat = np.dot(coeff, protos_flat)[0]
-            mask_160 = mask_160_flat.reshape(160, 160)
-            # Sigmoid
-            mask_160 = 1.0 / (1.0 + np.exp(-np.clip(mask_160, -20.0, 20.0)))
-
-            # Redimensionar máscara proto a 640x640
-            mask_640 = cv2.resize(mask_160, (640, 640), interpolation=cv2.INTER_LINEAR)
-
-            # Recortar al bounding box en 640
-            ix1, iy1, ix2, iy2 = int(x1_640), int(y1_640), int(x2_640), int(y2_640)
-            box_mask = np.zeros_like(mask_640)
-            box_mask[iy1:iy2, ix1:ix2] = mask_640[iy1:iy2, ix1:ix2]
-
-            # Des-letterbox
-            crop_subject = box_mask[pad_y : pad_y + new_h, pad_x : pad_x + new_w]
-            orig_mask_f32 = cv2.resize(
-                crop_subject, (orig_w, orig_h), interpolation=cv2.INTER_LINEAR
-            )
-            binary_mask = orig_mask_f32 > 0.5
+            x1_640 = max(float(pad_x), cx - bw / 2.0)
+            y1_640 = max(float(pad_y), cy - bh / 2.0)
+            x2_640 = min(float(pad_x + new_w), cx + bw / 2.0)
+            y2_640 = min(float(pad_y + new_h), cy + bh / 2.0)
 
             # Bounding box en coordenadas de la imagen original
             orig_x1 = max(0, min(orig_w, int(round((x1_640 - pad_x) / scale))))
             orig_y1 = max(0, min(orig_h, int(round((y1_640 - pad_y) / scale))))
             orig_x2 = max(0, min(orig_w, int(round((x2_640 - pad_x) / scale))))
             orig_y2 = max(0, min(orig_h, int(round((y2_640 - pad_y) / scale))))
+
+            binary_mask = np.zeros((orig_h, orig_w), dtype=bool)
+            box_w = orig_x2 - orig_x1
+            box_h = orig_y2 - orig_y1
+            if box_w > 0 and box_h > 0:
+                # Recortar en el espacio prototipo 160x160 (factor 0.25 respecto a 640x640)
+                px1 = max(0, min(159, int(np.floor(x1_640 * 0.25))))
+                py1 = max(0, min(159, int(np.floor(y1_640 * 0.25))))
+                px2 = max(px1 + 1, min(160, int(np.ceil(x2_640 * 0.25))))
+                py2 = max(py1 + 1, min(160, int(np.ceil(y2_640 * 0.25))))
+
+                proto_crop = masks_160_all[rank, py1:py2, px1:px2]
+                # Redimensionar únicamente el ROI del sujeto (sigmoid(x) > 0.5 <=> logit > 0.0)
+                patch_logits = cv2.resize(
+                    proto_crop, (box_w, box_h), interpolation=cv2.INTER_LINEAR
+                )
+                binary_mask[orig_y1:orig_y2, orig_x1:orig_x2] = patch_logits > 0.0
 
             cid = int(class_ids_filt[idx])
             cname = COCO_CLASSES[cid] if cid < len(COCO_CLASSES) else "object"
@@ -273,6 +280,69 @@ class YOLODetector:
 
 
 _detector_instance: Optional[YOLODetector] = None
+
+
+def refine_yolo_subject_mask(
+    pil_img: Optional[Image.Image],
+    subject: Optional[DetectedSubject],
+    sam_manager: Optional[Any] = None,
+) -> Optional[np.ndarray]:
+    """
+    Convierte la máscara gruesa de YOLO11-seg en una máscara alfa HD (uint8 0-255)
+    combinando MobileSAM (si tiene embedding listo) y Guided Filter perimetral.
+    """
+    if pil_img is None or subject is None:
+        return None
+
+    orig_w, orig_h = pil_img.size
+    coarse_bool = subject.mask
+    if coarse_bool.shape != (orig_h, orig_w):
+        return None
+
+    base_prob = coarse_bool.astype(np.float32)
+
+    if sam_manager is None:
+        from app.core.sam_manager import get_sam_manager
+        sam_manager = get_sam_manager()
+
+    if sam_manager is not None and sam_manager.has_embedding():
+        sam_prob = sam_manager.predict_mask_from_yolo_subject(
+            bbox=subject.bbox,
+            coarse_mask=coarse_bool,
+            orig_img_size=(orig_w, orig_h),
+        )
+        if sam_prob is not None:
+            sam_bin = sam_prob > 0.5
+            inter = np.logical_and(sam_bin, coarse_bool).sum()
+            union = np.logical_or(sam_bin, coarse_bool).sum()
+            if union > 0 and (inter / union) >= 0.40:
+                base_prob = sam_prob
+
+    try:
+        from app.core.postprocess import apply_guided_filter
+
+        x1, y1, x2, y2 = [int(v) for v in subject.bbox]
+        pad = 24
+        rx1, ry1 = max(0, x1 - pad), max(0, y1 - pad)
+        rx2, ry2 = min(orig_w, x2 + pad), min(orig_h, y2 + pad)
+
+        if rx2 > rx1 and ry2 > ry1:
+            crop_rgb = np.array(pil_img.crop((rx1, ry1, rx2, ry2)).convert("RGB"), dtype=np.uint8)
+            crop_guide = cv2.cvtColor(crop_rgb, cv2.COLOR_RGB2BGR)
+            crop_prob = base_prob[ry1:ry2, rx1:rx2]
+            crop_refined = apply_guided_filter(
+                guide_bgr=crop_guide,
+                prob_mask=crop_prob,
+                radius=6,
+                eps=1e-4,
+                band_dilation=12,
+            )
+            base_prob = base_prob.copy()
+            base_prob[ry1:ry2, rx1:rx2] = crop_refined
+    except Exception as e:
+        logger.warning(f"Guided filter en aislamiento YOLO omitido: {e}")
+
+    return np.clip(np.round(base_prob * 255.0), 0, 255).astype(np.uint8)
 
 
 def get_yolo_detector() -> YOLODetector:

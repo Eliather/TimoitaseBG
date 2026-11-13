@@ -109,17 +109,25 @@ def save_animated_gif(
     if not frames_rgba:
         raise ValueError("No hay fotogramas para exportar el GIF.")
 
-    p_frames: List[Image.Image] = []
-    has_trans = False
-
-    for frame in frames_rgba:
-        p_frame, is_trans = rgba_to_gif_palette_frame(
+    def _convert_single(frame: Image.Image) -> Tuple[Image.Image, bool]:
+        return rgba_to_gif_palette_frame(
             frame,
             alpha_threshold=alpha_threshold,
             bg_color_rgb=bg_color_rgb,
         )
-        p_frames.append(p_frame)
-        has_trans = is_trans
+
+    if len(frames_rgba) > 4:
+        import os
+        from concurrent.futures import ThreadPoolExecutor
+
+        workers = max(1, min(4, os.cpu_count() or 2))
+        with ThreadPoolExecutor(max_workers=workers) as pool:
+            results = list(pool.map(_convert_single, frames_rgba))
+    else:
+        results = [_convert_single(frame) for frame in frames_rgba]
+
+    p_frames: List[Image.Image] = [res[0] for res in results]
+    has_trans = bool(results[-1][1]) if results else False
 
     save_kwargs = {
         "save_all": True,

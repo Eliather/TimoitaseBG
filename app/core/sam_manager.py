@@ -42,10 +42,12 @@ class SAMManager:
         self._is_computing: bool = False
 
     def is_available(self) -> bool:
-        """Indica si los pesos de MobileSAM ya están descargados localmente."""
-        enc_path = MODELS_DIR / "mobile_sam_image_encoder.onnx"
-        dec_path = MODELS_DIR / "sam_mask_decoder_single.onnx"
-        return enc_path.exists() and dec_path.exists()
+        """Indica si los pesos de MobileSAM (FP32 o INT8) ya están descargados localmente."""
+        from app.core.model_fetcher import resolve_local_model
+        return (
+            resolve_local_model("mobile_sam_image_encoder.onnx") is not None
+            and resolve_local_model("sam_mask_decoder_single.onnx") is not None
+        )
 
     def ensure_models(
         self,
@@ -310,17 +312,27 @@ class SAMManager:
             orig_w, orig_h = orig_img_size or self.orig_size
             scale = self.scale_factor or (1024.0 / max(orig_w, orig_h))
 
-            # 1. Calcular el polo de inaccesibilidad (punto más profundo garantizado dentro del sujeto)
-            mask_u8 = (coarse_mask > 0).astype(np.uint8)
-            if np.any(mask_u8):
-                dist_map = cv2.distanceTransform(mask_u8, cv2.DIST_L2, 5)
-                _, _, _, max_loc = cv2.minMaxLoc(dist_map)
-                cx, cy = max_loc
-            else:
-                cx = (bbox[0] + bbox[2]) // 2
-                cy = (bbox[1] + bbox[3]) // 2
-
             x1, y1, x2, y2 = bbox
+            bx1 = max(0, min(orig_w, int(x1)))
+            by1 = max(0, min(orig_h, int(y1)))
+            bx2 = max(bx1, min(orig_w, int(x2)))
+            by2 = max(by1, min(orig_h, int(y2)))
+
+            # 1. Calcular el polo de inaccesibilidad restringido al ROI del Bounding Box
+            roi_mask = coarse_mask[by1:by2, bx1:bx2] if (bx2 > bx1 and by2 > by1) else coarse_mask
+            roi_u8 = (roi_mask > 0).astype(np.uint8)
+            if np.any(roi_u8):
+                dist_map = cv2.distanceTransform(roi_u8, cv2.DIST_L2, 5)
+                _, _, _, max_loc = cv2.minMaxLoc(dist_map)
+                if bx2 > bx1 and by2 > by1:
+                    cx = bx1 + max_loc[0]
+                    cy = by1 + max_loc[1]
+                else:
+                    cx, cy = max_loc
+            else:
+                cx = (x1 + x2) // 2
+                cy = (y1 + y2) // 2
+
             point_coords = np.array(
                 [[
                     [float(cx) * scale, float(cy) * scale],
@@ -367,8 +379,9 @@ class SAMManager:
                 else:
                     crop_mask = mask_2d
 
-                prob_resized = cv2.resize(crop_mask, (orig_w, orig_h), interpolation=cv2.INTER_LINEAR)
-                prob_norm = 1.0 / (1.0 + np.exp(-np.clip(prob_resized, -15.0, 15.0)))
+                # Aplicar sigmoide en baja resolución antes de escalar a (orig_w, orig_h)
+                prob_lowres = 1.0 / (1.0 + np.exp(-np.clip(crop_mask, -15.0, 15.0)))
+                prob_norm = cv2.resize(prob_lowres, (orig_w, orig_h), interpolation=cv2.INTER_LINEAR)
                 return prob_norm
             except Exception as e:
                 logger.warning(f"Fallo en predict_mask_from_yolo_subject con BBox, intentando punto simple: {e}")

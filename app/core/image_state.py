@@ -58,9 +58,8 @@ class ImageState:
             return False
         curr = self._history[self._current_index][0]
         if curr.mode == "RGBA":
-            alpha = curr.split()[-1]
-            extrema = alpha.getextrema()
-            return extrema[0] < 255
+            extrema = curr.getextrema()
+            return extrema[3][0] < 255
         return False
 
     @property
@@ -80,12 +79,10 @@ class ImageState:
         """
         for img, _ in reversed(self._history[: self._current_index]):
             if img.mode == "RGBA":
-                alpha = img.split()[-1]
-                if alpha.getextrema()[0] < 255:
+                if img.getextrema()[3][0] < 255:
                     return img.copy()
         if self._original_image and self._original_image.mode == "RGBA":
-            alpha = self._original_image.split()[-1]
-            if alpha.getextrema()[0] < 255:
+            if self._original_image.getextrema()[3][0] < 255:
                 return self._original_image.copy()
         return None
 

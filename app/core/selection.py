@@ -51,20 +51,21 @@ def magic_wand_region(
     tolerance = int(max(0, min(255, tolerance)))
 
     # Los píxeles totalmente transparentes no tienen un color "real": se unifican
-    # a (0,0,0,0) para que el área transparente se seleccione como un bloque.
-    work = rgba.astype(np.int16)
-    work[rgba[:, :, 3] == 0] = 0
+    # a (0,0,0,0) en uint8 para que el área transparente se seleccione como un bloque
+    # sin alojar buffers temporales int16.
+    work_u8 = rgba.copy()
+    work_u8[work_u8[:, :, 3] == 0] = 0
 
-    seed = work[y, x]
-    diff = np.abs(work - seed).max(axis=2)
-    within = diff <= tolerance
+    seed = [int(v) for v in work_u8[y, x]]
+    lower = np.array([max(0, c - tolerance) for c in seed], dtype=np.uint8)
+    upper = np.array([min(255, c + tolerance) for c in seed], dtype=np.uint8)
+    binary = cv2.inRange(work_u8, lower, upper)
 
     if not contiguous:
-        return within
+        return binary > 0
 
     # Relleno por inundación sobre la máscara binaria: conserva solo la región
     # conectada (4-vecindad) a la semilla.
-    binary = within.astype(np.uint8) * 255
     ff_mask = np.zeros((h + 2, w + 2), np.uint8)
     cv2.floodFill(
         binary, ff_mask, (x, y), 0, 0, 0,

@@ -89,14 +89,20 @@ class PersistentGPUWorker:
             return override_providers
         return get_worker_gpu_providers(self.device_id)
 
-    def _clear_rembg_sessions(self):
-        """Libera explícitamente todas las sesiones y fuerza recolección de basura."""
+    def _clear_rembg_sessions(self, preserve_clothing_session: bool = False):
+        """Libera explícitamente las sesiones en caché y fuerza recolección de basura."""
+        from app.config import is_integrated_gpu
+
+        keep_clothing = preserve_clothing_session and (not is_integrated_gpu())
         for name in list(self._cached_sessions.keys()):
+            if keep_clothing and name == "u2net_human_seg":
+                continue
             try:
                 del self._cached_sessions[name]
             except Exception:
                 pass
-        self._cached_sessions.clear()
+        if not keep_clothing:
+            self._cached_sessions.clear()
 
         if self._restorer_instance is not None:
             try:
@@ -132,7 +138,7 @@ class PersistentGPUWorker:
         if "inspyrenet" not in self._cached_sessions:
             if self._cached_sessions or self._restorer_instance is not None:
                 logger.info("Liberando sesiones previas de VRAM para cargar inspyrenet...")
-                self._clear_rembg_sessions()
+                self._clear_rembg_sessions(preserve_clothing_session=True)
 
             from app.core.model_fetcher import ensure_model_file
 
@@ -211,34 +217,31 @@ class PersistentGPUWorker:
 
         if model_name in ("isnet-anime", "birefnet-general", "u2net_human_seg"):
             import rembg
-            from app.core.model_fetcher import MODEL_URLS, ensure_model_file
+            from app.core.model_fetcher import load_rembg_session
             logger.info(f"[GPUWorker:{os.getpid()}] Ejecutando {model_name} en GPU con providers: {eff_providers}...")
             if model_name not in self._cached_sessions:
-                onnx_fname = f"{model_name}.onnx"
-                if onnx_fname in MODEL_URLS:
-                    def _dl_rembg(dl: int, tot: int):
-                        if progress_cb and tot > 0:
-                            pct = 5 + int(round((dl / tot) * 30))
-                            dl_mb = dl / (1024 * 1024)
-                            tot_mb = tot / (1024 * 1024)
-                            progress_cb(
-                                min(35, pct),
-                                f"Descargando {onnx_fname} ({dl_mb:.1f} / {tot_mb:.1f} MB)...",
-                            )
-                    ensure_model_file(onnx_fname, progress_cb=_dl_rembg)
                 if progress_cb:
                     progress_cb(38, f"Cargando modelo {model_name} en memoria...")
                 if self._cached_sessions or self._restorer_instance is not None:
-                    self._clear_rembg_sessions()
+                    self._clear_rembg_sessions(preserve_clothing_session=True)
+                sess_opts = get_optimized_session_options()
                 try:
-                    self._cached_sessions[model_name] = rembg.new_session(model_name, providers=eff_providers)
+                    self._cached_sessions[model_name] = load_rembg_session(
+                        model_name,
+                        providers=eff_providers,
+                        sess_opts=sess_opts,
+                        progress_cb=progress_cb,
+                    )
                 except Exception as e:
                     logger.warning(
                         f"Fallo al cargar sesión rembg '{model_name}' con proveedores GPU/CoreML/QNN: {e}. "
                         f"Conmutando a CPUExecutionProvider..."
                     )
-                    self._cached_sessions[model_name] = rembg.new_session(
-                        model_name, providers=["CPUExecutionProvider"]
+                    self._cached_sessions[model_name] = load_rembg_session(
+                        model_name,
+                        providers=["CPUExecutionProvider"],
+                        sess_opts=sess_opts,
+                        progress_cb=progress_cb,
                     )
 
             session = self._cached_sessions[model_name]
@@ -251,10 +254,14 @@ class PersistentGPUWorker:
                     f"Fallo en inferencia rembg '{model_name}' con acelerador ({run_err}). "
                     f"Reintentando en CPUExecutionProvider..."
                 )
-                session = rembg.new_session(model_name, providers=["CPUExecutionProvider"])
+                session = load_rembg_session(
+                    model_name,
+                    providers=["CPUExecutionProvider"],
+                    sess_opts=get_optimized_session_options(),
+                )
                 self._cached_sessions[model_name] = session
                 out = rembg.remove(input_img, session=session)
-            final_alpha = np.array(out.split()[-1], dtype=np.uint8)
+            final_alpha = np.array(out.getchannel("A"), dtype=np.uint8)
             if progress_cb:
                 progress_cb(80, "Máscara principal generada...")
 
@@ -297,25 +304,31 @@ class PersistentGPUWorker:
                 if progress_cb:
                     progress_cb(85, "Aplicando protección semántica de ropa...")
                 import rembg
-                from app.core.bg_remover import fuse_clothing_protection_core_only
+                from app.core.bg_remover import (
+                    _predict_clothing_mask,
+                    fuse_clothing_protection_core_only,
+                )
+                from app.core.model_fetcher import load_rembg_session
 
                 human_sess_key = "u2net_human_seg"
                 if human_sess_key not in self._cached_sessions:
+                    sess_opts = get_optimized_session_options()
                     try:
-                        self._cached_sessions[human_sess_key] = rembg.new_session(
-                            human_sess_key, providers=eff_providers
+                        self._cached_sessions[human_sess_key] = load_rembg_session(
+                            human_sess_key, providers=eff_providers, sess_opts=sess_opts
                         )
                     except Exception as e:
                         logger.warning(
                             f"Fallo al cargar protección u2net_human_seg con GPU/CoreML/QNN: {e}. "
                             f"Conmutando a CPUExecutionProvider..."
                         )
-                        self._cached_sessions[human_sess_key] = rembg.new_session(
-                            human_sess_key, providers=["CPUExecutionProvider"]
+                        self._cached_sessions[human_sess_key] = load_rembg_session(
+                            human_sess_key,
+                            providers=["CPUExecutionProvider"],
+                            sess_opts=sess_opts,
                         )
                 human_sess = self._cached_sessions[human_sess_key]
-                human_out = rembg.remove(input_img, session=human_sess)
-                human_alpha = np.array(human_out.split()[-1], dtype=np.uint8)
+                human_alpha = _predict_clothing_mask(input_img, human_sess)
                 if np.any(human_alpha > 50):
                     final_alpha = fuse_clothing_protection_core_only(
                         main_alpha=final_alpha,
@@ -329,7 +342,7 @@ class PersistentGPUWorker:
             progress_cb(95, "Componiendo canal alfa final...")
 
         if image.mode == "RGBA":
-            orig_alpha = np.array(image.split()[-1], dtype=np.uint8)
+            orig_alpha = np.array(image.getchannel("A"), dtype=np.uint8)
             final_alpha = np.minimum(final_alpha, orig_alpha)
 
         output = input_img.convert("RGB").convert("RGBA")
