@@ -24,7 +24,7 @@ class GPUWorkerManager:
     Cliente y supervisor del proceso persistente GPU Worker.
     """
 
-    def __init__(self):
+    def __init__(self, register_atexit: bool = True):
         self._process: Optional[multiprocessing.Process] = None
         self._request_queue: Optional[multiprocessing.Queue] = None
         self._response_queue: Optional[multiprocessing.Queue] = None
@@ -35,7 +35,8 @@ class GPUWorkerManager:
         self._has_orphaned_worker: bool = False
 
         # Asegurar parada limpia al cerrar el programa
-        atexit.register(self.shutdown)
+        if register_atexit:
+            atexit.register(self.shutdown)
 
     def set_status_callback(self, cb: Optional[Callable[[str], None]]):
         """Registra un callback para emitir notificaciones no invasivas a la interfaz gráfica."""
@@ -148,8 +149,9 @@ class GPUWorkerManager:
                 self._process.kill()
                 self._process.join(timeout=1.0)
 
-            # 3. Respaldo por sistema operativo si el proceso persiste
-            if self._process.is_alive():
+            # 3. Respaldo por sistema operativo si el proceso persiste (solo para PID real positivo)
+            valid_pid = isinstance(pid, int) and not isinstance(pid, bool) and pid > 0
+            if self._process.is_alive() and valid_pid:
                 import platform
                 if platform.system() == "Windows":
                     logger.warning(

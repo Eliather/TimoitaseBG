@@ -1,10 +1,20 @@
+import atexit
 import unittest
 from unittest.mock import patch, MagicMock
 from app.core.gpu_manager import GPUWorkerManager
 
 class TestGPUWorkerWatchdog(unittest.TestCase):
     def setUp(self):
-        self.manager = GPUWorkerManager()
+        self.manager = GPUWorkerManager(register_atexit=False)
+
+    def tearDown(self):
+        try:
+            atexit.unregister(self.manager.shutdown)
+        except Exception:
+            pass
+        self.manager._process = None
+        self.manager._request_queue = None
+        self.manager._response_queue = None
 
     @patch('app.config.is_gpu_available', return_value=True)
     def test_singleton(self, mock_gpu):
@@ -15,6 +25,9 @@ class TestGPUWorkerWatchdog(unittest.TestCase):
 
     @patch('app.core.gpu_manager.multiprocessing.Process')
     def test_ensure_worker(self, mock_process):
+        mock_proc = MagicMock()
+        mock_proc.pid = 424242
+        mock_process.return_value = mock_proc
         self.manager._ensure_worker()
         self.assertIsNotNone(self.manager._process)
 
@@ -33,11 +46,14 @@ class TestGPUWorkerWatchdog(unittest.TestCase):
         self.assertIsNone(self.manager._process)
 
     @patch('platform.system', return_value='Linux')
+    @patch('os.killpg', create=True)
+    @patch('os.getpgid', return_value=1234, create=True)
     @patch('os.kill', create=True)
-    def test_kill_worker_linux_sigkill(self, mock_os_kill, mock_platform):
+    def test_kill_worker_linux_sigkill(self, mock_os_kill, mock_getpgid, mock_killpg, mock_platform):
         alive = [True]
         def mock_kill_action(*args, **kwargs):
             alive[0] = False
+        mock_killpg.side_effect = mock_kill_action
         mock_os_kill.side_effect = mock_kill_action
 
         proc = MagicMock()
@@ -49,6 +65,7 @@ class TestGPUWorkerWatchdog(unittest.TestCase):
         self.assertTrue(killed)
         proc.terminate.assert_called_once()
         proc.kill.assert_called_once()
+        self.assertTrue(mock_killpg.called or mock_os_kill.called)
         self.assertIsNone(self.manager._process)
 
     def test_shutdown(self):
@@ -60,12 +77,12 @@ class TestGPUWorkerWatchdog(unittest.TestCase):
 
     @patch('app.config.is_gpu_available', return_value=True)
     def test_is_gpu_enabled_default(self, mock_gpu):
-        mgr = GPUWorkerManager()
+        mgr = GPUWorkerManager(register_atexit=False)
         self.assertTrue(mgr.is_gpu_enabled())
 
     @patch('app.config.is_gpu_available', return_value=True)
     def test_set_gpu_enabled(self, mock_gpu):
-        mgr = GPUWorkerManager()
+        mgr = GPUWorkerManager(register_atexit=False)
         res = mgr.set_gpu_enabled(False)
         self.assertFalse(res)
         self.assertFalse(mgr.is_gpu_enabled())

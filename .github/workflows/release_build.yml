@@ -20,6 +20,7 @@ jobs:
   test:
     name: Syntax & Unit Tests
     runs-on: ubuntu-22.04
+    timeout-minutes: 15
     steps:
       - name: Checkout Repository
         uses: actions/checkout@v4
@@ -49,14 +50,16 @@ jobs:
         run: python -m compileall -q app scripts tests
 
       - name: Run Automated Test Suite
+        timeout-minutes: 10
         env:
           QT_QPA_PLATFORM: offscreen
-        run: pytest tests/ -k "not copy_to_clipboard" -v
+        run: pytest tests/ -k "not copy_to_clipboard" -v -s --tb=short -o faulthandler_timeout=60
 
   build:
     name: Build ${{ matrix.platform_name }} (${{ matrix.arch }})
     needs: test
     runs-on: ${{ matrix.os }}
+    timeout-minutes: 45
     strategy:
       fail-fast: false
       matrix:
