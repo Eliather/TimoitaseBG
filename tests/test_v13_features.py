@@ -31,8 +31,8 @@ from app.core.sequence_tracker import track_subject_across_sequence
 from app.core.yolo_detector import DetectedSubject
 
 
-def test_app_version_is_130():
-    assert APP_VERSION == "1.3.0"
+def test_app_version_is_131():
+    assert APP_VERSION == "1.3.1"
 
 
 def test_locales_100_percent_key_parity():

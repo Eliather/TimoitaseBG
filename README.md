@@ -1,6 +1,6 @@
 # TimoitaseBG
 
-![Version](https://img.shields.io/badge/Version-1.3.0-7c3aed?style=for-the-badge)
+![Version](https://img.shields.io/badge/Version-1.3.1-7c3aed?style=for-the-badge)
 ![License](https://img.shields.io/badge/License-GNU_AGPLv3-blue?style=for-the-badge)
 ![Python](https://img.shields.io/badge/Python-3.11%2B-3776ab?style=for-the-badge&logo=python&logoColor=white)
 ![PySide6](https://img.shields.io/badge/GUI-PySide6_Qt6-41cd52?style=for-the-badge&logo=qt&logoColor=white)
@@ -527,6 +527,6 @@ El detalle completo de avisos y licencias se encuentra en [THIRD_PARTY_NOTICES.m
 
 ## Autora y Licencia
 
-**TimoitaseBG v1.3.0** ha sido desarrollado por **Eliather** bajo la licencia **GNU Affero General Public License v3.0 (GNU AGPLv3)**. Consulta el archivo [LICENSE](LICENSE) para conocer las condiciones completas de uso, modificación y redistribución.
+**TimoitaseBG v1.3.1** ha sido desarrollado por **Eliather** bajo la licencia **GNU Affero General Public License v3.0 (GNU AGPLv3)**. Consulta el archivo [LICENSE](LICENSE) para conocer las condiciones completas de uso, modificación y redistribución.
 
 Apoyo al desarrollo del proyecto: [https://ko-fi.com/eliather](https://ko-fi.com/eliather)

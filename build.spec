@@ -17,7 +17,7 @@ def _read_app_version() -> str:
         m = re.search(r'^APP_VERSION\s*=\s*["\']([^"\']+)["\']', cfg.read_text(encoding="utf-8"), re.MULTILINE)
         if m:
             return m.group(1)
-    return "1.3.0"
+    return "1.3.1"
 
 
 APP_VERSION = _read_app_version()
