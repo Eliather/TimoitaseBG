@@ -29,10 +29,12 @@ MODEL_URLS = {
 MODEL_SHA256: dict[str, str] = {
     "inspyrenet.onnx": "c108dd92b3ddfe3a2d9e9ac2b74730cc5acbb2ddc7ea863330c43f56ae832aa3",
     "isnet-anime.onnx": "f15622d853e8260172812b657053460e20806f04b9e05147d49af7bed31a6e99",
+    "birefnet-general.onnx": "58f621f00f5d756097615970a88a791584600dcf7c45b18a0a6267535a1ebd3c",
     "mobile_sam_image_encoder.onnx": "580f5fb648ea1062c0aabc26217aed56921985f03f0cbbd852bba81d760cc749",
     "RealESRGAN_x4plus_anime_6B.onnx": "2648cab4c4343541c1aa291c6754e9e8edbe7a813fffc2a677423dd12cb6b7f7",
     "sam_mask_decoder_single.onnx": "93915fc7c993ab9d59ab8c9ccd3bce37f7509c81ab4150a74abd4d2abbd8570d",
     "u2net_human_seg.onnx": "01eb6a29a5c4d8edb30b56adad9bb3a2a0535338e480724a213e0acfd2d1c73c",
+    "yolo11n-seg.onnx": "f2616a376c3999dfecad4e1e4488c7a2729edf1c74081e74fdc9bdff4a1d6547",
 }
 
 MIN_VALID_MODEL_BYTES = 1_000_000
@@ -105,24 +107,38 @@ def get_models_inventory() -> list[dict]:
     return inventory
 
 
+def _resolve_safe_model_path(filename: str) -> Path:
+    """Valida que filename sea un nombre simple sin traversal y lo resuelve bajo MODELS_DIR."""
+    if not filename or filename in (".", "..") or Path(filename).name != filename or "/" in filename or "\\" in filename:
+        raise ValueError(f"Nombre de modelo inválido: {filename!r}")
+    base = MODELS_DIR.resolve()
+    target = (base / filename).resolve()
+    if not target.is_relative_to(base):
+        raise ValueError(f"Ruta fuera de MODELS_DIR rechazada: {filename!r}")
+    return MODELS_DIR / filename
+
+
 def verify_local_model_sha256(filename: str) -> Optional[bool]:
     """Valida el SHA-256 del modelo FP32 si existe localmente y tiene digest registrado."""
     expected = MODEL_SHA256.get(filename)
-    fp32_path = MODELS_DIR / filename
+    fp32_path = _resolve_safe_model_path(filename)
     if not expected or not fp32_path.is_file():
         return None
     return verify_sha256(fp32_path, expected)
 
 
 def delete_local_model(filename: str) -> list[str]:
-    """Elimina pesos locales (FP32, _int8 y parciales .tmp) de un modelo. Retorna eliminados."""
-    stem = Path(filename).stem
-    suffix = Path(filename).suffix
+    """Elimina pesos locales (FP32, _int8 y parciales .tmp) de un modelo registrado."""
+    if filename not in MODEL_URLS:
+        raise ValueError(f"Modelo no registrado: {filename!r}")
+    base_path = _resolve_safe_model_path(filename)
+    stem = base_path.stem
+    suffix = base_path.suffix
     removed: list[str] = []
     for candidate in (
-        MODELS_DIR / filename,
+        base_path,
         MODELS_DIR / f"{stem}_int8{suffix}",
-        (MODELS_DIR / filename).with_suffix(".tmp"),
+        base_path.with_suffix(".tmp"),
     ):
         if candidate.is_file():
             candidate.unlink(missing_ok=True)
@@ -225,7 +241,7 @@ def ensure_model_file(
     if existing is not None:
         return existing
 
-    dest_path = MODELS_DIR / filename
+    dest_path = _resolve_safe_model_path(filename)
     url = MODEL_URLS.get(filename)
     if not url:
         raise ValueError(f"URL no registrada para el modelo {filename}")
@@ -258,7 +274,8 @@ def ensure_model_file(
         # Mantener archivo .tmp parcial para poder reanudar con HTTP Range en el siguiente intento
         raise
     except Exception as err:
-        if allow_insecure_fallback and _is_ssl_cert_error(err):
+        has_integrity_hash = bool(MODEL_SHA256.get(filename))
+        if allow_insecure_fallback and has_integrity_hash and _is_ssl_cert_error(err):
             logger.warning(
                 f"Fallo de verificación SSL al descargar {filename} ({err}). "
                 "Reintentando con contexto SSL sin verificación; verifique su red o proxy."
@@ -306,6 +323,28 @@ def ensure_model_file(
     return dest_path
 
 
+def make_download_progress_cb(
+    progress_cb: Optional[Callable[[int, str], None]],
+    label: str,
+    start_pct: int = 5,
+    span_pct: int = 30,
+) -> Callable[[int, int], None]:
+    """Crea un callback `(dl, tot)` reutilizable para reportar descargas de modelos."""
+    max_pct = start_pct + span_pct
+
+    def _dl_prog(dl: int, tot: int) -> None:
+        if progress_cb and tot > 0:
+            pct = start_pct + int(round((dl / tot) * span_pct))
+            dl_mb = dl / (1024 * 1024)
+            tot_mb = tot / (1024 * 1024)
+            progress_cb(
+                min(max_pct, pct),
+                f"Descargando {label} ({dl_mb:.1f} / {tot_mb:.1f} MB)...",
+            )
+
+    return _dl_prog
+
+
 def load_rembg_session(
     model_name: str,
     providers: list,
@@ -324,18 +363,10 @@ def load_rembg_session(
     local_path = resolve_local_model(onnx_fname)
 
     if local_path is None and onnx_fname in MODEL_URLS and not is_mocked:
-        def _dl_prog(dl: int, tot: int):
-            if progress_cb and tot > 0:
-                pct = 5 + int(round((dl / tot) * 30))
-                dl_mb = dl / (1024 * 1024)
-                tot_mb = tot / (1024 * 1024)
-                progress_cb(
-                    min(35, pct),
-                    f"Descargando {onnx_fname} ({dl_mb:.1f} / {tot_mb:.1f} MB)...",
-                )
-
         local_path = ensure_model_file(
-            onnx_fname, progress_cb=_dl_prog, cancel_check=cancel_check
+            onnx_fname,
+            progress_cb=make_download_progress_cb(progress_cb, onnx_fname, start_pct=5, span_pct=30),
+            cancel_check=cancel_check,
         )
 
     if local_path is not None and local_path.name != onnx_fname and not is_mocked:

@@ -6,6 +6,7 @@ TimoitaseBG - Generador de recursos y manifiestos para empaquetado multiplatafor
 import os
 import shutil
 import stat
+import subprocess
 import sys
 from pathlib import Path
 from PIL import Image, ImageDraw
@@ -171,7 +172,10 @@ def prepare_icons(build_dir: Path) -> None:
             generate_brand_icon(sz, iconset_dir / f"icon_{sz}x{sz}.png")
             if sz <= 256:
                 generate_brand_icon(sz * 2, iconset_dir / f"icon_{sz}x{sz}@2x.png")
-        os.system(f'iconutil -c icns "{iconset_dir}" -o "{build_dir / "app_icon.icns"}"')
+        subprocess.run(
+            ["iconutil", "-c", "icns", str(iconset_dir), "-o", str(build_dir / "app_icon.icns")],
+            check=True,
+        )
 
     print(f"[Icons] Iconos generados en: {build_dir}")
 

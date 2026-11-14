@@ -12,6 +12,7 @@ import argparse
 import hashlib
 import json
 import sys
+import urllib.parse
 import urllib.request
 from pathlib import Path
 
@@ -35,13 +36,16 @@ def _parse_checksums(checksums_path: Path) -> dict[str, str]:
     for line in checksums_path.read_text(encoding="utf-8", errors="ignore").splitlines():
         parts = line.strip().split(None, 1)
         if len(parts) == 2:
-            sums[parts[1].lstrip("*")] = parts[0].lower()
+            raw_name = parts[1].lstrip("*").strip()
+            safe_name = Path(raw_name).name
+            if safe_name:
+                sums[safe_name] = parts[0].lower()
     return sums
 
 
 def download_latest_release(tag: str) -> int:
     root = Path(__file__).resolve().parent.parent
-    releases_dir = root / "releases"
+    releases_dir = (root / "releases").resolve()
     releases_dir.mkdir(parents=True, exist_ok=True)
 
     url = f"https://api.github.com/repos/{REPO}/releases/tags/{tag}"
@@ -59,16 +63,30 @@ def download_latest_release(tag: str) -> int:
         print(f"El release {tag} existe pero aún no tiene binarios adjuntos.")
         return 1
 
+    downloaded_files: list[Path] = []
     for asset in assets:
-        name = asset["name"]
-        download_url = asset["browser_download_url"]
+        name = str(asset.get("name", ""))
+        safe_name = Path(name).name
+        if not safe_name or safe_name != name or safe_name in (".", ".."):
+            print(f"[SKIP] Nombre de asset inválido omitido: {name!r}")
+            continue
+        dest = (releases_dir / safe_name).resolve()
+        if not dest.is_relative_to(releases_dir):
+            print(f"[SKIP] Ruta fuera de releases_dir omitida: {name!r}")
+            continue
+
+        download_url = str(asset.get("browser_download_url", ""))
+        if urllib.parse.urlparse(download_url).scheme != "https":
+            print(f"[SKIP] URL no HTTPS omitida para {safe_name}")
+            continue
+
         expected_size = asset.get("size", 0)
         size_mb = expected_size / (1024 * 1024)
-        dest = releases_dir / name
         if dest.exists() and dest.stat().st_size == expected_size and expected_size > 0:
-            print(f"[SKIP] {name} ({size_mb:.1f} MB) ya existe en {dest}")
+            print(f"[SKIP] {safe_name} ({size_mb:.1f} MB) ya existe en {dest}")
+            downloaded_files.append(dest)
             continue
-        print(f"Descargando {name} ({size_mb:.1f} MB) -> {dest} ...")
+        print(f"Descargando {safe_name} ({size_mb:.1f} MB) -> {dest} ...")
         req = urllib.request.Request(download_url, headers={"User-Agent": "TimoitaseBG-ReleaseDownloader"})
         with urllib.request.urlopen(req, timeout=300) as r, open(dest, "wb") as f:
             while True:
@@ -76,12 +94,16 @@ def download_latest_release(tag: str) -> int:
                 if not chunk:
                     break
                 f.write(chunk)
+        downloaded_files.append(dest)
         print(f"  [OK] Guardado en {dest}")
 
-    checksums = _parse_checksums(releases_dir / "SHA256SUMS.txt")
+    checksums_file = releases_dir / "SHA256SUMS.txt"
+    checksums = _parse_checksums(checksums_file)
+    if not checksums:
+        print("  [WARN] No se encontró SHA256SUMS.txt en el release; omitiendo verificación de hashes.")
     for fname, expected_hash in checksums.items():
-        fpath = releases_dir / fname
-        if fpath.exists():
+        fpath = (releases_dir / fname).resolve()
+        if fpath.is_relative_to(releases_dir) and fpath.exists():
             actual = _sha256_file(fpath)
             if actual != expected_hash:
                 print(f"  [ERROR] Checksum inválido para {fname}")
