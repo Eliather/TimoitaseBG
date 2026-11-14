@@ -1,29 +1,50 @@
 """
 TimoitaseBG - Canvas interactivo para visualización, zoom, paneo y trazado de máscara de pincel.
 """
+import logging
 from typing import Optional
 import numpy as np
 from PIL import Image
 from PySide6.QtCore import Qt, QPoint, QPointF, QRect, QRectF, Signal, QTimer
 from PySide6.QtWidgets import QWidget, QScrollBar
-from app.i18n import tr
 from PySide6.QtGui import (
     QPainter,
-    QColor,
-    QPen,
     QImage,
     QWheelEvent,
     QMouseEvent,
     QPaintEvent,
 )
-from app.core.image_utils import (
-    pil_to_qimage,
-    qimage_to_pil,
-    create_checkerboard_pattern,
-)
+
+from app.i18n import tr
+from app.core.image_utils import qimage_to_pil, create_checkerboard_pattern
 from app.core import selection as sel_ops
 from app.config import DEFAULT_BRUSH_SIZE, MIN_BRUSH_SIZE, MAX_BRUSH_SIZE, CHECKER_SIZE
-from app.ui.canvas import BrushEngine, CropTool, SelectionTool
+from app.ui.canvas import (
+    BrushEngine,
+    CropTool,
+    SelectionTool,
+    build_scrollbar_stylesheet,
+    draw_brush_cursor,
+    draw_canvas_scene,
+    draw_comparison_divider,
+    ensure_rgba_qimage,
+)
+
+logger = logging.getLogger("TimoitaseBG.CanvasWidget")
+
+
+def _tool_prop(tool_attr: str, field: str, read_only: bool = False) -> property:
+    """Genera una propiedad delegada hacia un subsistema del lienzo."""
+    def _getter(self):
+        return getattr(getattr(self, tool_attr), field)
+
+    if read_only:
+        return property(_getter)
+
+    def _setter(self, value) -> None:
+        setattr(getattr(self, tool_attr), field, value)
+
+    return property(_getter, _setter)
 
 
 class CanvasWidget(QWidget):
@@ -32,14 +53,25 @@ class CanvasWidget(QWidget):
     permite dibujar máscaras para el pincel mágico con vista previa en tiempo real.
     """
 
-    maskChanged = Signal(bool)  # Emite True si hay trazos dibujados, False si está limpia
-    zoomChanged = Signal(float) # Emite el porcentaje de zoom actual
-    fileDropped = Signal(str)   # Emite la ruta de archivo si el usuario arrastra una imagen
-    imageDropped = Signal(object)  # Emite un PIL.Image cuando se arrastra una imagen en memoria
-    browseRequested = Signal()  # Emite cuando el usuario hace clic en la zona vacía para explorar
-    imageEditedDirectly = Signal(str)  # Descripción de la edición para el historial
-    selectionChanged = Signal(int, int)  # (píxeles seleccionados, píxeles totales)
-    cropConfirmed = Signal(tuple)  # (left, top, right, bottom)
+    maskChanged = Signal(bool)          # Emite True si hay trazos dibujados, False si está limpia
+    zoomChanged = Signal(float)         # Emite el porcentaje de zoom actual
+    fileDropped = Signal(str)           # Emite la ruta de archivo si el usuario arrastra una imagen
+    imageDropped = Signal(object)       # Emite un PIL.Image cuando se arrastra una imagen en memoria
+    browseRequested = Signal()          # Emite cuando el usuario hace clic en la zona vacía para explorar
+    imageEditedDirectly = Signal(str)   # Descripción de la edición para el historial
+    selectionChanged = Signal(int, int) # (píxeles seleccionados, píxeles totales)
+    cropConfirmed = Signal(tuple)       # (left, top, right, bottom)
+
+    wand_mode = _tool_prop("_selection_tool", "wand_mode")
+    wand_ai_mode = _tool_prop("_selection_tool", "wand_ai_mode")
+    wand_tolerance = _tool_prop("_selection_tool", "wand_tolerance")
+    wand_selection_mode = _tool_prop("_selection_tool", "wand_selection_mode")
+    wand_anti_alias = _tool_prop("_selection_tool", "wand_anti_alias")
+    wand_contiguous = _tool_prop("_selection_tool", "wand_contiguous")
+    active_selection = _tool_prop("_selection_tool", "active_mask")
+    selection_qimage = _tool_prop("_selection_tool", "overlay_qimage", read_only=True)
+    selection_path = _tool_prop("_selection_tool", "contour_path", read_only=True)
+    _pending_wand_click = _tool_prop("_selection_tool", "pending_wand_click")
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -50,8 +82,6 @@ class CanvasWidget(QWidget):
         # Estados de visualización
         self.current_qimage: Optional[QImage] = None
         self.original_qimage: Optional[QImage] = None
-        
-        # Color de fondo en capa separada
         self.bg_color_rgb: Optional[tuple[int, int, int]] = None
 
         # Zoom y paneo
@@ -60,20 +90,21 @@ class CanvasWidget(QWidget):
         self.is_panning: bool = False
         self.last_pan_pos: QPoint = QPoint()
         self.space_pressed: bool = False
-        
+
         # Scrollbars flotantes
+        sb_style = self._scrollbar_style()
         self.v_scrollbar = QScrollBar(Qt.Orientation.Vertical, self)
-        self.v_scrollbar.setStyleSheet(self._scrollbar_style())
+        self.v_scrollbar.setStyleSheet(sb_style)
         self.v_scrollbar.valueChanged.connect(self._on_v_scrollbar_changed)
         self.v_scrollbar.hide()
-        
+
         self.h_scrollbar = QScrollBar(Qt.Orientation.Horizontal, self)
-        self.h_scrollbar.setStyleSheet(self._scrollbar_style())
+        self.h_scrollbar.setStyleSheet(sb_style)
         self.h_scrollbar.valueChanged.connect(self._on_h_scrollbar_changed)
         self.h_scrollbar.hide()
         self._updating_scrollbars = False
 
-        # Pincel mágico
+        # Subsistemas de pincel, selección y recorte
         self.brush_mode: bool = False
         self.brush_size: int = DEFAULT_BRUSH_SIZE
         self.brush_smoothness: int = 0
@@ -91,7 +122,6 @@ class CanvasWidget(QWidget):
         self._ants_timer.setInterval(40)  # 25 FPS reales
         self._ants_timer.timeout.connect(self._advance_marching_ants)
 
-        # Patrón de transparencia
         self.checker_pixmap = create_checkerboard_pattern(size=CHECKER_SIZE)
 
         # Modo Comparación (Antes / Después con cortina deslizante)
@@ -108,78 +138,9 @@ class CanvasWidget(QWidget):
         self.drop_zone.clicked.connect(self.browseRequested.emit)
         self.drop_zone.show()
 
-    @property
-    def wand_mode(self) -> bool:
-        return self._selection_tool.wand_mode
-
-    @wand_mode.setter
-    def wand_mode(self, value: bool) -> None:
-        self._selection_tool.wand_mode = value
-
-    @property
-    def wand_ai_mode(self) -> bool:
-        return self._selection_tool.wand_ai_mode
-
-    @wand_ai_mode.setter
-    def wand_ai_mode(self, value: bool) -> None:
-        self._selection_tool.wand_ai_mode = value
-
-    @property
-    def wand_tolerance(self) -> int:
-        return self._selection_tool.wand_tolerance
-
-    @wand_tolerance.setter
-    def wand_tolerance(self, value: int) -> None:
-        self._selection_tool.wand_tolerance = value
-
-    @property
-    def wand_selection_mode(self) -> str:
-        return self._selection_tool.wand_selection_mode
-
-    @wand_selection_mode.setter
-    def wand_selection_mode(self, value: str) -> None:
-        self._selection_tool.wand_selection_mode = value
-
-    @property
-    def wand_anti_alias(self) -> bool:
-        return self._selection_tool.wand_anti_alias
-
-    @wand_anti_alias.setter
-    def wand_anti_alias(self, value: bool) -> None:
-        self._selection_tool.wand_anti_alias = value
-
-    @property
-    def wand_contiguous(self) -> bool:
-        return self._selection_tool.wand_contiguous
-
-    @wand_contiguous.setter
-    def wand_contiguous(self, value: bool) -> None:
-        self._selection_tool.wand_contiguous = value
-
-    @property
-    def active_selection(self) -> Optional[np.ndarray]:
-        return self._selection_tool.active_mask
-
-    @active_selection.setter
-    def active_selection(self, value: Optional[np.ndarray]) -> None:
-        self._selection_tool.active_mask = value
-
-    @property
-    def selection_qimage(self) -> Optional[QImage]:
-        return self._selection_tool.overlay_qimage
-
-    @property
-    def selection_path(self):
-        return self._selection_tool.contour_path
-
-    @property
-    def _pending_wand_click(self) -> Optional[tuple]:
-        return self._selection_tool.pending_wand_click
-
-    @_pending_wand_click.setter
-    def _pending_wand_click(self, value: Optional[tuple]) -> None:
-        self._selection_tool.pending_wand_click = value
-
+    # -------------------------------------------------------------
+    # Recorte, Comparación e Imagen Activa
+    # -------------------------------------------------------------
     def set_crop_mode(self, enabled: bool, aspect_ratio: Optional[float] = None):
         """Activa o desactiva la herramienta visual de recorte manual (Crop)."""
         if enabled and self.current_qimage is not None:
@@ -222,22 +183,13 @@ class CanvasWidget(QWidget):
 
     def set_original_image(self, pil_img: Optional[Image.Image]):
         """Actualiza la imagen original para su uso con el pincel restaurador."""
-        if pil_img:
-            qimg = pil_to_qimage(pil_img)
-            if not qimg.hasAlphaChannel():
-                qimg = qimg.convertToFormat(QImage.Format.Format_RGBA8888)
-            self.original_qimage = qimg
-        else:
-            self.original_qimage = None
+        self.original_qimage = ensure_rgba_qimage(pil_img) if pil_img else None
 
     def set_background_color(self, color_rgb: Optional[tuple[int, int, int]]):
         """Define un color de fondo sólido para renderizar detrás de la imagen transparente."""
         self.bg_color_rgb = color_rgb
         self.update()
 
-    # -------------------------------------------------------------
-    # Gestión de Imagen y Máscara
-    # -------------------------------------------------------------
     def set_image(self, pil_img: Optional[Image.Image], reset_zoom: bool = False):
         """Establece la imagen activa y ajusta o preserva la máscara."""
         if pil_img is None:
@@ -256,15 +208,10 @@ class CanvasWidget(QWidget):
         prev_w = self.current_qimage.width() if self.current_qimage else 0
         prev_h = self.current_qimage.height() if self.current_qimage else 0
 
-        # Normalizar siempre a formato con canal alfa para que el borrador manual funcione en imágenes RGB
-        qimg = pil_to_qimage(pil_img)
-        if not qimg.hasAlphaChannel():
-            qimg = qimg.convertToFormat(QImage.Format.Format_RGBA8888)
-        self.current_qimage = qimg
+        self.current_qimage = ensure_rgba_qimage(pil_img)
         img_w = self.current_qimage.width()
         img_h = self.current_qimage.height()
 
-        # Una selección solo es válida para imágenes del mismo tamaño
         if reset_zoom or (img_w, img_h) != (prev_w, prev_h):
             self.clear_selection()
 
@@ -274,10 +221,10 @@ class CanvasWidget(QWidget):
             self._clamp_pan_offset()
             self.update()
 
-
-
+    # -------------------------------------------------------------
+    # Configuración de Pincel y Varita
+    # -------------------------------------------------------------
     def _tool_cursor(self) -> Qt.CursorShape:
-        """Cursor adecuado para la herramienta activa."""
         if not self.brush_mode:
             return Qt.CursorShape.ArrowCursor
         if self.wand_mode:
@@ -285,34 +232,28 @@ class CanvasWidget(QWidget):
         return Qt.CursorShape.BlankCursor
 
     def set_brush_mode(self, enabled: bool):
-        """Activa o desactiva el modo de dibujo de máscara."""
         self.brush_mode = enabled
         self.setCursor(self._tool_cursor())
         self.update()
 
     def set_brush_size(self, size: int):
-        """Ajusta el radio del pincel en píxeles de imagen nativa."""
         self.brush_size = max(MIN_BRUSH_SIZE, min(MAX_BRUSH_SIZE, size))
         self.update()
 
     def set_brush_smoothness(self, smoothness: int):
-        """Ajusta el nivel de suavizado del pincel (0 a 100)."""
         self.brush_smoothness = max(0, min(100, smoothness))
 
     def set_brush_opacity(self, opacity: float):
-        """Ajusta la opacidad global del pincel."""
         self.brush_opacity = opacity
         self.update()
 
     def set_brush_hardness(self, hardness: float):
-        """Ajusta la dureza del pincel (0.0 a 1.0)."""
         self.brush_hardness = hardness
         self.update()
 
     def set_eraser_mode(self, enabled: bool):
-        """Activa o desactiva el modo borrador (borrar trazos de la máscara)."""
         self.eraser_mode = enabled
-        
+
     def set_wand_mode(self, enabled: bool):
         self.wand_mode = enabled
         self.setCursor(self._tool_cursor())
@@ -342,7 +283,6 @@ class CanvasWidget(QWidget):
         return self._selection_tool.has_selection()
 
     def _set_selection(self, mask: Optional[np.ndarray]):
-        """Establece la máscara de selección y actualiza temporizador y señales."""
         img_w = self.current_qimage.width() if self.current_qimage else 0
         img_h = self.current_qimage.height() if self.current_qimage else 0
         sel_px, total = self._selection_tool.set_mask(mask, img_w, img_h)
@@ -367,27 +307,21 @@ class CanvasWidget(QWidget):
             self.update()
 
     def clear_selection(self):
-        """Deseleccionar (Ctrl+D)."""
         if self._selection_tool.has_selection() or self._selection_tool.contour_path is not None:
             self._set_selection(None)
 
     def select_all(self):
-        """Seleccionar todo (Ctrl+A)."""
         if self.current_qimage:
             self._set_selection(
                 sel_ops.select_all(self.current_qimage.height(), self.current_qimage.width())
             )
 
     def invert_selection(self):
-        """Invertir selección (Ctrl+Shift+I)."""
         if self._selection_tool.active_mask is not None:
             self._set_selection(sel_ops.invert_selection(self._selection_tool.active_mask))
 
     def delete_selection(self) -> bool:
-        """
-        Borra (vuelve transparentes) los píxeles seleccionados, como Supr en Photoshop.
-        La selección se mantiene activa tras borrar. Devuelve True si hubo cambios.
-        """
+        """Vuelve transparentes los píxeles seleccionados preservando la selección activa."""
         try:
             new_qimg, should_clear = self._selection_tool.delete_selected_pixels(self.current_qimage)
             if should_clear:
@@ -400,148 +334,101 @@ class CanvasWidget(QWidget):
             self.update()
             return True
         except Exception as e:
-            print(f"Error borrando selección: {e}")
+            logger.warning("Error borrando selección: %s", e)
             return False
 
     # -------------------------------------------------------------
-    # Paneo, Zoom y Transformaciones
+    # Paneo, Zoom y Coordenadas
     # -------------------------------------------------------------
     def get_min_zoom(self) -> float:
-        """
-        Calcula el factor de zoom mínimo permitido para que la imagen nunca
-        se vuelva un punto minúsculo imperceptible ni se pierda de vista.
-        """
         if not self.current_qimage or self.width() <= 0 or self.height() <= 0:
             return 0.1
-        img_w = self.current_qimage.width()
-        img_h = self.current_qimage.height()
-        fit_scale = min(self.width() / max(1, img_w), self.height() / max(1, img_h))
-        # Permitir alejar como máximo hasta un 50% de la vista completa, con suelo mínimo de 0.08
+        fit_scale = min(
+            self.width() / max(1, self.current_qimage.width()),
+            self.height() / max(1, self.current_qimage.height()),
+        )
         return max(0.08, min(fit_scale * 0.5, 1.0))
 
+    @staticmethod
+    def _clamp_axis_offset(view_dim: float, img_dim: float, current_offset: float) -> float:
+        if img_dim <= view_dim:
+            return (view_dim - img_dim) / 2.0
+        padding = min(80.0, view_dim * 0.2)
+        return max(view_dim - img_dim - padding, min(padding, current_offset))
+
     def _clamp_pan_offset(self):
-        """
-        Garantiza que la imagen nunca se salga del área visible del canvas ni se pierda.
-        - Si la dimensión de la imagen cabe en el canvas, se mantiene centrada en ese eje.
-        - Si la dimensión es mayor que el canvas, permite paneo libre pero limita
-          los bordes a un margen de seguridad para que la imagen siempre esté visible.
-        """
         if not self.current_qimage or self.width() <= 0 or self.height() <= 0:
             return
-
         vw = float(self.width())
         vh = float(self.height())
         iw = float(self.current_qimage.width()) * self.zoom_factor
         ih = float(self.current_qimage.height()) * self.zoom_factor
-
-        # Margen de seguridad cómodo para trabajar bordes con el pincel
-        padding_x = min(80.0, vw * 0.2)
-        padding_y = min(80.0, vh * 0.2)
-
-        # Eje Horizontal (X)
-        if iw <= vw:
-            target_x = (vw - iw) / 2.0
-        else:
-            min_x = vw - iw - padding_x
-            max_x = padding_x
-            target_x = max(min_x, min(max_x, self.pan_offset.x()))
-
-        # Eje Vertical (Y)
-        if ih <= vh:
-            target_y = (vh - ih) / 2.0
-        else:
-            min_y = vh - ih - padding_y
-            max_y = padding_y
-            target_y = max(min_y, min(max_y, self.pan_offset.y()))
-
-        self.pan_offset = QPointF(target_x, target_y)
+        self.pan_offset = QPointF(
+            self._clamp_axis_offset(vw, iw, self.pan_offset.x()),
+            self._clamp_axis_offset(vh, ih, self.pan_offset.y()),
+        )
         self._update_scrollbars()
 
     def fit_to_view(self):
-        """Ajusta la imagen para que encaje perfectamente dentro del widget."""
         if not self.current_qimage or self.width() <= 0 or self.height() <= 0:
             return
-
         margin = 32
         avail_w = max(10, self.width() - margin * 2)
         avail_h = max(10, self.height() - margin * 2)
-
         img_w = self.current_qimage.width()
         img_h = self.current_qimage.height()
-
-        scale_w = avail_w / img_w
-        scale_h = avail_h / img_h
-        self.zoom_factor = min(scale_w, scale_h, 1.0)
-
-        # Centrar
-        rendered_w = img_w * self.zoom_factor
-        rendered_h = img_h * self.zoom_factor
+        self.zoom_factor = min(avail_w / img_w, avail_h / img_h, 1.0)
         self.pan_offset = QPointF(
-            (self.width() - rendered_w) / 2.0,
-            (self.height() - rendered_h) / 2.0,
+            (self.width() - img_w * self.zoom_factor) / 2.0,
+            (self.height() - img_h * self.zoom_factor) / 2.0,
         )
         self.zoomChanged.emit(self.zoom_factor)
         self.update()
 
     def reset_zoom_100(self):
-        """Ajusta el zoom al 100% (escala 1:1) centrado."""
         if not self.current_qimage:
             return
         self.zoom_factor = 1.0
-        rendered_w = self.current_qimage.width()
-        rendered_h = self.current_qimage.height()
         self.pan_offset = QPointF(
-            (self.width() - rendered_w) / 2.0,
-            (self.height() - rendered_h) / 2.0,
+            (self.width() - self.current_qimage.width()) / 2.0,
+            (self.height() - self.current_qimage.height()) / 2.0,
         )
         self._clamp_pan_offset()
         self.zoomChanged.emit(self.zoom_factor)
         self.update()
 
     def set_zoom_delta(self, factor_multiplier: float, center_point: Optional[QPoint] = None):
-        """Aplica un cambio de zoom centrado sobre una coordenada del canvas dentro de límites seguros."""
         old_zoom = self.zoom_factor
-        min_zoom = self.get_min_zoom()
-        new_zoom = max(min_zoom, min(30.0, self.zoom_factor * factor_multiplier))
+        new_zoom = max(self.get_min_zoom(), min(30.0, self.zoom_factor * factor_multiplier))
         if abs(new_zoom - old_zoom) < 1e-4:
             return
-
         if center_point is None:
             center_point = QPoint(self.width() // 2, self.height() // 2)
 
-        # Mantener el punto bajo el cursor en la misma posición visual
-        widget_x = center_point.x()
-        widget_y = center_point.y()
-
-        img_x = (widget_x - self.pan_offset.x()) / old_zoom
-        img_y = (widget_y - self.pan_offset.y()) / old_zoom
-
+        wx, wy = center_point.x(), center_point.y()
+        ix = (wx - self.pan_offset.x()) / old_zoom
+        iy = (wy - self.pan_offset.y()) / old_zoom
         self.zoom_factor = new_zoom
-        self.pan_offset = QPointF(
-            widget_x - img_x * new_zoom,
-            widget_y - img_y * new_zoom,
-        )
+        self.pan_offset = QPointF(wx - ix * new_zoom, wy - iy * new_zoom)
         self._clamp_pan_offset()
-
         self.zoomChanged.emit(self.zoom_factor)
         self.update()
 
     def widget_to_image_coords(self, pt: QPointF) -> QPointF:
-        """Convierte una coordenada del widget a coordenadas nativas de la imagen."""
         if self.zoom_factor <= 0:
             return QPointF(0, 0)
-        ix = (pt.x() - self.pan_offset.x()) / self.zoom_factor
-        iy = (pt.y() - self.pan_offset.y()) / self.zoom_factor
-        return QPointF(ix, iy)
+        return QPointF(
+            (pt.x() - self.pan_offset.x()) / self.zoom_factor,
+            (pt.y() - self.pan_offset.y()) / self.zoom_factor,
+        )
 
     def image_to_widget_coords(self, pt: QPointF) -> QPointF:
-        """Convierte coordenadas nativas de la imagen a coordenadas del widget."""
-        wx = pt.x() * self.zoom_factor + self.pan_offset.x()
-        wy = pt.y() * self.zoom_factor + self.pan_offset.y()
-        return QPointF(wx, wy)
+        return QPointF(
+            pt.x() * self.zoom_factor + self.pan_offset.x(),
+            pt.y() * self.zoom_factor + self.pan_offset.y(),
+        )
 
     def get_image_rect_in_widget(self) -> QRectF:
-        """Retorna el rectángulo que ocupa la imagen en el widget."""
         if not self.current_qimage:
             return QRectF()
         return QRectF(
@@ -552,10 +439,17 @@ class CanvasWidget(QWidget):
         )
 
     # -------------------------------------------------------------
-    # Eventos de Entrada (Mouse, Rueda, Teclas, Drag & Drop)
+    # Eventos de Entrada
     # -------------------------------------------------------------
+    def _update_comparison_split(self, pos_x: float, img_rect: QRectF) -> None:
+        ratio = (pos_x - img_rect.left()) / max(1.0, img_rect.width())
+        self.comparison_split_ratio = max(0.01, min(0.99, ratio))
+
+    def _brush_cursor_rect(self, center: QPoint) -> QRect:
+        r = int((self.brush_size * self.zoom_factor) / 2.0) + 6
+        return QRect(center.x() - r, center.y() - r, r * 2, r * 2)
+
     def wheelEvent(self, event: QWheelEvent):
-        """Zoom fluido con la rueda del ratón."""
         angle = event.angleDelta().y()
         if angle != 0:
             factor = 1.15 if angle > 0 else (1.0 / 1.15)
@@ -566,20 +460,17 @@ class CanvasWidget(QWidget):
         pos = event.position()
         self.mouse_cursor_pos = pos.toPoint()
 
-        # Manejo de la cortina en modo comparación con botón izquierdo
         if self.comparison_mode and self.current_qimage and event.button() == Qt.MouseButton.LeftButton:
             img_rect = self.get_image_rect_in_widget()
             split_x = img_rect.left() + img_rect.width() * self.comparison_split_ratio
             if abs(pos.x() - split_x) <= 24 or img_rect.contains(pos):
                 self.is_dragging_split = True
-                ratio = (pos.x() - img_rect.left()) / max(1.0, img_rect.width())
-                self.comparison_split_ratio = max(0.01, min(0.99, ratio))
+                self._update_comparison_split(pos.x(), img_rect)
                 self.setCursor(Qt.CursorShape.SplitHCursor)
                 self.update()
                 event.accept()
                 return
 
-        # Paneo con botón central, botón derecho (si no es pincel ni varita IA) o barra espaciadora
         if event.button() == Qt.MouseButton.MiddleButton or self.space_pressed or (
             event.button() == Qt.MouseButton.RightButton and not self.brush_mode
         ):
@@ -592,11 +483,8 @@ class CanvasWidget(QWidget):
         if self._crop_tool.active and self.current_qimage and event.button() == Qt.MouseButton.LeftButton:
             img_pt = self.widget_to_image_coords(pos)
             if self._crop_tool.handle_mouse_press(
-                img_pt,
-                pos,
-                self.image_to_widget_coords,
-                self.current_qimage.width(),
-                self.current_qimage.height(),
+                img_pt, pos, self.image_to_widget_coords,
+                self.current_qimage.width(), self.current_qimage.height(),
             ):
                 self.update()
                 event.accept()
@@ -618,11 +506,11 @@ class CanvasWidget(QWidget):
 
         if event.button() == Qt.MouseButton.LeftButton and self.brush_mode:
             if self.wand_mode and self.current_qimage:
-                img_pt = self.widget_to_image_coords(pos)
-                self._apply_magic_wand(img_pt, self._effective_selection_mode(event.modifiers()))
+                self._apply_magic_wand(
+                    self.widget_to_image_coords(pos), self._effective_selection_mode(event.modifiers())
+                )
                 event.accept()
                 return
-
             if self.current_qimage:
                 self.is_drawing_mask = True
                 img_pt = self.widget_to_image_coords(pos)
@@ -633,11 +521,6 @@ class CanvasWidget(QWidget):
             return
 
         super().mousePressEvent(event)
-
-    def _brush_cursor_rect(self, center: QPoint) -> QRect:
-        """Retorna el QRect en coordenadas del widget que abarca el círculo del cursor del pincel."""
-        r = int((self.brush_size * self.zoom_factor) / 2.0) + 6
-        return QRect(center.x() - r, center.y() - r, r * 2, r * 2)
 
     def mouseMoveEvent(self, event: QMouseEvent):
         pos = event.position()
@@ -654,9 +537,10 @@ class CanvasWidget(QWidget):
             return
 
         if self._crop_tool.active and self.current_qimage:
-            img_pt = self.widget_to_image_coords(pos)
             if self._crop_tool.handle_mouse_move(
-                img_pt, self.current_qimage.width(), self.current_qimage.height()
+                self.widget_to_image_coords(pos),
+                self.current_qimage.width(),
+                self.current_qimage.height(),
             ):
                 self.update()
                 event.accept()
@@ -666,12 +550,11 @@ class CanvasWidget(QWidget):
             img_rect = self.get_image_rect_in_widget()
             split_x = img_rect.left() + img_rect.width() * self.comparison_split_ratio
             if self.is_dragging_split:
-                ratio = (pos.x() - img_rect.left()) / max(1.0, img_rect.width())
-                self.comparison_split_ratio = max(0.01, min(0.99, ratio))
+                self._update_comparison_split(pos.x(), img_rect)
                 self.update()
                 event.accept()
                 return
-            elif abs(pos.x() - split_x) <= 14 and img_rect.top() <= pos.y() <= img_rect.bottom():
+            if abs(pos.x() - split_x) <= 14 and img_rect.top() <= pos.y() <= img_rect.bottom():
                 self.setCursor(Qt.CursorShape.SplitHCursor)
             elif not self.brush_mode:
                 self.setCursor(Qt.CursorShape.ArrowCursor)
@@ -685,19 +568,17 @@ class CanvasWidget(QWidget):
                     current_pt = prev_pt + (img_pt - prev_pt) * factor
                 else:
                     current_pt = img_pt
-                
                 self._draw_brush_stroke(prev_pt, current_pt)
                 self.last_draw_point = current_pt
-
                 w_p1 = self.image_to_widget_coords(prev_pt).toPoint()
                 w_p2 = self.image_to_widget_coords(current_pt).toPoint()
-                dirty_stroke_rect = (
+                dirty_rect = (
                     self._brush_cursor_rect(w_p1)
                     .united(self._brush_cursor_rect(w_p2))
                     .united(self._brush_cursor_rect(prev_cursor_pos))
                     .united(self._brush_cursor_rect(self.mouse_cursor_pos))
                 )
-                self.update(dirty_stroke_rect)
+                self.update(dirty_rect)
             else:
                 self.last_draw_point = img_pt
                 self.update(self._brush_cursor_rect(self.mouse_cursor_pos))
@@ -705,11 +586,11 @@ class CanvasWidget(QWidget):
             return
 
         if self.brush_mode and not self.wand_mode:
-            dirty_rect = self._brush_cursor_rect(prev_cursor_pos).united(
-                self._brush_cursor_rect(self.mouse_cursor_pos)
+            self.update(
+                self._brush_cursor_rect(prev_cursor_pos).united(
+                    self._brush_cursor_rect(self.mouse_cursor_pos)
+                )
             )
-            self.update(dirty_rect)
-
         super().mouseMoveEvent(event)
 
     def mouseReleaseEvent(self, event: QMouseEvent):
@@ -732,9 +613,9 @@ class CanvasWidget(QWidget):
 
         if event.button() == Qt.MouseButton.LeftButton and self.is_drawing_mask:
             if self.brush_smoothness > 0 and self.last_draw_point:
-                img_pt = self.widget_to_image_coords(event.position())
-                self._draw_brush_stroke(self.last_draw_point, img_pt)
-                
+                self._draw_brush_stroke(
+                    self.last_draw_point, self.widget_to_image_coords(event.position())
+                )
             self.is_drawing_mask = False
             self.last_draw_point = None
             self.imageEditedDirectly.emit("Edición Manual")
@@ -761,15 +642,17 @@ class CanvasWidget(QWidget):
         self.update()
         super().leaveEvent(event)
 
-    def dragEnterEvent(self, event):
+    @staticmethod
+    def _accept_media_drag(event) -> None:
         mime = event.mimeData()
         if mime.hasUrls() or mime.hasImage():
             event.acceptProposedAction()
 
+    def dragEnterEvent(self, event):
+        self._accept_media_drag(event)
+
     def dragMoveEvent(self, event):
-        mime = event.mimeData()
-        if mime.hasUrls() or mime.hasImage():
-            event.acceptProposedAction()
+        self._accept_media_drag(event)
 
     def dropEvent(self, event):
         mime = event.mimeData()
@@ -792,24 +675,24 @@ class CanvasWidget(QWidget):
         super().resizeEvent(event)
         self._clamp_pan_offset()
         self._center_drop_zone()
-        sb_thick = 12
-        margin = 4
-        self.v_scrollbar.setGeometry(self.width() - sb_thick - margin, margin, sb_thick, self.height() - (margin * 2) - sb_thick)
-        self.h_scrollbar.setGeometry(margin, self.height() - sb_thick - margin, self.width() - (margin * 2) - sb_thick, sb_thick)
+        sb_thick, margin = 12, 4
+        self.v_scrollbar.setGeometry(
+            self.width() - sb_thick - margin, margin, sb_thick, self.height() - (margin * 2) - sb_thick
+        )
+        self.h_scrollbar.setGeometry(
+            margin, self.height() - sb_thick - margin, self.width() - (margin * 2) - sb_thick, sb_thick
+        )
         self._update_scrollbars()
         self.update()
 
     def _center_drop_zone(self):
         if hasattr(self, "drop_zone"):
-            dw = self.drop_zone.width()
-            dh = self.drop_zone.height()
             self.drop_zone.move(
-                int((self.width() - dw) / 2),
-                int((self.height() - dh) / 2),
+                int((self.width() - self.drop_zone.width()) / 2),
+                int((self.height() - self.drop_zone.height()) / 2),
             )
 
     def mouseDoubleClickEvent(self, event: QMouseEvent):
-        """Doble clic para re-encajar la imagen en la vista (fit_to_view)."""
         if (event.button() == Qt.MouseButton.LeftButton and not self.brush_mode) or (
             event.button() == Qt.MouseButton.MiddleButton
         ):
@@ -819,10 +702,9 @@ class CanvasWidget(QWidget):
         super().mouseDoubleClickEvent(event)
 
     # -------------------------------------------------------------
-    # Trazo de Pincel sobre la Máscara
+    # Trazado y Varita
     # -------------------------------------------------------------
     def _draw_brush_stroke(self, start_pt: QPointF, end_pt: QPointF):
-        """Dibuja una línea continua o punto con extremos redondeados, aplicando opacidad y dureza."""
         self._brush_engine.draw_stroke(
             target_qimage=self.current_qimage,
             original_qimage=self.original_qimage,
@@ -836,59 +718,50 @@ class CanvasWidget(QWidget):
         )
 
     def _effective_selection_mode(self, modifiers) -> str:
-        """Modo de selección combinando Shift/Alt como Photoshop."""
         return self._selection_tool.effective_mode(modifiers)
 
+    def _sam_async_trigger(self):
+        main_win = self.window()
+        if main_win is not self and hasattr(main_win, "_ensure_sam_embedding_async"):
+            return main_win._ensure_sam_embedding_async
+        return None
+
     def _apply_magic_wand(self, pt: QPointF, mode: str = "new"):
-        """Selecciona píxeles (por IA de MobileSAM o por tolerancia de color)."""
         if not self.current_qimage:
             return
         try:
-            main_win = self.window()
-            sam_trigger = (
-                main_win._ensure_sam_embedding_async
-                if main_win is not self and hasattr(main_win, "_ensure_sam_embedding_async")
-                else None
-            )
             combined = self._selection_tool.compute_wand_mask(
-                self.current_qimage, pt, mode=mode, async_sam_trigger=sam_trigger
+                self.current_qimage, pt, mode=mode, async_sam_trigger=self._sam_async_trigger()
             )
             if combined is not None:
                 self._set_selection(combined)
         except Exception as e:
-            print(f"Error en Varita: {e}")
+            logger.warning("Error en Varita: %s", e)
 
     def _apply_sam_refinement_point(self, pt: QPointF, label: int, reset_points: bool = False):
-        """Añade un punto positivo (1) o negativo (0) para refinar la máscara MobileSAM."""
         if not self.current_qimage:
             return
-        main_win = self.window()
-        sam_trigger = (
-            main_win._ensure_sam_embedding_async
-            if main_win is not self and hasattr(main_win, "_ensure_sam_embedding_async")
-            else None
-        )
         mask = self._selection_tool.add_sam_refinement_point(
-            self.current_qimage, pt, label=label, reset_points=reset_points, async_sam_trigger=sam_trigger
+            self.current_qimage,
+            pt,
+            label=label,
+            reset_points=reset_points,
+            async_sam_trigger=self._sam_async_trigger(),
         )
         if mask is not None:
             self._set_selection(mask)
 
     def _draw_marching_ants(self, painter: QPainter, img_rect: QRectF):
-        """Dibuja el contorno animado de la selección (hormigas marchantes)."""
         self._selection_tool.draw_marching_ants(painter, img_rect, self.zoom_factor)
 
     # -------------------------------------------------------------
-    # Pintado Principal
+    # Pintado y Barras de Desplazamiento
     # -------------------------------------------------------------
     def paintEvent(self, event: QPaintEvent):
         painter = QPainter(self)
         painter.setRenderHint(QPainter.RenderHint.Antialiasing, True)
         painter.setRenderHint(QPainter.RenderHint.SmoothPixmapTransform, True)
 
-        # 1. Fondo general de la ventana (se deja que el QSS lo maneje)
-
-        # Si no hay imagen cargada, la drop_zone se encarga de mostrar la tarjeta interactiva
         if not self.current_qimage:
             if hasattr(self, "drop_zone"):
                 if not self.drop_zone.isVisible():
@@ -897,72 +770,24 @@ class CanvasWidget(QWidget):
             return
 
         img_rect = self.get_image_rect_in_widget()
+        draw_canvas_scene(
+            painter=painter,
+            img_rect=img_rect,
+            current_qimage=self.current_qimage,
+            checker_pixmap=self.checker_pixmap,
+            bg_color_rgb=self.bg_color_rgb,
+            selection_qimage=self.selection_qimage,
+            comparison_mode=self.comparison_mode,
+            before_qimage=self.before_qimage,
+            comparison_split_ratio=self.comparison_split_ratio,
+            is_dark=getattr(self, "_is_dark_theme", True),
+        )
 
-        # 2. Sombra suave (drop shadow) alrededor de la imagen para que destaque sobre el fondo
-        painter.save()
-        for offset, alpha in [(8, 8), (5, 14), (3, 22), (1, 35)]:
-            shadow_rect = img_rect.adjusted(-offset, -offset, offset, offset)
-            painter.fillRect(shadow_rect, QColor(0, 0, 0, alpha))
-        painter.restore()
-
-        # Renderizado de imagen: Modo Comparación (Antes/Después) o Modo Normal
-        if self.comparison_mode and self.before_qimage:
-            split_x = img_rect.left() + img_rect.width() * self.comparison_split_ratio
-
-            # Lado Izquierdo: "Antes" (Imagen Original)
-            left_rect = QRectF(img_rect.left(), img_rect.top(), max(0.0, split_x - img_rect.left()), img_rect.height())
-            painter.save()
-            painter.setClipRect(left_rect)
-            painter.drawTiledPixmap(img_rect, self.checker_pixmap)
-            painter.drawImage(img_rect, self.before_qimage)
-            painter.restore()
-
-            # Lado Derecho: "Después" (Imagen Actual)
-            right_rect = QRectF(split_x, img_rect.top(), max(0.0, img_rect.right() - split_x), img_rect.height())
-            painter.save()
-            painter.setClipRect(right_rect)
-            if self.bg_color_rgb:
-                painter.fillRect(img_rect, QColor(*self.bg_color_rgb))
-            else:
-                painter.drawTiledPixmap(img_rect, self.checker_pixmap)
-            painter.drawImage(img_rect, self.current_qimage)
-            painter.restore()
-
-            # Línea divisoria y manija central
-            self._draw_comparison_divider(painter, img_rect, split_x)
-        else:
-            # Fondo de damero sutil o color sólido dentro del área de la imagen para transparencias
-            painter.save()
-            painter.setClipRect(img_rect)
-            if self.bg_color_rgb:
-                painter.fillRect(img_rect, QColor(*self.bg_color_rgb))
-            else:
-                painter.drawTiledPixmap(img_rect, self.checker_pixmap)
-
-            # Dibujar la imagen escalada
-            painter.drawImage(img_rect, self.current_qimage)
-            
-            # Dibujar la selección (overlay azul) si existe
-            if self.selection_qimage:
-                painter.drawImage(img_rect, self.selection_qimage)
-                
-            painter.restore()
-
-        # 5. (Eliminado overlay de máscara)
-
-        # 6. Borde sutil alrededor de la imagen
-        pen_border = QPen(QColor(61, 61, 61), 1) # #3D3D3D
-        painter.setPen(pen_border)
-        painter.setBrush(Qt.BrushStyle.NoBrush)
-        painter.drawRect(img_rect)
-
-        # 6b. Hormigas marchantes y pines de refinamiento MobileSAM
         if not self.comparison_mode:
             self._draw_marching_ants(painter, img_rect)
             self._selection_tool.draw_sam_points(painter, img_rect, self.zoom_factor)
             self._crop_tool.draw_overlay(painter, img_rect, self.image_to_widget_coords)
 
-        # 7. Indicador del cursor del pincel (la varita usa cursor en cruz)
         if (
             self.brush_mode
             and not self.wand_mode
@@ -972,227 +797,77 @@ class CanvasWidget(QWidget):
             self._draw_brush_cursor(painter)
 
     def _draw_brush_cursor(self, painter: QPainter):
-        """Dibuja el círculo del tamaño del pincel sobre el cursor del ratón con precisión en esquinas."""
-        visual_radius = (self.brush_size * self.zoom_factor) / 2.0
-        cx = self.mouse_cursor_pos.x()
-        cy = self.mouse_cursor_pos.y()
-
-        painter.save()
-        painter.setRenderHint(QPainter.RenderHint.Antialiasing, True)
-        
-        if self.eraser_mode:
-            # Cursor con doble halo de alto contraste para que sea visible tanto en fondos oscuros como claros
-            painter.setBrush(QColor(15, 23, 42, 65))
-            border_w = 1.0 if visual_radius < 3.0 else 1.5
-            painter.setPen(QPen(QColor(255, 255, 255, 220), border_w + 1.0))
-            painter.drawEllipse(QPointF(cx, cy), max(1.5, visual_radius), max(1.5, visual_radius))
-            painter.setBrush(Qt.BrushStyle.NoBrush)
-            painter.setPen(QPen(QColor(56, 189, 248, 240), border_w))
-            painter.drawEllipse(QPointF(cx, cy), max(1.5, visual_radius), max(1.5, visual_radius))
-        else:
-            # Círculo semitransparente interior con tinte sakura
-            painter.setBrush(QColor(255, 79, 121, 65))
-            # Borde rosa sakura (#FF4F79)
-            border_w = 1.0 if visual_radius < 3.0 else 1.5
-            painter.setPen(QPen(QColor(255, 79, 121, 230), border_w))
-            painter.drawEllipse(QPointF(cx, cy), max(1.5, visual_radius), max(1.5, visual_radius))
-
-        # Punto central de precisión (micro-mira para esquinas)
-        dot_r = 0.8 if visual_radius < 4.0 else 1.2
-        if self.eraser_mode:
-            painter.setBrush(QColor(56, 189, 248, 245))
-        else:
-            painter.setBrush(QColor(255, 79, 121, 240))
-            
-        painter.setPen(Qt.PenStyle.NoPen)
-        painter.drawEllipse(QPointF(cx, cy), dot_r, dot_r)
-        painter.restore()
-
-    def _draw_comparison_divider(self, painter: QPainter, img_rect: QRectF, split_x: float):
-        """Dibuja la línea divisoria vertical, la manija central con flechas y las etiquetas Antes/Después."""
-        painter.save()
-        painter.setRenderHint(QPainter.RenderHint.Antialiasing, True)
-
-        # 1. Línea divisoria vertical con sombra tenue y línea blanca
-        painter.setPen(QPen(QColor(0, 0, 0, 70), 3.0))
-        painter.drawLine(QPointF(split_x, img_rect.top()), QPointF(split_x, img_rect.bottom()))
-        painter.setPen(QPen(QColor("#FFFFFF"), 2.0))
-        painter.drawLine(QPointF(split_x, img_rect.top()), QPointF(split_x, img_rect.bottom()))
-
-        # 2. Manija central circular
-        cy = img_rect.center().y()
-        radius = 16.0
-        handle_center = QPointF(split_x, cy)
-
-        # Sombra de la manija
-        painter.setPen(Qt.PenStyle.NoPen)
-        painter.setBrush(QColor(0, 0, 0, 40))
-        painter.drawEllipse(handle_center + QPointF(1, 1), radius + 1, radius + 1)
-
-        # Círculo oscuro/claro con borde rosa sakura
-        is_dark = getattr(self, "_is_dark_theme", True)
-        painter.setBrush(QColor("#1E293B") if is_dark else QColor("#FFFFFF"))
-        painter.setPen(QPen(QColor("#FF4F79"), 2.5))
-        painter.drawEllipse(handle_center, radius, radius)
-
-        # Flechas ◀ ▶ dentro de la manija
-        painter.setPen(QColor("#FF4F79"))
-        font = painter.font()
-        font.setPixelSize(9)
-        font.setBold(True)
-        painter.setFont(font)
-        painter.drawText(
-            QRectF(split_x - radius, cy - radius, radius * 2, radius * 2),
-            Qt.AlignmentFlag.AlignCenter,
-            "◀ ▶",
+        draw_brush_cursor(
+            painter, self.mouse_cursor_pos, self.brush_size, self.zoom_factor, self.eraser_mode
         )
 
-        # 3. Badges "ANTES" y "DESPUÉS" internacionalizados
-        badge_y = img_rect.top() + 12
-        if badge_y + 24 < img_rect.bottom():
-            # Badge ANTES (Izquierda)
-            badge_antes_rect = QRectF(img_rect.left() + 12, badge_y, 64, 22)
-            painter.setBrush(QColor(15, 23, 42, 215))
-            painter.setPen(Qt.PenStyle.NoPen)
-            painter.drawRoundedRect(badge_antes_rect, 6, 6)
-            painter.setPen(QColor("#FFFFFF"))
-            font_b = painter.font()
-            font_b.setPixelSize(8)
-            font_b.setBold(True)
-            painter.setFont(font_b)
-            painter.drawText(badge_antes_rect, Qt.AlignmentFlag.AlignCenter, tr("compare_before"))
+    def _draw_comparison_divider(self, painter: QPainter, img_rect: QRectF, split_x: float):
+        draw_comparison_divider(
+            painter, img_rect, split_x, is_dark=getattr(self, "_is_dark_theme", True)
+        )
 
-            # Badge DESPUÉS (Derecha)
-            badge_desp_rect = QRectF(img_rect.right() - 76, badge_y, 64, 22)
-            painter.setBrush(QColor(244, 63, 94, 225))
-            painter.setPen(Qt.PenStyle.NoPen)
-            painter.drawRoundedRect(badge_desp_rect, 6, 6)
-            painter.setPen(QColor("#FFFFFF"))
-            painter.drawText(badge_desp_rect, Qt.AlignmentFlag.AlignCenter, tr("compare_after"))
-
-        painter.restore()
-
-    # -------------------------------------------------------------
-    # Scrollbars (UI y Lógica)
-    # -------------------------------------------------------------
-    def _scrollbar_style(self, is_dark: bool = True):
-        track = "rgba(15, 23, 42, 0.65)" if is_dark else "rgba(231, 229, 228, 0.4)"
-        handle = "rgba(71, 85, 105, 0.8)" if is_dark else "rgba(120, 113, 108, 0.6)"
-        handle_hover = "rgba(148, 163, 184, 0.95)" if is_dark else "rgba(120, 113, 108, 0.9)"
-        return f"""
-            QScrollBar:horizontal {{
-                border: none;
-                background: {track};
-                height: 12px;
-                margin: 0px 0px 0px 0px;
-                border-radius: 6px;
-            }}
-            QScrollBar::handle:horizontal {{
-                background: {handle};
-                min-width: 30px;
-                border-radius: 6px;
-            }}
-            QScrollBar::handle:horizontal:hover {{
-                background: {handle_hover};
-            }}
-            QScrollBar::add-line:horizontal, QScrollBar::sub-line:horizontal,
-            QScrollBar::add-page:horizontal, QScrollBar::sub-page:horizontal {{
-                background: none;
-                width: 0px;
-            }}
-            
-            QScrollBar:vertical {{
-                border: none;
-                background: {track};
-                width: 12px;
-                margin: 0px 0px 0px 0px;
-                border-radius: 6px;
-            }}
-            QScrollBar::handle:vertical {{
-                background: {handle};
-                min-height: 30px;
-                border-radius: 6px;
-            }}
-            QScrollBar::handle:vertical:hover {{
-                background: {handle_hover};
-            }}
-            QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical,
-            QScrollBar::add-page:vertical, QScrollBar::sub-page:vertical {{
-                background: none;
-                height: 0px;
-            }}
-        """
+    def _scrollbar_style(self, is_dark: bool = True) -> str:
+        return build_scrollbar_stylesheet(is_dark)
 
     def retranslate_ui(self):
-        """Actualiza los textos del lienzo al cambiar idioma."""
         if hasattr(self, "drop_zone"):
             self.drop_zone.retranslate_ui()
 
     def update_theme(self, is_dark: bool):
-        """Actualiza el aspecto de los componentes del lienzo con el tema."""
         self._is_dark_theme = is_dark
         if hasattr(self, "drop_zone"):
             self.drop_zone.update_theme(is_dark)
-        if hasattr(self, "v_scrollbar"):
-            self.v_scrollbar.setStyleSheet(self._scrollbar_style(is_dark))
-        if hasattr(self, "h_scrollbar"):
-            self.h_scrollbar.setStyleSheet(self._scrollbar_style(is_dark))
+        style = self._scrollbar_style(is_dark)
+        for sb_attr in ("v_scrollbar", "h_scrollbar"):
+            if hasattr(self, sb_attr):
+                getattr(self, sb_attr).setStyleSheet(style)
         self.update()
+
+    @staticmethod
+    def _sync_axis_scrollbar(scrollbar: QScrollBar, view_dim: float, img_dim: float, pan_coord: float) -> None:
+        if img_dim <= view_dim:
+            scrollbar.hide()
+            return
+        scrollbar.show()
+        padding = min(80.0, view_dim * 0.2)
+        min_off = view_dim - img_dim - padding
+        scrollbar.setRange(0, int(padding - min_off))
+        scrollbar.setPageStep(int(view_dim))
+        scrollbar.setValue(int(padding - pan_coord))
 
     def _update_scrollbars(self):
         if not self.current_qimage or self.width() <= 0 or self.height() <= 0:
             self.v_scrollbar.hide()
             self.h_scrollbar.hide()
             return
-
-        vw = float(self.width())
-        vh = float(self.height())
-        iw = float(self.current_qimage.width()) * self.zoom_factor
-        ih = float(self.current_qimage.height()) * self.zoom_factor
-
-        padding_x = min(80.0, vw * 0.2)
-        padding_y = min(80.0, vh * 0.2)
-
         self._updating_scrollbars = True
-
-        if iw <= vw:
-            self.h_scrollbar.hide()
-        else:
-            self.h_scrollbar.show()
-            min_x = vw - iw - padding_x
-            max_x = padding_x
-            range_x = int(max_x - min_x)
-            self.h_scrollbar.setRange(0, range_x)
-            self.h_scrollbar.setPageStep(int(vw))
-            val_x = int(max_x - self.pan_offset.x())
-            self.h_scrollbar.setValue(val_x)
-
-        if ih <= vh:
-            self.v_scrollbar.hide()
-        else:
-            self.v_scrollbar.show()
-            min_y = vh - ih - padding_y
-            max_y = padding_y
-            range_y = int(max_y - min_y)
-            self.v_scrollbar.setRange(0, range_y)
-            self.v_scrollbar.setPageStep(int(vh))
-            val_y = int(max_y - self.pan_offset.y())
-            self.v_scrollbar.setValue(val_y)
-
+        self._sync_axis_scrollbar(
+            self.h_scrollbar,
+            float(self.width()),
+            float(self.current_qimage.width()) * self.zoom_factor,
+            self.pan_offset.x(),
+        )
+        self._sync_axis_scrollbar(
+            self.v_scrollbar,
+            float(self.height()),
+            float(self.current_qimage.height()) * self.zoom_factor,
+            self.pan_offset.y(),
+        )
         self._updating_scrollbars = False
 
-    def _on_h_scrollbar_changed(self, value):
-        if self._updating_scrollbars: return
-        vw = float(self.width())
-        padding_x = min(80.0, vw * 0.2)
-        target_x = padding_x - value
-        self.pan_offset.setX(target_x)
+    def _apply_scrollbar_axis(self, is_horizontal: bool, value: int) -> None:
+        if self._updating_scrollbars:
+            return
+        dim = float(self.width() if is_horizontal else self.height())
+        target = min(80.0, dim * 0.2) - value
+        if is_horizontal:
+            self.pan_offset.setX(target)
+        else:
+            self.pan_offset.setY(target)
         self.update()
 
+    def _on_h_scrollbar_changed(self, value):
+        self._apply_scrollbar_axis(True, value)
+
     def _on_v_scrollbar_changed(self, value):
-        if self._updating_scrollbars: return
-        vh = float(self.height())
-        padding_y = min(80.0, vh * 0.2)
-        target_y = padding_y - value
-        self.pan_offset.setY(target_y)
-        self.update()
+        self._apply_scrollbar_axis(False, value)

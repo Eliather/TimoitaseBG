@@ -15,7 +15,7 @@ from app.config import (
     get_inference_providers,
     get_optimized_session_options,
 )
-from app.core.model_fetcher import ensure_model_file
+from app.core.model_fetcher import ensure_model_file, make_download_progress_cb
 
 logger = logging.getLogger("TimoitaseBG.SAMManager")
 
@@ -180,17 +180,9 @@ class SAMManager:
                 if progress_cb:
                     progress_cb(10, "Verificando modelos de MobileSAM...")
 
-                def _dl_prog(dl: int, tot: int):
-                    if progress_cb and tot > 0:
-                        pct = 10 + int(round((dl / tot) * 35))
-                        dl_mb = dl / (1024 * 1024)
-                        tot_mb = tot / (1024 * 1024)
-                        progress_cb(
-                            min(45, pct),
-                            f"Descargando MobileSAM ({dl_mb:.1f} / {tot_mb:.1f} MB)...",
-                        )
-
-                self.ensure_models(progress_cb=_dl_prog)
+                self.ensure_models(
+                    progress_cb=make_download_progress_cb(progress_cb, "MobileSAM", start_pct=10, span_pct=35)
+                )
 
             if progress_cb:
                 progress_cb(50, "Preprocesando imagen para MobileSAM...")

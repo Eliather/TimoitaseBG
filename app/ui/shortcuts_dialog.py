@@ -2,23 +2,24 @@
 TimoitaseBG - Diálogo Modal de Atajos de Teclado y Gestos
 Diseño moderno sin marco con soporte para temas claro y oscuro.
 """
-from PySide6.QtCore import Qt, QPoint
+from PySide6.QtCore import Qt
 from PySide6.QtWidgets import (
     QDialog, QWidget, QVBoxLayout, QHBoxLayout, QLabel,
     QPushButton, QFrame, QGridLayout
 )
 from app.i18n import tr
+from app.ui.components import FramelessDragMixin
 from app.ui.icons import get_icon
 
 
-class ShortcutsDialog(QDialog):
+class ShortcutsDialog(FramelessDragMixin, QDialog):
     """Modal moderno para visualizar todos los atajos de teclado y gestos."""
 
     def __init__(self, parent=None, is_dark_theme: bool = True):
         super().__init__(parent)
         self.is_dark_theme = is_dark_theme
         self._is_tracking = False
-        self._start_pos = QPoint()
+        self._start_pos = None
 
         self.setWindowFlags(Qt.WindowType.FramelessWindowHint | Qt.WindowType.Dialog)
         self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground, True)
@@ -177,20 +178,3 @@ class ShortcutsDialog(QDialog):
         self.btn_ok.clicked.connect(self.accept)
         btn_layout.addWidget(self.btn_ok)
         root_layout.addLayout(btn_layout)
-
-    # Soporte para arrastrar la ventana
-    def mousePressEvent(self, event):
-        if event.button() == Qt.MouseButton.LeftButton:
-            self._is_tracking = True
-            self._start_pos = event.globalPosition().toPoint() - self.pos()
-            event.accept()
-
-    def mouseMoveEvent(self, event):
-        if self._is_tracking:
-            self.move(event.globalPosition().toPoint() - self._start_pos)
-            event.accept()
-
-    def mouseReleaseEvent(self, event):
-        if event.button() == Qt.MouseButton.LeftButton:
-            self._is_tracking = False
-            event.accept()

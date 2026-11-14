@@ -124,6 +124,30 @@ class PersistentGPUWorker:
         """Compatibilidad con get_bg_session: redirige a la sesión de InSPyReNet."""
         return self.get_inspyrenet_session(providers=providers)
 
+    def _create_ort_session_with_fallback(self, model_path, eff_providers, model_label: str):
+        """Crea sesión ONNX Runtime haciendo fallback limpio QNN -> DirectML -> CPU."""
+        import onnxruntime as ort
+
+        sess_options = get_optimized_session_options() or ort.SessionOptions()
+        try:
+            return ort.InferenceSession(str(model_path), sess_options, providers=eff_providers)
+        except Exception as e:
+            logger.warning(
+                "Fallo al cargar %s con proveedores GPU/CoreML/QNN (%s): %s. "
+                "Conmutando limpiamente a DML/CPUExecutionProvider...",
+                model_label,
+                eff_providers,
+                e,
+            )
+            if any(p == "QNNExecutionProvider" for p in eff_providers) and "DmlExecutionProvider" in ort.get_available_providers():
+                try:
+                    dml_provs = [("DmlExecutionProvider", {"device_id": self.device_id or 0}), "CPUExecutionProvider"]
+                    logger.info("Reintentando %s con DirectML tras fallo en QNN...", model_label)
+                    return ort.InferenceSession(str(model_path), sess_options, providers=dml_provs)
+                except Exception as dml_err:
+                    logger.warning("Fallback DirectML para %s falló (%s). Usando CPU...", model_label, dml_err)
+            return ort.InferenceSession(str(model_path), sess_options, providers=["CPUExecutionProvider"])
+
     def get_inspyrenet_session(
         self,
         providers=None,
@@ -140,52 +164,22 @@ class PersistentGPUWorker:
                 logger.info("Liberando sesiones previas de VRAM para cargar inspyrenet...")
                 self._clear_rembg_sessions(preserve_clothing_session=True)
 
-            from app.core.model_fetcher import ensure_model_file
+            from app.core.model_fetcher import ensure_model_file, make_download_progress_cb
 
             if progress_cb:
                 progress_cb(5, "Verificando modelo InSPyReNet...")
 
-            def _dl_prog(dl: int, tot: int):
-                if progress_cb and tot > 0:
-                    pct = 5 + int(round((dl / tot) * 30))
-                    dl_mb = dl / (1024 * 1024)
-                    tot_mb = tot / (1024 * 1024)
-                    progress_cb(
-                        min(35, pct),
-                        f"Descargando inspyrenet.onnx ({dl_mb:.1f} / {tot_mb:.1f} MB)...",
-                    )
-
-            model_path = ensure_model_file("inspyrenet.onnx", progress_cb=_dl_prog)
-            import onnxruntime as ort
+            model_path = ensure_model_file(
+                "inspyrenet.onnx",
+                progress_cb=make_download_progress_cb(progress_cb, "inspyrenet.onnx", start_pct=5, span_pct=30),
+            )
             eff_providers = self._get_providers(providers)
-            sess_options = get_optimized_session_options() or ort.SessionOptions()
             if progress_cb:
                 progress_cb(38, "Cargando modelo InSPyReNet en memoria...")
             logger.info(f"Cargando sesión inspyrenet con providers: {eff_providers}...")
-            try:
-                self._cached_sessions["inspyrenet"] = ort.InferenceSession(
-                    str(model_path), sess_options, providers=eff_providers
-                )
-            except Exception as e:
-                logger.warning(
-                    f"Fallo al cargar sesión inspyrenet con proveedores GPU/CoreML/QNN ({eff_providers}): {e}. "
-                    f"Conmutando limpiamente a DML/CPUExecutionProvider..."
-                )
-                fallback_success = False
-                if any(p == "QNNExecutionProvider" for p in eff_providers) and "DmlExecutionProvider" in ort.get_available_providers():
-                    try:
-                        dml_provs = [("DmlExecutionProvider", {"device_id": self.device_id or 0}), "CPUExecutionProvider"]
-                        logger.info("Reintentando sesión inspyrenet con DirectML tras fallo en QNN...")
-                        self._cached_sessions["inspyrenet"] = ort.InferenceSession(
-                            str(model_path), sess_options, providers=dml_provs
-                        )
-                        fallback_success = True
-                    except Exception as dml_err:
-                        logger.warning(f"Fallback DirectML también falló ({dml_err}). Usando CPU...")
-                if not fallback_success:
-                    self._cached_sessions["inspyrenet"] = ort.InferenceSession(
-                        str(model_path), sess_options, providers=["CPUExecutionProvider"]
-                    )
+            self._cached_sessions["inspyrenet"] = self._create_ort_session_with_fallback(
+                model_path, eff_providers, "sesión inspyrenet"
+            )
         return self._cached_sessions["inspyrenet"]
 
     def remove_background(
@@ -298,58 +292,41 @@ class PersistentGPUWorker:
             cleaned_rgb, final_alpha = postprocess_inspyrenet(input_img, raw_mask)
             input_img = Image.fromarray(cleaned_rgb, mode="RGB")
 
-        # Fusión Core-Only con Detector Semántico de Ropa (omite isnet-anime por sesgo de dominio 2D)
-        if enable_clothing_protection and model_name not in ("u2net_human_seg", "isnet-anime"):
-            try:
-                if progress_cb:
-                    progress_cb(85, "Aplicando protección semántica de ropa...")
-                import rembg
-                from app.core.bg_remover import (
-                    _predict_clothing_mask,
-                    fuse_clothing_protection_core_only,
-                )
-                from app.core.model_fetcher import load_rembg_session
+        def _get_gpu_human_session():
+            from app.core.model_fetcher import load_rembg_session
 
-                human_sess_key = "u2net_human_seg"
-                if human_sess_key not in self._cached_sessions:
-                    sess_opts = get_optimized_session_options()
-                    try:
-                        self._cached_sessions[human_sess_key] = load_rembg_session(
-                            human_sess_key, providers=eff_providers, sess_opts=sess_opts
-                        )
-                    except Exception as e:
-                        logger.warning(
-                            f"Fallo al cargar protección u2net_human_seg con GPU/CoreML/QNN: {e}. "
-                            f"Conmutando a CPUExecutionProvider..."
-                        )
-                        self._cached_sessions[human_sess_key] = load_rembg_session(
-                            human_sess_key,
-                            providers=["CPUExecutionProvider"],
-                            sess_opts=sess_opts,
-                        )
-                human_sess = self._cached_sessions[human_sess_key]
-                human_alpha = _predict_clothing_mask(input_img, human_sess)
-                if np.any(human_alpha > 50):
-                    final_alpha = fuse_clothing_protection_core_only(
-                        main_alpha=final_alpha,
-                        clothing_alpha=human_alpha,
-                        inner_erosion_px=12,
+            human_sess_key = "u2net_human_seg"
+            if human_sess_key not in self._cached_sessions:
+                sess_opts = get_optimized_session_options()
+                try:
+                    self._cached_sessions[human_sess_key] = load_rembg_session(
+                        human_sess_key, providers=eff_providers, sess_opts=sess_opts
                     )
-            except Exception as e:
-                logger.warning(f"Protección de ropa u2net_human_seg omitida en GPU: {e}")
+                except Exception as e:
+                    logger.warning(
+                        "Fallo al cargar protección u2net_human_seg con GPU/CoreML/QNN: %s. "
+                        "Conmutando a CPUExecutionProvider...",
+                        e,
+                    )
+                    self._cached_sessions[human_sess_key] = load_rembg_session(
+                        human_sess_key,
+                        providers=["CPUExecutionProvider"],
+                        sess_opts=sess_opts,
+                    )
+            return self._cached_sessions[human_sess_key]
 
-        if progress_cb:
-            progress_cb(95, "Componiendo canal alfa final...")
+        from app.core.bg_remover import finalize_removed_background
 
-        if image.mode == "RGBA":
-            orig_alpha = np.array(image.getchannel("A"), dtype=np.uint8)
-            final_alpha = np.minimum(final_alpha, orig_alpha)
-
-        output = input_img.convert("RGB").convert("RGBA")
-        output.putalpha(Image.fromarray(final_alpha, mode="L"))
-        if progress_cb:
-            progress_cb(100, "Eliminación de fondo completada.")
-        return output
+        return finalize_removed_background(
+            orig_image=image,
+            input_img=input_img,
+            final_alpha=final_alpha,
+            model_name=model_name,
+            enable_clothing_protection=enable_clothing_protection,
+            get_human_session_fn=_get_gpu_human_session,
+            progress_cb=progress_cb,
+            env_label="GPU",
+        )
 
     def restore_image(
         self,
@@ -374,50 +351,21 @@ class PersistentGPUWorker:
 
             self._restorer_instance = ImageRestorer()
             eff_providers = self._get_providers(providers)
-            import onnxruntime as ort
-            from app.core.model_fetcher import ensure_model_file
+            from app.core.model_fetcher import ensure_model_file, make_download_progress_cb
 
             if progress_cb:
                 progress_cb(5, "Verificando modelo Real-ESRGAN...")
 
-            def _dl_prog(dl: int, tot: int):
-                if progress_cb and tot > 0:
-                    pct = 5 + int(round((dl / tot) * 12))
-                    dl_mb = dl / (1024 * 1024)
-                    tot_mb = tot / (1024 * 1024)
-                    progress_cb(
-                        min(17, pct),
-                        f"Descargando Real-ESRGAN ({dl_mb:.1f} / {tot_mb:.1f} MB)...",
-                    )
-
-            model_path = ensure_model_file(ImageRestorer.MODEL_FILENAME, progress_cb=_dl_prog)
-            sess_options = get_optimized_session_options() or ort.SessionOptions()
+            model_path = ensure_model_file(
+                ImageRestorer.MODEL_FILENAME,
+                progress_cb=make_download_progress_cb(progress_cb, "Real-ESRGAN", start_pct=5, span_pct=12),
+            )
             if progress_cb:
                 progress_cb(18, "Cargando modelo Real-ESRGAN en memoria...")
             logger.info(f"Worker: Inicializando Real-ESRGAN con providers: {eff_providers}...")
-            try:
-                self._restorer_instance._session = ort.InferenceSession(
-                    str(model_path), sess_options, providers=eff_providers
-                )
-            except Exception as e:
-                logger.warning(
-                    f"Fallo al cargar Real-ESRGAN con proveedores GPU/CoreML/QNN ({eff_providers}): {e}. "
-                    f"Conmutando limpiamente a DML/CPUExecutionProvider..."
-                )
-                fallback_success = False
-                if any(p == "QNNExecutionProvider" for p in eff_providers) and "DmlExecutionProvider" in ort.get_available_providers():
-                    try:
-                        dml_provs = [("DmlExecutionProvider", {"device_id": self.device_id or 0}), "CPUExecutionProvider"]
-                        self._restorer_instance._session = ort.InferenceSession(
-                            str(model_path), sess_options, providers=dml_provs
-                        )
-                        fallback_success = True
-                    except Exception:
-                        pass
-                if not fallback_success:
-                    self._restorer_instance._session = ort.InferenceSession(
-                        str(model_path), sess_options, providers=["CPUExecutionProvider"]
-                    )
+            self._restorer_instance._session = self._create_ort_session_with_fallback(
+                model_path, eff_providers, "Real-ESRGAN"
+            )
 
         try:
             return self._restorer_instance._restore_image_impl(

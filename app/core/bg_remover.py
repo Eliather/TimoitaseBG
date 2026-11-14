@@ -3,7 +3,7 @@ TimoitaseBG - Motor de eliminación de fondos y orquestación de sesiones ONNX /
 """
 import logging
 import threading
-from typing import Any, Dict, Optional
+from typing import Any, Callable, Dict, Optional
 
 import numpy as np
 from PIL import Image
@@ -31,6 +31,46 @@ from app.core.postprocess import (  # noqa: F401 (re-exports de compatibilidad)
 logger = logging.getLogger("TimoitaseBG.BGRemover")
 
 
+def finalize_removed_background(
+    orig_image: Image.Image,
+    input_img: Image.Image,
+    final_alpha: np.ndarray,
+    model_name: str,
+    enable_clothing_protection: bool,
+    get_human_session_fn: Callable[[], Any],
+    progress_cb: Optional[Callable[[int, str], None]] = None,
+    env_label: str = "CPU",
+) -> Image.Image:
+    """Aplica protección opcional de ropa, preserva alfa previo y compone la imagen RGBA final."""
+    if enable_clothing_protection and model_name not in ("u2net_human_seg", "isnet-anime"):
+        try:
+            if progress_cb:
+                progress_cb(85, "Aplicando protección semántica de ropa...")
+            human_sess = get_human_session_fn()
+            human_alpha = _predict_clothing_mask(input_img, human_sess)
+            if np.any(human_alpha > 50):
+                final_alpha = fuse_clothing_protection_core_only(
+                    main_alpha=final_alpha,
+                    clothing_alpha=human_alpha,
+                    inner_erosion_px=12,
+                )
+        except Exception as e:
+            logger.warning("Protección de ropa u2net_human_seg omitida en %s: %s", env_label, e)
+
+    if progress_cb:
+        progress_cb(95, "Componiendo canal alfa final...")
+
+    if orig_image.mode == "RGBA":
+        orig_alpha = np.array(orig_image.getchannel("A"), dtype=np.uint8)
+        final_alpha = np.minimum(final_alpha, orig_alpha)
+
+    output = input_img.convert("RGB").convert("RGBA")
+    output.putalpha(Image.fromarray(final_alpha, mode="L"))
+    if progress_cb:
+        progress_cb(100, "Eliminación de fondo completada.")
+    return output
+
+
 class BackgroundRemover:
     """
     Motor de eliminación de fondo basado exclusivamente en InSPyReNet Swin-B (1024x1024)
@@ -47,22 +87,15 @@ class BackgroundRemover:
         if cache_key not in self._sessions:
             with self._lock:
                 if cache_key not in self._sessions:
-                    from app.core.model_fetcher import ensure_model_file
+                    from app.core.model_fetcher import ensure_model_file, make_download_progress_cb
 
                     if progress_cb:
                         progress_cb(5, "Verificando modelo InSPyReNet...")
 
-                    def _dl_prog(dl: int, tot: int):
-                        if progress_cb and tot > 0:
-                            pct = 5 + int(round((dl / tot) * 30))
-                            dl_mb = dl / (1024 * 1024)
-                            tot_mb = tot / (1024 * 1024)
-                            progress_cb(
-                                min(35, pct),
-                                f"Descargando inspyrenet.onnx ({dl_mb:.1f} / {tot_mb:.1f} MB)...",
-                            )
-
-                    model_path = ensure_model_file("inspyrenet.onnx", progress_cb=_dl_prog)
+                    model_path = ensure_model_file(
+                        "inspyrenet.onnx",
+                        progress_cb=make_download_progress_cb(progress_cb, "inspyrenet.onnx", start_pct=5, span_pct=30),
+                    )
                     import onnxruntime as ort
                     providers = ["CPUExecutionProvider"] if force_cpu else get_inference_providers()
                     sess_options = get_optimized_session_options() or ort.SessionOptions()
@@ -150,34 +183,16 @@ class BackgroundRemover:
             cleaned_rgb, final_alpha = postprocess_inspyrenet(input_img, raw_mask)
             input_img = Image.fromarray(cleaned_rgb, mode="RGB")
 
-        # Fusión Core-Only con Detector Semántico de Ropa (se omite en isnet-anime y u2net_human_seg)
-        if enable_clothing_protection and model_name not in ("u2net_human_seg", "isnet-anime"):
-            try:
-                if progress_cb:
-                    progress_cb(85, "Aplicando protección semántica de ropa...")
-                human_sess = self._get_rembg_cpu_session("u2net_human_seg")
-                human_alpha = _predict_clothing_mask(input_img, human_sess)
-                if np.any(human_alpha > 50):
-                    final_alpha = fuse_clothing_protection_core_only(
-                        main_alpha=final_alpha,
-                        clothing_alpha=human_alpha,
-                        inner_erosion_px=12,
-                    )
-            except Exception as e:
-                logger.warning(f"Protección de ropa u2net_human_seg omitida en CPU: {e}")
-
-        if progress_cb:
-            progress_cb(95, "Componiendo canal alfa final...")
-
-        if image.mode == "RGBA":
-            orig_alpha = np.array(image.getchannel("A"), dtype=np.uint8)
-            final_alpha = np.minimum(final_alpha, orig_alpha)
-
-        output = input_img.convert("RGB").convert("RGBA")
-        output.putalpha(Image.fromarray(final_alpha, mode="L"))
-        if progress_cb:
-            progress_cb(100, "Eliminación de fondo completada.")
-        return output
+        return finalize_removed_background(
+            orig_image=image,
+            input_img=input_img,
+            final_alpha=final_alpha,
+            model_name=model_name,
+            enable_clothing_protection=enable_clothing_protection,
+            get_human_session_fn=lambda: self._get_rembg_cpu_session("u2net_human_seg"),
+            progress_cb=progress_cb,
+            env_label="CPU",
+        )
 
     def remove_background(
         self,

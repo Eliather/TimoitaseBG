@@ -60,7 +60,18 @@ class BrushPanel(QWidget):
             tr("brush_desc"),
         )
         layout.addLayout(header_brush)
+        layout.addLayout(self._build_tool_mode_row())
+        layout.addWidget(self._build_brush_options_box())
+        layout.addWidget(self._build_wand_options_box())
+        layout.addWidget(self._build_selection_box())
+        layout.addWidget(self._build_edge_refine_box())
 
+        self.set_selection_info(0, 0)
+        self._apply_brush_tool_visibility()
+        layout.addStretch()
+
+    def _build_tool_mode_row(self) -> QHBoxLayout:
+        """Crea la fila exclusiva de modos (Pintar / Borrar / Varita)."""
         mode_row = QHBoxLayout()
         mode_row.setSpacing(6)
 
@@ -71,17 +82,14 @@ class BrushPanel(QWidget):
         self.btn_tool_erase = self._make_mode_button("btn_erase")
         self.btn_tool_wand = self._make_mode_button("btn_wand", tip_key="tip_wand")
 
-        self.brush_mode_group.addButton(self.btn_tool_paint, 0)
-        self.brush_mode_group.addButton(self.btn_tool_erase, 1)
-        self.brush_mode_group.addButton(self.btn_tool_wand, 2)
+        for idx, btn in enumerate((self.btn_tool_paint, self.btn_tool_erase, self.btn_tool_wand)):
+            self.brush_mode_group.addButton(btn, idx)
+            mode_row.addWidget(btn)
         self.brush_mode_group.idClicked.connect(self._on_brush_tool_clicked)
+        return mode_row
 
-        mode_row.addWidget(self.btn_tool_paint)
-        mode_row.addWidget(self.btn_tool_erase)
-        mode_row.addWidget(self.btn_tool_wand)
-        layout.addLayout(mode_row)
-
-        # ---------- Opciones del Pincel / Borrador ----------
+    def _build_brush_options_box(self) -> QGroupBox:
+        """Construye los controles de tamaño, suavizado, opacidad y dureza del pincel."""
         self.brush_options_box = QGroupBox(tr("brush_settings"))
         self.brush_options_box.setObjectName("brushOptionsBox")
         b_layout = QVBoxLayout(self.brush_options_box)
@@ -144,9 +152,10 @@ class BrushPanel(QWidget):
             btn.clicked.connect(lambda _, s=sz: self.set_brush_size(s))
             presets_row.addWidget(btn)
         b_layout.addLayout(presets_row)
-        layout.addWidget(self.brush_options_box)
+        return self.brush_options_box
 
-        # ---------- Opciones de la Varita Mágica ----------
+    def _build_wand_options_box(self) -> QGroupBox:
+        """Construye los ajustes de Varita Mágica por Color y Varita IA (MobileSAM)."""
         self.wand_options_box = QGroupBox(tr("wand_settings"))
         self.wand_options_box.setObjectName("wandOptionsBox")
         w_layout = QVBoxLayout(self.wand_options_box)
@@ -158,23 +167,11 @@ class BrushPanel(QWidget):
         self.wand_type_group = QButtonGroup(self)
         self.wand_type_group.setExclusive(True)
 
-        self.btn_wand_type_color = QPushButton(tr("wand_type_color"))
-        self.btn_wand_type_color.setObjectName("presetButton")
-        self.btn_wand_type_color.setCheckable(True)
-        self.btn_wand_type_color.setChecked(True)
-        self.btn_wand_type_color.setFixedHeight(30)
-        self.btn_wand_type_color.setToolTip(tr("tip_wand_color"))
-        self.btn_wand_type_color.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.btn_wand_type_color = self._make_wand_type_button("wand_type_color", "tip_wand_color", checked=True)
+        self.btn_wand_type_ai = self._make_wand_type_button("wand_type_ai", "tip_wand_ai")
         self.wand_type_group.addButton(self.btn_wand_type_color, 0)
-        wand_type_row.addWidget(self.btn_wand_type_color)
-
-        self.btn_wand_type_ai = QPushButton(tr("wand_type_ai"))
-        self.btn_wand_type_ai.setObjectName("presetButton")
-        self.btn_wand_type_ai.setCheckable(True)
-        self.btn_wand_type_ai.setFixedHeight(30)
-        self.btn_wand_type_ai.setToolTip(tr("tip_wand_ai"))
-        self.btn_wand_type_ai.setCursor(Qt.CursorShape.PointingHandCursor)
         self.wand_type_group.addButton(self.btn_wand_type_ai, 1)
+        wand_type_row.addWidget(self.btn_wand_type_color)
         wand_type_row.addWidget(self.btn_wand_type_ai)
         w_layout.addLayout(wand_type_row)
 
@@ -270,9 +267,10 @@ class BrushPanel(QWidget):
         self._lbl_wand_hint.setObjectName("shortcutDesc")
         self._lbl_wand_hint.setWordWrap(True)
         w_layout.addWidget(self._lbl_wand_hint)
-        layout.addWidget(self.wand_options_box)
+        return self.wand_options_box
 
-        # ---------- Acciones sobre la selección ----------
+    def _build_selection_box(self) -> QGroupBox:
+        """Construye acciones directas sobre la selección (Borrar / Rellenar / Invertir)."""
         self.selection_box = QGroupBox(tr("selection_box"))
         self.selection_box.setObjectName("selectionBox")
         s_layout = QVBoxLayout(self.selection_box)
@@ -309,9 +307,10 @@ class BrushPanel(QWidget):
         sel_actions_row.addWidget(self.btn_select_all)
         sel_actions_row.addWidget(self.btn_clear_selection)
         s_layout.addLayout(sel_actions_row)
-        layout.addWidget(self.selection_box)
+        return self.selection_box
 
-        # ---------- Refinamiento de bordes (Choke / Feather / Despill) ----------
+    def _build_edge_refine_box(self) -> QGroupBox:
+        """Construye controles de refinamiento alfa (Choke / Feather / Despill)."""
         self.edge_refine_box = QGroupBox(tr("edge_refine_box"))
         self.edge_refine_box.setObjectName("edgeRefineBox")
         er_layout = QVBoxLayout(self.edge_refine_box)
@@ -362,11 +361,17 @@ class BrushPanel(QWidget):
             )
         )
         er_layout.addWidget(self.btn_apply_edge_refine)
-        layout.addWidget(self.edge_refine_box)
+        return self.edge_refine_box
 
-        self.set_selection_info(0, 0)
-        self._apply_brush_tool_visibility()
-        layout.addStretch()
+    def _make_wand_type_button(self, text_key: str, tip_key: str, checked: bool = False) -> QPushButton:
+        btn = QPushButton(tr(text_key))
+        btn.setObjectName("presetButton")
+        btn.setCheckable(True)
+        btn.setChecked(checked)
+        btn.setFixedHeight(30)
+        btn.setToolTip(tr(tip_key))
+        btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        return btn
 
     def _make_mode_button(self, text_key: str, checked: bool = False, tip_key: str = "") -> QPushButton:
         btn = QPushButton(tr(text_key))

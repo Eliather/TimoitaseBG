@@ -81,17 +81,18 @@ class DropZoneWidget(QFrame):
         else:
             super().mousePressEvent(event)
 
-    def dragEnterEvent(self, event):
+    @staticmethod
+    def _accept_media_drag(event) -> None:
         if event.mimeData().hasUrls() or event.mimeData().hasImage():
             event.acceptProposedAction()
         else:
             event.ignore()
 
+    def dragEnterEvent(self, event):
+        self._accept_media_drag(event)
+
     def dragMoveEvent(self, event):
-        if event.mimeData().hasUrls() or event.mimeData().hasImage():
-            event.acceptProposedAction()
-        else:
-            event.ignore()
+        self._accept_media_drag(event)
 
     def dropEvent(self, event):
         mime = event.mimeData()

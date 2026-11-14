@@ -11,7 +11,7 @@ from PIL import Image
 
 from app.config import get_inference_providers, MODELS_DIR
 from app.core.image_utils import separate_alpha, combine_alpha
-from app.core.model_fetcher import ensure_model_file
+from app.core.model_fetcher import ensure_model_file, make_download_progress_cb
 
 logger = logging.getLogger("TimoitaseBG.Restorer")
 
@@ -37,17 +37,10 @@ class ImageRestorer:
             if progress_cb:
                 progress_cb(5, "Verificando modelo Real-ESRGAN...")
 
-            def _dl_prog(dl: int, tot: int):
-                if progress_cb and tot > 0:
-                    pct = 5 + int(round((dl / tot) * 12))
-                    dl_mb = dl / (1024 * 1024)
-                    tot_mb = tot / (1024 * 1024)
-                    progress_cb(
-                        min(17, pct),
-                        f"Descargando Real-ESRGAN ({dl_mb:.1f} / {tot_mb:.1f} MB)...",
-                    )
-
-            model_path = ensure_model_file(self.MODEL_FILENAME, progress_cb=_dl_prog)
+            model_path = ensure_model_file(
+                self.MODEL_FILENAME,
+                progress_cb=make_download_progress_cb(progress_cb, "Real-ESRGAN", start_pct=5, span_pct=12),
+            )
             if progress_cb:
                 progress_cb(18, "Cargando modelo Real-ESRGAN en CPU...")
             logger.info("Inicializando sesión local de Real-ESRGAN con CPUExecutionProvider...")

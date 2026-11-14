@@ -17,7 +17,30 @@ from app.i18n import tr, get_available_languages, get_current_language
 from app.ui.icons import get_icon
 
 
-class CustomTopBar(QWidget):
+class FramelessDragMixin:
+    """Mixin para arrastrar barras de título o diálogos sin bordes con botón izquierdo."""
+
+    def _drag_target(self):
+        return getattr(self, "parent_window", self)
+
+    def mousePressEvent(self, event):
+        if event.button() == Qt.MouseButton.LeftButton:
+            self._is_tracking = True
+            self._start_pos = event.globalPosition().toPoint() - self._drag_target().pos()
+            event.accept()
+
+    def mouseMoveEvent(self, event):
+        if getattr(self, "_is_tracking", False):
+            self._drag_target().move(event.globalPosition().toPoint() - self._start_pos)
+            event.accept()
+
+    def mouseReleaseEvent(self, event):
+        if event.button() == Qt.MouseButton.LeftButton:
+            self._is_tracking = False
+            event.accept()
+
+
+class CustomTopBar(FramelessDragMixin, QWidget):
     """Barra de título personalizada con arrastre y doble clic para maximizar."""
 
     def __init__(self, parent_window):
@@ -26,29 +49,13 @@ class CustomTopBar(QWidget):
         self._is_tracking = False
         self._start_pos = None
 
-    def mousePressEvent(self, event):
-        if event.button() == Qt.MouseButton.LeftButton:
-            self._is_tracking = True
-            self._start_pos = event.globalPosition().toPoint() - self.parent_window.pos()
-            event.accept()
-
-    def mouseMoveEvent(self, event):
-        if self._is_tracking:
-            self.parent_window.move(event.globalPosition().toPoint() - self._start_pos)
-            event.accept()
-
-    def mouseReleaseEvent(self, event):
-        if event.button() == Qt.MouseButton.LeftButton:
-            self._is_tracking = False
-            event.accept()
-
     def mouseDoubleClickEvent(self, event):
         if event.button() == Qt.MouseButton.LeftButton:
             self.parent_window._toggle_maximize()
             event.accept()
 
 
-class FramelessPopup(QDialog):
+class FramelessPopup(FramelessDragMixin, QDialog):
     """Popup modal sin marco para notificaciones de guardado o advertencias."""
 
     def __init__(self, parent, title: str, message: str):
@@ -102,22 +109,6 @@ class FramelessPopup(QDialog):
         btn_layout.addWidget(self.btn_ok)
         btn_layout.addStretch()
         layout.addLayout(btn_layout)
-
-    def mousePressEvent(self, event):
-        if event.button() == Qt.MouseButton.LeftButton:
-            self._is_tracking = True
-            self._start_pos = event.globalPosition().toPoint() - self.pos()
-            event.accept()
-
-    def mouseMoveEvent(self, event):
-        if getattr(self, "_is_tracking", False):
-            self.move(event.globalPosition().toPoint() - self._start_pos)
-            event.accept()
-
-    def mouseReleaseEvent(self, event):
-        if event.button() == Qt.MouseButton.LeftButton:
-            self._is_tracking = False
-            event.accept()
 
 
 class TopBar(CustomTopBar):

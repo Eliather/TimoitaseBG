@@ -1,12 +1,15 @@
 """
 Motor de trazado de pincel y borrador con soporte de dureza, opacidad y recorte por selección.
 """
+import logging
 from typing import Optional
 import numpy as np
 from PySide6.QtCore import Qt, QPointF, QRect, QRectF
 from PySide6.QtGui import QPainter, QColor, QPen, QBrush, QImage
 
 from app.core.image_utils import qimage_to_numpy, numpy_to_qimage
+
+logger = logging.getLogger(__name__)
 
 
 class BrushEngine:
@@ -247,5 +250,5 @@ class BrushEngine:
             temp_np[:, :, 3] = clipped_alpha
             return numpy_to_qimage(temp_np)
         except Exception as e:
-            print(f"Error clipping brush to selection: {e}")
+            logger.warning("Error clipping brush to selection: %s", e)
             return temp_img
