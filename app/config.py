@@ -201,7 +201,7 @@ from app.core.hardware import (
 
 # Parámetros por defecto de la aplicación
 APP_NAME = "TimoitaseBG"
-APP_VERSION = "1.2.3"
+APP_VERSION = "1.3.0"
 APP_AUTHOR = "Eliather"
 APP_DEVELOPER = "Eliather"
 DEFAULT_WINDOW_TITLE = f"{APP_NAME} v{APP_VERSION}"

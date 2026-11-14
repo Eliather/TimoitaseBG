@@ -1,6 +1,6 @@
 # TimoitaseBG
 
-![Version](https://img.shields.io/badge/Version-1.2.3-7c3aed?style=for-the-badge)
+![Version](https://img.shields.io/badge/Version-1.3.0-7c3aed?style=for-the-badge)
 ![License](https://img.shields.io/badge/License-GNU_AGPLv3-blue?style=for-the-badge)
 ![Python](https://img.shields.io/badge/Python-3.11%2B-3776ab?style=for-the-badge&logo=python&logoColor=white)
 ![PySide6](https://img.shields.io/badge/GUI-PySide6_Qt6-41cd52?style=for-the-badge&logo=qt&logoColor=white)
@@ -26,6 +26,7 @@
 - [Atajos de Teclado y Ratón](#atajos-de-teclado-y-ratón)
 - [Requisitos del Sistema](#requisitos-del-sistema)
 - [Instalación y Ejecución](#instalación-y-ejecución)
+- [Modo CLI Headless](#modo-cli-headless)
 - [Pruebas Automatizadas](#pruebas-automatizadas)
 - [Compilación y Empaquetado Multiplataforma](#compilación-y-empaquetado-multiplataforma)
 - [Atribución y Licencias de Terceros](#atribución-y-licencias-de-terceros)
@@ -74,26 +75,30 @@ El motor de segmentación expone cuatro modelos ONNX seleccionables según el ti
 - **Herramienta Borrador**: Normaliza automáticamente imágenes fuente sin canal alfa a `Format_RGBA8888` para que el borrado manual (`CompositionMode_DestinationOut`) genere transparencia real con recorte estricto dentro de selecciones activas.
 - **Varita Mágica (Color e IA)** (`SelectionTool`):
   - *Modo Color*: Selección por similitud RGBA con tolerancia ajustable (`0–255`), opción contigua mediante `floodFill` de 4 vecinos y suavizado anti-alias gaussiano.
-  - *Modo IA*: Utiliza MobileSAM para seleccionar semánticamente el objeto bajo el cursor con un clic.
+  - *Modo IA Multi-Punto (`MobileSAM`)*: Utiliza MobileSAM para seleccionar semánticamente el objeto con un clic y permite añadir inclusiones (`Shift + Clic`) o exclusiones (`Alt + Clic` / `Clic derecho`) sin recomputar el embedding.
+  - *Smart Fill (Inpainting)*: Relleno automático de regiones seleccionadas mediante `cv2.inpaint` (`INPAINT_TELEA`) para limpiar objetos o imperfecciones.
+  - *Refinamiento de Bordes en Vivo*: Ajuste interactivo de contracción/expansión (`Choke`), difuminado perimetral (`Feather`) y reducción de contaminación cromática de fondo (`Despill`) mediante `refine_alpha_edges()`.
   - *Operaciones Booleanas*: Soporta modos `Nuevo`, `Añadir`, `Restar` e `Intersecar` (con atajos Shift/Alt), además de `Seleccionar todo`, `Invertir selección`, `Deseleccionar` y `Eliminar píxeles seleccionados`.
+- **Estudio Creativo, Fondos y Recorte Manual**:
+  - *Efectos Creativos (`app/core/effects.py`)*: Contorno de sticker personalizable, sombra paralela difuminada, desenfoque de retrato (`Bokeh`), composición sobre imagen personalizada de fondo y presets de relación de aspecto (`512x512`, `1:1`, `16:9`, `9:16`).
+  - *Transformaciones y Crop Manual*: Herramienta visual de recorte libre o bloqueado por relación de aspecto (`CropTool`), rotación horaria de 90° y volteo horizontal/vertical sincronizado con la referencia de pincel.
 - **Inspección Visual, Drag & Drop y Acabado**: Zoom fluido hasta `30x`, paneo, cortina interactiva de comparación Antes/Después, recorte automático (`Autocrop` aplicado sobre la envolvente unión de la secuencia), visualización sobre tablero de ajedrez, aplicación de fondos sólidos y carga por arrastre de archivos o imágenes en memoria (`mime.hasImage()`).
 
-### 5. Secuencias Animadas y Video
+### 5. Secuencias Animadas, Video y Tracking Inteligente
 
 - **Animaciones Raster**: Lectura y exportación frame por frame con soporte de canal alfa nativo para **GIF** (cuantización en paralelo por `ThreadPoolExecutor` preservando paleta de 255 colores + índice transparente), **WebP** y **APNG**.
 - **Soporte de Video**: Importación de archivos `.mp4`, `.mov`, `.webm`, `.mkv`, `.avi`, `.m4v`, `.wmv`, `.flv`, `.mpeg`, `.mpg`, `.ogv`, `.3gp` y `.ts` con submuestreo uniforme hasta un máximo de `600` fotogramas.
+- **Smart Sequences (Tracking, Trim y FPS)**: `SequenceTrackWorker` y `app/core/sequence_tracker.py` propagan el seguimiento del sujeto activo hacia adelante y atrás mediante `YOLO11-seg + MobileSAM + Guided Filter` con suavizado EMA temporal. `SequenceBar` permite acotar el rango `[Inicio, Fin]` (`Trim`) y ajustar la tasa de `FPS` objetivo para previsualización y exportación.
 - **Estabilidad Temporal**: Filtro condicional de suavizado temporal (`temporal_smoothing = 0.22`) entre fotogramas consecutivos para mitigar parpadeo de máscaras cuando la variación media de alpha es moderada (`< 45.0`).
 - **Exportación Asíncrona**: `SaveSequenceWorker` ejecuta en segundo plano la exportación de **PNGs transparentes en `.zip`**, video con canal alfa nativo mediante FFmpeg CLI (`.webm` VP9 `yuva420p`, `.mkv` FFV1 `bgra`, `.mov` PNG `rgba`) o video directo vía `cv2.VideoWriter` sobre el fondo sólido elegido o Verde Chroma `#00FF00`.
 
-### 6. Procesamiento por Lotes, Cancelación y Portapapeles RGBA
+### 6. Procesamiento por Lotes Encadenado, Cancelación y Portapapeles RGBA
 
-- **Lotes Asíncronos con Reporte Detallado**: `BatchWorkerThread` procesa múltiples archivos en cola con barra de progreso global, acumula los fallos por archivo y emite un resumen detallado de archivos no procesados al finalizar.
-- **Cancelación Cooperativa**: El botón Cancelar en la barra de estado propaga `requestInterruption()` a los hilos activos y `cancel_check` a descargas de modelos en curso para detener operaciones de forma segura sin bloquear la interfaz.
-- **Portapapeles Completo**: `Ctrl+C` copia el lienzo conservando el canal alfa en formatos compatibles; `Ctrl+V` admite datos de imagen del sistema (`QImage`), flujos PNG binarios con transparencia y URLs de archivos locales.
+- **Pipelines Encadenados y Presets**: `BatchPipelineConfig` (`app/core/batch_pipeline.py`) y `BatchPanel` permiten encadenar `Quitar Fondo -> Escalado Real-ESRGAN -> Autocrop -> Sticker/Aspecto` con presets (`E-commerce 1:1`, `Stickers 512x512`, `Social 9:16`) persistidos en `QSettings` y reporte detallado de errores por archivo.
 
-### 7. Interfaz Modular, Temas e Internacionalización
+### 7. Interfaz Modular, Gestor de Modelos, Temas e Internacionalización
 
-- **Componentes Independientes**: Ventana principal sin marco (`Frameless`) con `TopBar`, barra de reproducción `SequenceBar`, barra de estado `StatusBar` (con indicador interactivo GPU/CPU, porcentaje determinista `0–100 %` y control de cancelación), ayuda de atajos en `shortcuts_setup.py` y panel lateral `ToolSidebar` compuesto por cuatro subpaneles dedicados (`BackgroundPanel`, `RestorePanel`, `BrushPanel`, `BatchPanel`).
+- **Componentes Independientes**: Ventana principal sin marco (`Frameless`) con `TopBar`, barra de reproducción `SequenceBar`, barra de estado `StatusBar` (con indicador interactivo GPU/CPU, porcentaje determinista `0–100 %` y control de cancelación), diálogo visual `ModelManagerDialog` (descarga con progreso/cancelación, cuantización `INT8` offline vía `app/core/quantizer.py`, verificación `SHA256` y eliminación), ayuda de atajos en `shortcuts_setup.py` y panel lateral `ToolSidebar` compuesto por cinco subpaneles dedicados (`BackgroundPanel`, `RestorePanel`, `BrushPanel`, `BatchPanel`, `EffectsPanel`).
 - **Temas e Iconografía Vectorial**: Hojas de estilos QSS (`style.qss` oscuro y `style_light.qss` claro) sincronizadas mediante `apply_theme(is_dark)` en todos los paneles y barras, con iconos vectoriales SVG (Lucide) cacheados en `icons.py`.
 - **Multi-idioma en Vivo y Persistencia Nativa**: Diccionarios JSON externalizados en `app/locales/` (`es`, `en`, `ru`, `zh`) con contrato uniforme `retranslate_ui()` en los componentes visuales y preferencia de idioma persistida en `QSettings` a través de `app/i18n.py`.
 
@@ -123,7 +128,8 @@ Los usuarios pueden conmutar entre GPU/NPU y CPU desde la interfaz; al desactiva
 ```text
 TimoitaseBG/
 ├── app/
-│   ├── main.py                      # Arranque QApplication, spawn POSIX y carga de style*.qss
+│   ├── main.py                      # Arranque QApplication o CLI (--cli), spawn POSIX y carga de style*.qss
+│   ├── cli.py                       # Interfaz CLI headless (remove, restore, batch, models) sin QtWidgets
 │   ├── config.py                    # Rutas (portable/OS), SSL CA, APP_VERSION y constantes globales
 │   ├── i18n.py                      # Cargador ligero JSON con persistencia en QSettings
 │   ├── locales/
@@ -148,23 +154,31 @@ TimoitaseBG/
 │   │   ├── video_processor.py       # Submuestreo OpenCV, suavizado temporal y export FFmpeg/OpenCV
 │   │   ├── gpu_manager.py           # Orquestador singleton GPUWorkerManager, watchdog y kill tree
 │   │   ├── gpu_worker.py            # Subproceso PersistentGPUWorker aislado por IPC
-│   │   ├── model_fetcher.py         # Descarga HTTP Range 206, SHA256, SSL y load_rembg_session
-│   │   └── workers.py               # QThread de baja prioridad, cancelación cooperativa y secuencias
+│   │   ├── model_fetcher.py         # Descarga HTTP Range 206, SHA256, inventario y load_rembg_session
+│   │   ├── quantizer.py             # Motor puro de cuantización INT8 y validación ONNX Runtime
+│   │   ├── effects.py               # Efectos sticker, sombra, bokeh, imagen de fondo, aspecto y crop
+│   │   ├── sequence_tracker.py      # Seguimiento temporal YOLO11 + MobileSAM + suavizado EMA
+│   │   ├── batch_pipeline.py        # BatchPipelineConfig y encadenamiento reutilizable UI/CLI
+│   │   └── workers.py               # QThread de baja prioridad (lote, secuencias, tracking, modelos)
 │   └── ui/
 │       ├── main_window.py           # Shell de ventana principal y coordinación de vistas
 │       ├── canvas_widget.py         # Cámara, zoom/pan, cortina Antes/Después y composición
 │       ├── canvas/
 │       │   ├── brush_engine.py      # Motor de pincel restaurador/borrador con _scratch_buf
-│       │   └── selection_tool.py    # Superposición de selección, marching ants y varita mágica
+│       │   ├── crop_tool.py         # Superposición visual de recorte manual con manijas y proporción
+│       │   └── selection_tool.py    # Selección, marching ants, varita IA multi-punto e inpainting
+│       ├── dialogs/
+│       │   └── model_manager_dialog.py  # Gestor visual de modelos ONNX (descarga, INT8, SHA-256)
 │       ├── toolbar.py               # Contenedor ToolSidebar con señales unificadas de los paneles
 │       ├── panels/
 │       │   ├── bg_panel.py          # Controles de eliminación de fondo, YOLO y MobileSAM
 │       │   ├── restore_panel.py     # Controles de superresolución y tiling
-│       │   ├── brush_panel.py       # Controles de pinceles, borrador, varita y recortes
-│       │   └── batch_panel.py       # Cola de procesamiento por lotes
+│       │   ├── brush_panel.py       # Controles de pinceles, borrador, varita, Smart Fill y bordes
+│       │   ├── effects_panel.py     # Estudio Creativo: sticker, sombra, bokeh, aspecto y crop manual
+│       │   └── batch_panel.py       # Cola de procesamiento por lotes con pipelines y presets
 │       ├── components/
-│       │   ├── top_bar.py           # Barra de título frameless, tema, idioma y diálogos pop-up
-│       │   ├── sequence_bar.py      # Controles de reproducción y navegación de fotogramas
+│       │   ├── top_bar.py           # Barra de título frameless, tema, idioma, gestor modelos y ayuda
+│       │   ├── sequence_bar.py      # Reproducción, rango Trim, selector FPS y botón Rastrear
 │       │   ├── status_bar.py        # Estado, progreso, botón Cancelar y badge GPU/CPU
 │       │   └── shortcuts_setup.py   # Registro centralizado de QShortcut
 │       ├── widgets/
@@ -176,7 +190,8 @@ TimoitaseBG/
 │       ├── style_light.qss          # Hoja de estilos clara
 │       └── assets/                  # Recursos gráficos vectoriales
 ├── scripts/
-│   ├── quantize_models.py           # Cuantización dinámica a *_int8.onnx con validación ONNX
+│   ├── compute_model_hashes.py      # Cálculo y verificación CLI de hashes SHA-256 en MODEL_SHA256
+│   ├── quantize_models.py           # Wrapper CLI sobre app.core.quantizer para generar *_int8.onnx
 │   ├── package_release.py           # Empaquetado nativo (.msix multi-idioma, .AppImage e iconos)
 │   └── download_releases.py         # Descargador de releases desde GitHub con validación SHA256
 ├── tests/                           # Suite pytest (pipelines, IPC, watchdog, modularidad y UI)
@@ -196,8 +211,8 @@ El sistema separa de forma estricta la presentación gráfica, el control de flu
 | Capa de Presentación (app/ui/)                                                  |
 |   MainWindow (shell)                                                            |
 |     +-- TopBar / SequenceBar / StatusBar (con Cancelar y badge GPU/CPU)         |
-|     +-- ToolSidebar -> BackgroundPanel | RestorePanel | BrushPanel | BatchPanel |
-|     +-- CanvasWidget -> BrushEngine + SelectionTool + DropZoneWidget            |
+|     +-- ToolSidebar -> BackgroundPanel | RestorePanel | BrushPanel | BatchPanel | EffectsPanel |
+|     +-- CanvasWidget -> BrushEngine + SelectionTool + CropTool + DropZoneWidget            |
 +---------------------------------------+-----------------------------------------+
                                         | Comandos de UI y señales tipadas
                                         v
@@ -388,6 +403,27 @@ python -m scripts.quantize_models
 
 ---
 
+## Modo CLI Headless
+
+TimoitaseBG incluye un punto de entrada de línea de comandos (`app/cli.py`, accesible vía `python -m app.cli` o `TimoitaseBG --cli` en binarios empaquetados) que ejecuta flujos completos sin inicializar `PySide6.QtWidgets`:
+
+```bash
+# Eliminar fondo de una imagen con modelo y recorte de sticker
+python -m app.cli remove entrada.png salida.png --model birefnet-general --autocrop --sticker-width 8 --aspect 512x512
+
+# Superresolución Real-ESRGAN 2x
+python -m app.cli restore entrada.png salida_2x.png --scale x2
+
+# Procesar carpeta completa con pipeline encadenado
+python -m app.cli batch ./carpeta_entrada ./carpeta_salida --model isnet-anime --autocrop --upscale x2
+
+# Inspeccionar inventario y verificar integridad SHA-256 de modelos locales
+python -m app.cli models --list
+python -m app.cli models --verify all
+```
+
+---
+
 ## Pruebas Automatizadas
 
 La configuración en `pytest.ini` ejecuta la suite sobre `tests/` cubriendo pre/postprocesamiento de BiRefNet e InSPyReNet, procesador de video, rutas de distribución portable/OS, watchdog del subproceso GPU, selección MobileSAM, detección YOLO11-seg, seguridad de hilos, regresión modular y portapapeles:
@@ -491,6 +527,6 @@ El detalle completo de avisos y licencias se encuentra en [THIRD_PARTY_NOTICES.m
 
 ## Autora y Licencia
 
-**TimoitaseBG v1.2.3** ha sido desarrollado por **Eliather** bajo la licencia **GNU Affero General Public License v3.0 (GNU AGPLv3)**. Consulta el archivo [LICENSE](LICENSE) para conocer las condiciones completas de uso, modificación y redistribución.
+**TimoitaseBG v1.3.0** ha sido desarrollado por **Eliather** bajo la licencia **GNU Affero General Public License v3.0 (GNU AGPLv3)**. Consulta el archivo [LICENSE](LICENSE) para conocer las condiciones completas de uso, modificación y redistribución.
 
 Apoyo al desarrollo del proyecto: [https://ko-fi.com/eliather](https://ko-fi.com/eliather)

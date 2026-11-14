@@ -1,7 +1,7 @@
 """
 TimoitaseBG - Gestión de estado e historial de imágenes (Undo / Redo / Reset).
 """
-from typing import Optional, List
+from typing import Optional, List, Tuple
 from PIL import Image
 from app.config import MAX_HISTORY_STATES
 
@@ -203,6 +203,9 @@ class SequenceSession:
             avg_ms = sum(self.durations) / max(1, len(self.durations))
             self.fps = round(1000.0 / max(15.0, avg_ms), 2)
         self.current_index = 0
+        self.trim_start: int = 0
+        self.trim_end: int = max(0, len(self.states) - 1)
+        self.target_fps: float = float(self.fps)
 
     @property
     def active_state(self) -> ImageState:
@@ -211,6 +214,38 @@ class SequenceSession:
     @property
     def total_frames(self) -> int:
         return len(self.states)
+
+    def set_trim_range(self, start: int, end: int) -> Tuple[int, int]:
+        total = self.total_frames
+        if total <= 0:
+            self.trim_start = 0
+            self.trim_end = 0
+            return (0, 0)
+        s = max(0, min(total - 1, int(start)))
+        e = max(s, min(total - 1, int(end)))
+        self.trim_start = s
+        self.trim_end = e
+        return (s, e)
+
+    def set_target_fps(self, fps: float) -> float:
+        clamped = max(1.0, min(120.0, float(fps)))
+        self.target_fps = round(clamped, 2)
+        return self.target_fps
+
+    def get_export_frames_and_durations(self) -> Tuple[List[Image.Image], List[int], float]:
+        total = self.total_frames
+        if total == 0:
+            return [], [], float(self.target_fps or 24.0)
+        s = max(0, min(total - 1, int(self.trim_start)))
+        e = max(s, min(total - 1, int(self.trim_end)))
+        frames = [st.current_image for st in self.states[s : e + 1] if st.current_image is not None]
+        fps_out = float(self.target_fps if self.target_fps > 0 else self.fps)
+        if abs(fps_out - float(self.fps)) < 1e-2 and len(self.durations) == total:
+            durations = list(self.durations[s : e + 1])
+        else:
+            frame_ms = max(15, int(round(1000.0 / max(1.0, fps_out))))
+            durations = [frame_ms] * len(frames)
+        return frames, durations, fps_out
 
     def get_all_current_frames(self) -> List[Image.Image]:
         return [st.current_image for st in self.states if st.current_image is not None]

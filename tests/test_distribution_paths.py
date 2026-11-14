@@ -266,7 +266,10 @@ def test_model_fetcher_ssl_context_and_fallback_on_cert_error(tmp_path):
             raise urllib.error.URLError(ssl_err)
         return FakeHttpResponse(dummy_payload)
 
+    import hashlib
+    expected_sha = hashlib.sha256(dummy_payload).hexdigest()
     with patch.object(mf, "MODELS_DIR", tmp_path), \
+         patch.dict(mf.MODEL_SHA256, {"inspyrenet.onnx": expected_sha}), \
          patch("urllib.request.urlopen", side_effect=fake_urlopen):
         downloaded_path = mf.ensure_model_file("inspyrenet.onnx")
         assert downloaded_path == tmp_path / "inspyrenet.onnx"

@@ -427,3 +427,7 @@ class BackgroundPanel(QWidget):
     def _on_select_subject_clicked(self):
         if self._active_detected_subject:
             self.selectSubjectRequested.emit(self._active_detected_subject)
+
+    def get_selected_subject(self):
+        """Retorna el sujeto YOLO seleccionado actualmente en el panel, o None."""
+        return self._active_detected_subject

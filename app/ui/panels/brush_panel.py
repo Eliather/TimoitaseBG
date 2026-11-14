@@ -35,9 +35,11 @@ class BrushPanel(QWidget):
     wandAntiAliasChanged = Signal(bool)
     wandContiguousChanged = Signal(bool)
     deleteSelectionRequested = Signal()
+    inpaintSelectionRequested = Signal()
     invertSelectionRequested = Signal()
     selectAllRequested = Signal()
     clearSelectionRequested = Signal()
+    edgeRefineRequested = Signal(int, int, float)
     geometryChanged = Signal()
 
     def __init__(self, parent=None):
@@ -290,6 +292,14 @@ class BrushPanel(QWidget):
         self.btn_delete_selection.clicked.connect(self.deleteSelectionRequested.emit)
         s_layout.addWidget(self.btn_delete_selection)
 
+        self.btn_inpaint_selection = QPushButton(tr("btn_inpaint_selection"))
+        self.btn_inpaint_selection.setObjectName("PrimaryBtn")
+        self.btn_inpaint_selection.setFixedHeight(34)
+        self.btn_inpaint_selection.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.btn_inpaint_selection.setToolTip(tr("tip_inpaint_selection"))
+        self.btn_inpaint_selection.clicked.connect(self.inpaintSelectionRequested.emit)
+        s_layout.addWidget(self.btn_inpaint_selection)
+
         sel_actions_row = QHBoxLayout()
         sel_actions_row.setSpacing(6)
         self.btn_invert_selection = self._make_sel_action("btn_invert_selection", "tip_invert_selection", self.invertSelectionRequested.emit)
@@ -300,6 +310,59 @@ class BrushPanel(QWidget):
         sel_actions_row.addWidget(self.btn_clear_selection)
         s_layout.addLayout(sel_actions_row)
         layout.addWidget(self.selection_box)
+
+        # ---------- Refinamiento de bordes (Choke / Feather / Despill) ----------
+        self.edge_refine_box = QGroupBox(tr("edge_refine_box"))
+        self.edge_refine_box.setObjectName("edgeRefineBox")
+        er_layout = QVBoxLayout(self.edge_refine_box)
+        er_layout.setContentsMargins(12, 14, 12, 10)
+        er_layout.setSpacing(8)
+
+        self.slider_choke, self.lbl_choke, self._lbl_choke_name = self._add_slider_row(
+            er_layout,
+            tr("lbl_edge_choke"),
+            72,
+            -8,
+            8,
+            0,
+            "0 px",
+            lambda v: self.lbl_choke.setText(f"{v:+d} px" if v != 0 else "0 px"),
+            label_width=44,
+        )
+        self.slider_feather, self.lbl_feather, self._lbl_feather_name = self._add_slider_row(
+            er_layout,
+            tr("lbl_edge_feather"),
+            72,
+            0,
+            15,
+            0,
+            "0 px",
+            lambda v: self.lbl_feather.setText(f"{v} px"),
+            label_width=44,
+        )
+        self.slider_despill, self.lbl_despill, self._lbl_despill_name = self._add_slider_row(
+            er_layout,
+            tr("lbl_edge_despill"),
+            72,
+            0,
+            100,
+            0,
+            "0 %",
+            lambda v: self.lbl_despill.setText(f"{v} %"),
+            label_width=44,
+        )
+        self.btn_apply_edge_refine = QPushButton(tr("btn_apply_edge_refine"))
+        self.btn_apply_edge_refine.setObjectName("ActionBtn")
+        self.btn_apply_edge_refine.setFixedHeight(34)
+        self.btn_apply_edge_refine.clicked.connect(
+            lambda: self.edgeRefineRequested.emit(
+                int(self.slider_choke.value()),
+                int(self.slider_feather.value()),
+                self.slider_despill.value() / 100.0,
+            )
+        )
+        er_layout.addWidget(self.btn_apply_edge_refine)
+        layout.addWidget(self.edge_refine_box)
 
         self.set_selection_info(0, 0)
         self._apply_brush_tool_visibility()
@@ -379,6 +442,10 @@ class BrushPanel(QWidget):
 
         self.btn_delete_selection.setIcon(get_icon("trash", color="#FFFFFF", size=16))
         self.btn_delete_selection.setIconSize(QSize(16, 16))
+        self.btn_inpaint_selection.setIcon(get_icon("sparkles", color="#FFFFFF", size=16))
+        self.btn_inpaint_selection.setIconSize(QSize(16, 16))
+        self.btn_apply_edge_refine.setIcon(get_icon("sliders", color="#FFFFFF", size=15))
+        self.btn_apply_edge_refine.setIconSize(QSize(15, 15))
         for btn, icon_name in (
             (self.btn_invert_selection, "invert"),
             (self.btn_select_all, "select-all"),
@@ -427,6 +494,13 @@ class BrushPanel(QWidget):
         self.set_selection_info(self._selected_px, self._total_px)
         self.btn_delete_selection.setText(tr("btn_delete_selection"))
         self.btn_delete_selection.setToolTip(tr("tip_delete_selection"))
+        self.btn_inpaint_selection.setText(tr("btn_inpaint_selection"))
+        self.btn_inpaint_selection.setToolTip(tr("tip_inpaint_selection"))
+        self.edge_refine_box.setTitle(tr("edge_refine_box"))
+        self._lbl_choke_name.setText(tr("lbl_edge_choke"))
+        self._lbl_feather_name.setText(tr("lbl_edge_feather"))
+        self._lbl_despill_name.setText(tr("lbl_edge_despill"))
+        self.btn_apply_edge_refine.setText(tr("btn_apply_edge_refine"))
         self.btn_invert_selection.setText(tr("btn_invert_selection"))
         self.btn_invert_selection.setToolTip(tr("tip_invert_selection"))
         self.btn_select_all.setText(tr("btn_select_all"))
@@ -462,6 +536,7 @@ class BrushPanel(QWidget):
         else:
             self.lbl_selection_info.setText(tr("selection_none"))
         self.btn_delete_selection.setEnabled(has_sel)
+        self.btn_inpaint_selection.setEnabled(has_sel)
         self.btn_invert_selection.setEnabled(has_sel)
         self.btn_clear_selection.setEnabled(has_sel)
         self._apply_brush_tool_visibility()

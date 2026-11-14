@@ -122,3 +122,27 @@ def delete_selected_pixels(img: np.ndarray, mask: np.ndarray) -> np.ndarray:
     keep = (255 - mask.astype(np.uint16))
     rgba[:, :, 3] = ((rgba[:, :, 3].astype(np.uint16) * keep + 127) // 255).astype(np.uint8)
     return rgba
+
+
+def inpaint_selected_region(
+    img_rgba: np.ndarray,
+    selection_mask: np.ndarray,
+    radius: int = 5,
+) -> np.ndarray:
+    """
+    Rellena la región seleccionada mediante OpenCV Telea Inpainting reconstruyendo
+    el contenido visual desde el entorno y preservando opacidad en la zona reparada.
+    """
+    if selection_mask is None or img_rgba.shape[:2] != selection_mask.shape[:2]:
+        return img_rgba
+
+    mask_u8 = (selection_mask > 127).astype(np.uint8) * 255
+    if not np.any(mask_u8):
+        return img_rgba
+
+    rgba = _to_rgba(img_rgba).copy()
+    bgr = cv2.cvtColor(rgba[..., :3], cv2.COLOR_RGB2BGR)
+    inpainted_bgr = cv2.inpaint(bgr, mask_u8, max(1, int(radius)), cv2.INPAINT_TELEA)
+    rgba[..., :3] = cv2.cvtColor(inpainted_bgr, cv2.COLOR_BGR2RGB)
+    rgba[..., 3] = np.where(mask_u8 > 0, 255, rgba[..., 3])
+    return rgba

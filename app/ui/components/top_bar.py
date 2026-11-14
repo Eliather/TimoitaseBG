@@ -125,6 +125,7 @@ class TopBar(CustomTopBar):
 
     themeToggled = Signal()
     languageChanged = Signal(int)
+    modelsRequested = Signal()
     openRequested = Signal()
     saveRequested = Signal()
     undoRequested = Signal()
@@ -162,6 +163,9 @@ class TopBar(CustomTopBar):
 
         self.btn_theme = self._make_icon_btn("compactIconButton", 34, 34, "tooltip_theme", self.themeToggled.emit)
         layout.addWidget(self.btn_theme)
+
+        self.btn_models = self._make_icon_btn("compactIconButton", 34, 34, "tooltip_models", self.modelsRequested.emit)
+        layout.addWidget(self.btn_models)
 
         self.combo_lang = QComboBox()
         self.combo_lang.setObjectName("langSelector")
@@ -265,6 +269,10 @@ class TopBar(CustomTopBar):
         self.btn_theme.setIconSize(QSize(18, 18))
         self.btn_theme.setText("")
 
+        self.btn_models.setIcon(get_icon("hard-drive", color=fg_color, active_color=accent_color, size=18))
+        self.btn_models.setIconSize(QSize(18, 18))
+        self.btn_models.setText("")
+
         for btn, icon_name in ((self.btn_open, "folder-open"), (self.btn_save, "save")):
             btn.setIcon(get_icon(icon_name, color="#FFFFFF", active_color="#FFFFFF", disabled_color="#FECDD3", size=16))
             btn.setIconSize(QSize(16, 16))
@@ -304,6 +312,7 @@ class TopBar(CustomTopBar):
         self.btn_fit.setText(tr("btn_zoom_fit"))
         self.btn_fit.setToolTip(tr("tooltip_zoom_fit"))
         self.btn_theme.setToolTip(tr("tooltip_theme"))
+        self.btn_models.setToolTip(tr("tooltip_models"))
         self.combo_lang.setToolTip(tr("tooltip_lang"))
         self.btn_undo.setToolTip(tr("tooltip_undo"))
         self.btn_redo.setToolTip(tr("tooltip_redo"))

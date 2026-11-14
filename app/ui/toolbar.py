@@ -23,7 +23,7 @@ from app.ui.widgets.toggles import (
     GpuToggle,
     _GpuToggleAdapter,
 )
-from app.ui.panels import BackgroundPanel, RestorePanel, BrushPanel, BatchPanel
+from app.ui.panels import BackgroundPanel, RestorePanel, BrushPanel, BatchPanel, EffectsPanel
 
 __all__ = [
     "AutoResizingStackedWidget",
@@ -66,11 +66,16 @@ class ToolSidebar(QWidget):
     clearSelectionRequested = Signal()
     clearMaskRequested = Signal()
     inpaintRequested = Signal()
+    edgeRefineRequested = Signal(int, int, float)
     deviceModeChanged = Signal(bool)
     batchRequested = Signal(str, str, str, bool)
     detectSubjectsRequested = Signal()
     isolateSubjectRequested = Signal(object)
     selectSubjectRequested = Signal(object)
+    applyEffectsRequested = Signal(dict)
+    transformRequested = Signal(int, bool, bool)
+    cropModeToggled = Signal(bool, object)
+    cropApplyRequested = Signal()
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -136,8 +141,15 @@ class ToolSidebar(QWidget):
         self.btn_rail_restore = self._make_rail_tab("sidebar_tab_restore", 1)
         self.btn_rail_brush = self._make_rail_tab("sidebar_tab_brush", 2)
         self.btn_rail_batch = self._make_rail_tab("sidebar_tab_batch", 3)
+        self.btn_rail_effects = self._make_rail_tab("sidebar_tab_effects", 4)
 
-        for btn in (self.btn_rail_bg, self.btn_rail_restore, self.btn_rail_brush, self.btn_rail_batch):
+        for btn in (
+            self.btn_rail_bg,
+            self.btn_rail_restore,
+            self.btn_rail_brush,
+            self.btn_rail_batch,
+            self.btn_rail_effects,
+        ):
             tabs_layout.addWidget(btn)
 
         main_layout.addWidget(self.tool_tabs_row)
@@ -165,7 +177,14 @@ class ToolSidebar(QWidget):
         self.panel_restore = RestorePanel()
         self.panel_brush = BrushPanel()
         self.panel_batch = BatchPanel()
-        self._panels = (self.panel_bg, self.panel_restore, self.panel_brush, self.panel_batch)
+        self.panel_effects = EffectsPanel()
+        self._panels = (
+            self.panel_bg,
+            self.panel_restore,
+            self.panel_brush,
+            self.panel_batch,
+            self.panel_effects,
+        )
 
         for panel in self._panels:
             self.stack.addWidget(panel)
@@ -210,16 +229,26 @@ class ToolSidebar(QWidget):
         self.panel_brush.wandAntiAliasChanged.connect(self.wandAntiAliasChanged.emit)
         self.panel_brush.wandContiguousChanged.connect(self.wandContiguousChanged.emit)
         self.panel_brush.deleteSelectionRequested.connect(self.deleteSelectionRequested.emit)
+        self.panel_brush.inpaintSelectionRequested.connect(self.inpaintRequested.emit)
         self.panel_brush.invertSelectionRequested.connect(self.invertSelectionRequested.emit)
         self.panel_brush.selectAllRequested.connect(self.selectAllRequested.emit)
         self.panel_brush.clearSelectionRequested.connect(self.clearSelectionRequested.emit)
+        self.panel_brush.edgeRefineRequested.connect(self.edgeRefineRequested.emit)
         self.panel_brush.geometryChanged.connect(self._refresh_stack_geometry)
 
         self.panel_batch.batchRequested.connect(self.batchRequested.emit)
 
+        self.panel_effects.applyEffectsRequested.connect(self.applyEffectsRequested.emit)
+        self.panel_effects.transformRequested.connect(self.transformRequested.emit)
+        self.panel_effects.cropModeToggled.connect(self.cropModeToggled.emit)
+        self.panel_effects.cropApplyRequested.connect(self.cropApplyRequested.emit)
+
     def _on_rail_clicked(self, index: int):
         self.stack.setCurrentIndex(index)
         self.scroll_area.verticalScrollBar().setValue(0)
+        if index != 4:
+            self.panel_effects.reset_crop_toggle()
+            self.cropModeToggled.emit(False, None)
         self.brushModeToggled.emit(index == 2)
 
     def _refresh_stack_geometry(self):
@@ -242,6 +271,7 @@ class ToolSidebar(QWidget):
             (self.btn_rail_restore, "maximize-2"),
             (self.btn_rail_brush, "brush"),
             (self.btn_rail_batch, "folder"),
+            (self.btn_rail_effects, "sliders"),
         ):
             btn.setIcon(get_icon(icon_name, color=sub_color, active_color=accent_color, size=18))
             btn.setIconSize(QSize(18, 18))
@@ -257,6 +287,7 @@ class ToolSidebar(QWidget):
         self.btn_rail_restore.setText(tr("sidebar_tab_restore"))
         self.btn_rail_brush.setText(tr("sidebar_tab_brush"))
         self.btn_rail_batch.setText(tr("sidebar_tab_batch"))
+        self.btn_rail_effects.setText(tr("sidebar_tab_effects"))
         for panel in self._panels:
             panel.retranslate_ui()
 

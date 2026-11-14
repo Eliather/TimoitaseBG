@@ -25,8 +25,15 @@ MODEL_URLS = {
     "yolo11n-seg.onnx": "https://huggingface.co/unileon-robotics/YOLO11-ONNX/resolve/main/yolo11n-seg.onnx",
 }
 
-# Opcional: hashes SHA-256 hexadecimales para validar integridad tras la descarga.
-MODEL_SHA256: dict[str, str] = {}
+# Hashes SHA-256 hexadecimales verificados para validar integridad tras la descarga.
+MODEL_SHA256: dict[str, str] = {
+    "inspyrenet.onnx": "c108dd92b3ddfe3a2d9e9ac2b74730cc5acbb2ddc7ea863330c43f56ae832aa3",
+    "isnet-anime.onnx": "f15622d853e8260172812b657053460e20806f04b9e05147d49af7bed31a6e99",
+    "mobile_sam_image_encoder.onnx": "580f5fb648ea1062c0aabc26217aed56921985f03f0cbbd852bba81d760cc749",
+    "RealESRGAN_x4plus_anime_6B.onnx": "2648cab4c4343541c1aa291c6754e9e8edbe7a813fffc2a677423dd12cb6b7f7",
+    "sam_mask_decoder_single.onnx": "93915fc7c993ab9d59ab8c9ccd3bce37f7509c81ab4150a74abd4d2abbd8570d",
+    "u2net_human_seg.onnx": "01eb6a29a5c4d8edb30b56adad9bb3a2a0535338e480724a213e0acfd2d1c73c",
+}
 
 MIN_VALID_MODEL_BYTES = 1_000_000
 
@@ -53,6 +60,74 @@ def resolve_local_model(filename: str) -> Optional[Path]:
         return dest_path
 
     return None
+
+
+def get_models_inventory() -> list[dict]:
+    """Retorna el inventario detallado de modelos registrados en MODELS_DIR."""
+    inventory: list[dict] = []
+    for filename, url in MODEL_URLS.items():
+        stem = Path(filename).stem
+        suffix = Path(filename).suffix
+        int8_name = f"{stem}_int8{suffix}"
+        fp32_path = MODELS_DIR / filename
+        int8_path = MODELS_DIR / int8_name
+
+        fp32_valid = fp32_path.is_file() and fp32_path.stat().st_size > MIN_VALID_MODEL_BYTES
+        int8_valid = int8_path.is_file() and int8_path.stat().st_size > MIN_VALID_MODEL_BYTES
+        fp32_bytes = fp32_path.stat().st_size if fp32_valid else 0
+        int8_bytes = int8_path.stat().st_size if int8_valid else 0
+
+        if int8_valid:
+            active_variant = "int8"
+            active_path = str(int8_path)
+        elif fp32_valid:
+            active_variant = "fp32"
+            active_path = str(fp32_path)
+        else:
+            active_variant = "missing"
+            active_path = ""
+
+        inventory.append(
+            {
+                "filename": filename,
+                "url": url,
+                "fp32_exists": fp32_valid,
+                "fp32_bytes": fp32_bytes,
+                "int8_filename": int8_name,
+                "int8_exists": int8_valid,
+                "int8_bytes": int8_bytes,
+                "active_variant": active_variant,
+                "active_path": active_path,
+                "total_bytes": fp32_bytes + int8_bytes,
+                "has_sha256": filename in MODEL_SHA256,
+            }
+        )
+    return inventory
+
+
+def verify_local_model_sha256(filename: str) -> Optional[bool]:
+    """Valida el SHA-256 del modelo FP32 si existe localmente y tiene digest registrado."""
+    expected = MODEL_SHA256.get(filename)
+    fp32_path = MODELS_DIR / filename
+    if not expected or not fp32_path.is_file():
+        return None
+    return verify_sha256(fp32_path, expected)
+
+
+def delete_local_model(filename: str) -> list[str]:
+    """Elimina pesos locales (FP32, _int8 y parciales .tmp) de un modelo. Retorna eliminados."""
+    stem = Path(filename).stem
+    suffix = Path(filename).suffix
+    removed: list[str] = []
+    for candidate in (
+        MODELS_DIR / filename,
+        MODELS_DIR / f"{stem}_int8{suffix}",
+        (MODELS_DIR / filename).with_suffix(".tmp"),
+    ):
+        if candidate.is_file():
+            candidate.unlink(missing_ok=True)
+            removed.append(candidate.name)
+    return removed
 
 
 def _create_ssl_context() -> ssl.SSLContext:

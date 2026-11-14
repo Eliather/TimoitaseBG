@@ -223,17 +223,19 @@ class SAMManager:
             logger.error(f"Error calculando embedding de MobileSAM: {e}")
             raise e
 
-    def predict_mask_at_point(
+    def predict_mask_from_points(
         self,
-        click_x: int,
-        click_y: int,
+        points: list[Tuple[int, int]],
+        labels: list[int],
         orig_img_size: Optional[Tuple[int, int]] = None,
     ) -> Optional[np.ndarray]:
         """
-        Ejecuta el Mask Decoder en <15 ms utilizando el embedding en caché.
+        Ejecuta el Mask Decoder en <15 ms con múltiples puntos positivos (1) y negativos (0).
         Retorna una máscara booleana 2D de dimensiones (orig_h, orig_w).
-        Protegido por cerrojo para evitar colisiones con actualizaciones de embedding.
         """
+        if not points or len(points) != len(labels):
+            return None
+
         with self._lock:
             if self.cached_embedding is None or self.decoder_session is None:
                 logger.warning("No hay embedding en caché o el decoder no está inicializado.")
@@ -241,12 +243,12 @@ class SAMManager:
 
             orig_w, orig_h = orig_img_size or self.orig_size
             scale = self.scale_factor or (1024.0 / max(orig_w, orig_h))
-            scaled_x = float(click_x) * scale
-            scaled_y = float(click_y) * scale
 
-            # Entradas esperadas por el decoder ONNX de MobileSAM
-            point_coords = np.array([[[scaled_x, scaled_y]]], dtype=np.float32)
-            point_labels = np.array([[1.0]], dtype=np.float32)
+            coords_list = [[float(px) * scale, float(py) * scale] for (px, py) in points]
+            labels_list = [float(1 if int(lbl) > 0 else 0) for lbl in labels]
+
+            point_coords = np.array([coords_list], dtype=np.float32)
+            point_labels = np.array([labels_list], dtype=np.float32)
             mask_input = np.zeros((1, 1, 256, 256), dtype=np.float32)
             has_mask_input = np.array([0.0], dtype=np.float32)
             orig_im_size = np.array([1024.0, 1024.0], dtype=np.float32)
@@ -278,7 +280,6 @@ class SAMManager:
                 else:
                     mask_2d = np.squeeze(raw_mask)
 
-                # Recortar el área activa antes de las dimensiones de padding
                 new_w, new_h = self.scaled_size
                 if new_w > 0 and new_h > 0 and mask_2d.shape[0] >= new_h and mask_2d.shape[1] >= new_w:
                     crop_mask = mask_2d[:new_h, :new_w]
@@ -293,6 +294,15 @@ class SAMManager:
             except Exception as e:
                 logger.error(f"Error en inferencia del Decoder de MobileSAM: {e}")
                 return None
+
+    def predict_mask_at_point(
+        self,
+        click_x: int,
+        click_y: int,
+        orig_img_size: Optional[Tuple[int, int]] = None,
+    ) -> Optional[np.ndarray]:
+        """Ejecuta el Mask Decoder para un único clic positivo."""
+        return self.predict_mask_from_points([(click_x, click_y)], [1], orig_img_size=orig_img_size)
 
     def predict_mask_from_yolo_subject(
         self,

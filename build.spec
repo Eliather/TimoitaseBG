@@ -17,7 +17,7 @@ def _read_app_version() -> str:
         m = re.search(r'^APP_VERSION\s*=\s*["\']([^"\']+)["\']', cfg.read_text(encoding="utf-8"), re.MULTILINE)
         if m:
             return m.group(1)
-    return "1.2.3"
+    return "1.3.0"
 
 
 APP_VERSION = _read_app_version()
@@ -69,6 +69,11 @@ hiddenimports = [
     'pymatting',
     'numpy',
     'unittest',
+    'app.cli',
+    'app.core.batch_pipeline',
+    'app.core.effects',
+    'app.core.quantizer',
+    'app.core.sequence_tracker',
     'PySide6',
     'PySide6.QtCore',
     'PySide6.QtGui',

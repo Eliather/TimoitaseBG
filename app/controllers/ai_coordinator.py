@@ -168,6 +168,44 @@ class AICoordinator:
         worker.start()
         return worker
 
+    def start_track_sequence(
+        self,
+        frames: list,
+        seed_frame_idx: int,
+        seed_subject: Optional[Any],
+        seed_mask: Optional[Any],
+        trim_start: int,
+        trim_end: Optional[int],
+        on_progress,
+        on_progress_text,
+        on_finished,
+        on_failed,
+        on_cancelled=None,
+    ) -> Optional[Any]:
+        if self.is_active_running():
+            logger.info("Tarea de inferencia ya en curso, ignorando solicitud de rastreo.")
+            return None
+        from app.core.workers import SequenceTrackWorker
+
+        worker = SequenceTrackWorker(
+            frames=frames,
+            seed_frame_idx=seed_frame_idx,
+            seed_subject=seed_subject,
+            seed_mask=seed_mask,
+            trim_start=trim_start,
+            trim_end=trim_end,
+            description="Rastreo de sujeto en secuencia",
+        )
+        worker.progress.connect(on_progress)
+        worker.progressText.connect(on_progress_text)
+        worker.finishedGif.connect(on_finished)
+        worker.failed.connect(on_failed)
+        if on_cancelled is not None:
+            worker.cancelled.connect(on_cancelled)
+        self.active_worker = worker
+        worker.start()
+        return worker
+
     def start_batch(
         self,
         input_dir: str,
@@ -180,13 +218,20 @@ class AICoordinator:
         on_failed,
         on_finished_with_errors=None,
         on_cancelled=None,
+        pipeline_config: Optional[Any] = None,
     ) -> Optional[Any]:
         if self.is_batch_running():
             logger.info("Procesamiento en lote ya en curso, ignorando solicitud duplicada.")
             return None
         from app.core.workers import BatchWorkerThread
 
-        worker = BatchWorkerThread(input_dir, output_dir, model_id, enable_clothing_protection)
+        worker = BatchWorkerThread(
+            input_dir,
+            output_dir,
+            model_id,
+            enable_clothing_protection,
+            pipeline_config=pipeline_config,
+        )
         worker.progressText.connect(on_progress_text)
         worker.progress.connect(on_progress)
         if on_finished_with_errors is not None:
@@ -251,6 +296,16 @@ class AICoordinator:
         self.yolo_worker = worker
         worker.start()
         return worker
+
+    def unload_sessions(self) -> None:
+        """Libera sesiones en memoria de MobileSAM, YOLO11 y del GPU worker."""
+        from app.core.gpu_manager import get_gpu_manager
+        from app.core.sam_manager import get_sam_manager
+        from app.core.yolo_detector import get_yolo_detector
+
+        get_sam_manager().unload_sessions()
+        get_yolo_detector().unload_sessions()
+        get_gpu_manager().shutdown(blocking=False)
 
     def switch_device_mode(self, is_gpu: bool) -> Tuple[bool, str]:
         """Alterna GPU/CPU y libera sesiones locales de MobileSAM y YOLO11."""

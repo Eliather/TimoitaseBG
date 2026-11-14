@@ -1,19 +1,20 @@
 """
-Panel de procesamiento masivo por lotes (Batch) para el sidebar de TimoitaseBG.
+Panel de procesamiento masivo por lotes (Batch) con pipelines encadenados y presets.
 """
-from PySide6.QtCore import Signal, QSize
+from PySide6.QtCore import QSettings, QSize, Signal
 from PySide6.QtWidgets import (
-    QWidget,
-    QVBoxLayout,
+    QCheckBox,
+    QComboBox,
+    QFileDialog,
+    QFrame,
     QLabel,
     QPushButton,
-    QComboBox,
-    QCheckBox,
-    QFrame,
-    QFileDialog,
+    QVBoxLayout,
+    QWidget,
 )
 
 from app.config import BG_REMOVER_MODELS
+from app.core.batch_pipeline import BatchPipelineConfig
 from app.i18n import tr
 from app.ui.icons import get_icon
 from app.ui.widgets.toggles import create_section_header
@@ -29,6 +30,7 @@ class BatchPanel(QWidget):
         self._batch_input_dir: str = ""
         self._batch_output_dir: str = ""
         self._setup_ui()
+        self._load_saved_pipeline()
 
     def _setup_ui(self):
         layout = QVBoxLayout(self)
@@ -39,7 +41,7 @@ class BatchPanel(QWidget):
         batch_card.setObjectName("Card")
         b_layout = QVBoxLayout(batch_card)
         b_layout.setContentsMargins(14, 14, 14, 14)
-        b_layout.setSpacing(10)
+        b_layout.setSpacing(8)
 
         header_batch, self._lbl_batch_hdr, self._info_batch_hdr = create_section_header(
             tr("header_batch"),
@@ -72,7 +74,7 @@ class BatchPanel(QWidget):
         b_layout.addWidget(self._lbl_model)
 
         self.combo_batch_model = QComboBox()
-        self.combo_batch_model.setFixedHeight(38)
+        self.combo_batch_model.setFixedHeight(36)
         for model_id, _model_label in BG_REMOVER_MODELS:
             self.combo_batch_model.addItem(tr(f"model_{model_id}"), model_id)
         b_layout.addWidget(self.combo_batch_model)
@@ -80,6 +82,45 @@ class BatchPanel(QWidget):
         self.chk_batch_clothing = QCheckBox(tr("chk_batch_clothing"))
         self.chk_batch_clothing.setChecked(True)
         b_layout.addWidget(self.chk_batch_clothing)
+
+        # --- Tarjeta de Pipeline Encadenado & Presets ---
+        self._lbl_preset = QLabel(tr("lbl_batch_preset"))
+        self._lbl_preset.setObjectName("FieldLabel")
+        b_layout.addWidget(self._lbl_preset)
+
+        self.combo_batch_preset = QComboBox()
+        self.combo_batch_preset.setFixedHeight(34)
+        self._populate_presets()
+        self.combo_batch_preset.currentIndexChanged.connect(self._on_preset_changed)
+        b_layout.addWidget(self.combo_batch_preset)
+
+        self._lbl_upscale = QLabel(tr("lbl_batch_upscale"))
+        self._lbl_upscale.setObjectName("FieldLabel")
+        b_layout.addWidget(self._lbl_upscale)
+
+        self.combo_batch_upscale = QComboBox()
+        self.combo_batch_upscale.setFixedHeight(34)
+        self._populate_upscale()
+        self.combo_batch_upscale.currentIndexChanged.connect(self._save_pipeline_prefs)
+        b_layout.addWidget(self.combo_batch_upscale)
+
+        self.chk_batch_autocrop = QCheckBox(tr("chk_batch_autocrop"))
+        self.chk_batch_autocrop.toggled.connect(self._save_pipeline_prefs)
+        b_layout.addWidget(self.chk_batch_autocrop)
+
+        self.chk_batch_sticker = QCheckBox(tr("chk_batch_sticker"))
+        self.chk_batch_sticker.toggled.connect(self._save_pipeline_prefs)
+        b_layout.addWidget(self.chk_batch_sticker)
+
+        self._lbl_batch_aspect = QLabel(tr("lbl_aspect_preset"))
+        self._lbl_batch_aspect.setObjectName("FieldLabel")
+        b_layout.addWidget(self._lbl_batch_aspect)
+
+        self.combo_batch_aspect = QComboBox()
+        self.combo_batch_aspect.setFixedHeight(34)
+        self._populate_aspect()
+        self.combo_batch_aspect.currentIndexChanged.connect(self._save_pipeline_prefs)
+        b_layout.addWidget(self.combo_batch_aspect)
 
         b_layout.addSpacing(4)
 
@@ -92,6 +133,100 @@ class BatchPanel(QWidget):
 
         layout.addWidget(batch_card)
         layout.addStretch()
+
+    def _populate_presets(self):
+        cur = self.combo_batch_preset.currentData()
+        self.combo_batch_preset.blockSignals(True)
+        self.combo_batch_preset.clear()
+        self.combo_batch_preset.addItem(tr("batch_preset_custom"), "custom")
+        self.combo_batch_preset.addItem(tr("batch_preset_ecommerce"), "ecommerce")
+        self.combo_batch_preset.addItem(tr("batch_preset_sticker"), "sticker")
+        self.combo_batch_preset.addItem(tr("batch_preset_social"), "social")
+        idx = self.combo_batch_preset.findData(cur)
+        self.combo_batch_preset.setCurrentIndex(idx if idx >= 0 else 0)
+        self.combo_batch_preset.blockSignals(False)
+
+    def _populate_upscale(self):
+        cur = self.combo_batch_upscale.currentData()
+        self.combo_batch_upscale.blockSignals(True)
+        self.combo_batch_upscale.clear()
+        self.combo_batch_upscale.addItem(tr("batch_upscale_none"), "none")
+        self.combo_batch_upscale.addItem("Real-ESRGAN 2x", "x2")
+        self.combo_batch_upscale.addItem("Real-ESRGAN 4x", "x4")
+        self.combo_batch_upscale.addItem("Enhance Only", "enhance_only")
+        idx = self.combo_batch_upscale.findData(cur)
+        self.combo_batch_upscale.setCurrentIndex(idx if idx >= 0 else 0)
+        self.combo_batch_upscale.blockSignals(False)
+
+    def _populate_aspect(self):
+        cur = self.combo_batch_aspect.currentData()
+        self.combo_batch_aspect.blockSignals(True)
+        self.combo_batch_aspect.clear()
+        self.combo_batch_aspect.addItem(tr("aspect_original"), "original")
+        self.combo_batch_aspect.addItem("512×512 (Sticker)", "512x512")
+        self.combo_batch_aspect.addItem("1:1", "1:1")
+        self.combo_batch_aspect.addItem("16:9", "16:9")
+        self.combo_batch_aspect.addItem("9:16", "9:16")
+        idx = self.combo_batch_aspect.findData(cur)
+        self.combo_batch_aspect.setCurrentIndex(idx if idx >= 0 else 0)
+        self.combo_batch_aspect.blockSignals(False)
+
+    def _on_preset_changed(self):
+        preset = self.combo_batch_preset.currentData()
+        if preset == "ecommerce":
+            self.chk_batch_autocrop.setChecked(True)
+            self.chk_batch_sticker.setChecked(False)
+            self.combo_batch_aspect.setCurrentIndex(self.combo_batch_aspect.findData("1:1"))
+        elif preset == "sticker":
+            self.chk_batch_autocrop.setChecked(True)
+            self.chk_batch_sticker.setChecked(True)
+            self.combo_batch_aspect.setCurrentIndex(self.combo_batch_aspect.findData("512x512"))
+        elif preset == "social":
+            self.chk_batch_autocrop.setChecked(False)
+            self.chk_batch_sticker.setChecked(False)
+            self.combo_batch_aspect.setCurrentIndex(self.combo_batch_aspect.findData("9:16"))
+        self._save_pipeline_prefs()
+
+    def _save_pipeline_prefs(self):
+        try:
+            s = QSettings("Eliather", "TimoitaseBG")
+            s.setValue("batch/upscale", self.combo_batch_upscale.currentData() or "none")
+            s.setValue("batch/autocrop", self.chk_batch_autocrop.isChecked())
+            s.setValue("batch/sticker", self.chk_batch_sticker.isChecked())
+            s.setValue("batch/aspect", self.combo_batch_aspect.currentData() or "original")
+        except Exception:
+            pass
+
+    def _load_saved_pipeline(self):
+        try:
+            s = QSettings("Eliather", "TimoitaseBG")
+            up = s.value("batch/upscale", "none")
+            ac = s.value("batch/autocrop", False, type=bool)
+            st = s.value("batch/sticker", False, type=bool)
+            asp = s.value("batch/aspect", "original")
+            idx_u = self.combo_batch_upscale.findData(up)
+            if idx_u >= 0:
+                self.combo_batch_upscale.setCurrentIndex(idx_u)
+            self.chk_batch_autocrop.setChecked(bool(ac))
+            self.chk_batch_sticker.setChecked(bool(st))
+            idx_a = self.combo_batch_aspect.findData(asp)
+            if idx_a >= 0:
+                self.combo_batch_aspect.setCurrentIndex(idx_a)
+        except Exception:
+            pass
+
+    def get_pipeline_config(self) -> BatchPipelineConfig:
+        """Devuelve la configuración encadenada actual del panel Batch."""
+        preset = self.combo_batch_preset.currentData()
+        bg_color = (255, 255, 255) if preset == "ecommerce" else None
+        return BatchPipelineConfig(
+            remove_bg=True,
+            upscale_mode=self.combo_batch_upscale.currentData() or "none",
+            autocrop=self.chk_batch_autocrop.isChecked(),
+            sticker_width=10 if self.chk_batch_sticker.isChecked() else 0,
+            aspect_preset=self.combo_batch_aspect.currentData() or "original",
+            bg_color=bg_color,
+        )
 
     def _on_batch_input_clicked(self):
         dir_path = QFileDialog.getExistingDirectory(self, "Seleccionar carpeta de imágenes de origen")
@@ -143,7 +278,15 @@ class BatchPanel(QWidget):
         )
         self._lbl_model.setText(tr("lbl_batch_model"))
         self.chk_batch_clothing.setText(tr("chk_batch_clothing"))
+        self._lbl_preset.setText(tr("lbl_batch_preset"))
+        self._lbl_upscale.setText(tr("lbl_batch_upscale"))
+        self.chk_batch_autocrop.setText(tr("chk_batch_autocrop"))
+        self.chk_batch_sticker.setText(tr("chk_batch_sticker"))
+        self._lbl_batch_aspect.setText(tr("lbl_aspect_preset"))
         self.btn_run_batch.setText(tr("btn_run_batch"))
+        self._populate_presets()
+        self._populate_upscale()
+        self._populate_aspect()
 
         curr_idx = self.combo_batch_model.currentIndex()
         for i in range(self.combo_batch_model.count()):

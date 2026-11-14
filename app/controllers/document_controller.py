@@ -203,10 +203,14 @@ class DocumentController:
         from app.core.gif_processor import save_animated_apng, save_animated_gif, save_animated_webp
         from app.core.video_processor import save_video_sequence
 
-        frames_to_save = self.sequence_session.get_all_current_frames() if is_animated_seq else [img]
-        durations = self.sequence_session.durations if is_animated_seq else [80]
-        loop = self.sequence_session.loop if is_animated_seq else 0
-        fps = getattr(self.sequence_session, "fps", 24.0) if is_animated_seq else 24.0
+        if is_animated_seq:
+            frames_to_save, durations, fps = self.sequence_session.get_export_frames_and_durations()
+            loop = self.sequence_session.loop
+        else:
+            frames_to_save = [img]
+            durations = [80]
+            loop = 0
+            fps = 24.0
 
         if is_animated_seq and ext in (".webm", ".mkv", ".mov", ".mp4", ".avi", ".m4v", ".ogv", ".zip"):
             save_video_sequence(
@@ -349,6 +353,70 @@ class DocumentController:
         active = self.image_state
         return None, (active.current_image, active.current_brush_reference, desc)
 
+    def apply_pil_transform(
+        self,
+        transform_fn,
+        description: str,
+        update_brush_reference: bool = False,
+    ) -> Optional[Image.Image]:
+        """Aplica una transformación PIL pura sobre la imagen activa o toda la secuencia."""
+        if not self.image_state.has_image:
+            return None
+
+        if self.has_sequence:
+            for st in self.sequence_session.states:
+                img = st.current_image
+                if img is None:
+                    continue
+                out = transform_fn(img)
+                ref = transform_fn(st.current_brush_reference) if (update_brush_reference and st.current_brush_reference is not None) else None
+                st.push_state(out, description, brush_reference=ref)
+            return self.image_state.current_image
+
+        out = transform_fn(self.image_state.current_image)
+        ref = (
+            transform_fn(self.image_state.current_brush_reference)
+            if (update_brush_reference and self.image_state.current_brush_reference is not None)
+            else None
+        )
+        self.image_state.push_state(out, description, brush_reference=ref)
+        return self.image_state.current_image
+
+    def apply_edge_refinement(
+        self,
+        choke_px: int = 0,
+        feather_px: int = 0,
+        despill_strength: float = 0.0,
+    ) -> Optional[Image.Image]:
+        """Aplica Choke, Feather y Despill sobre el documento o secuencia activa."""
+        from app.core.postprocess import refine_alpha_edges
+
+        return self.apply_pil_transform(
+            lambda img: refine_alpha_edges(
+                img,
+                choke_px=choke_px,
+                feather_px=feather_px,
+                despill_strength=despill_strength,
+            ),
+            description=f"Refinar bordes (choke={choke_px}, feather={feather_px})",
+        )
+
+    def apply_inpaint_selection(
+        self,
+        selection_mask: Optional[np.ndarray],
+        radius: int = 5,
+    ) -> Optional[Image.Image]:
+        """Aplica inpainting OpenCV sobre la selección en la imagen activa."""
+        from app.core.selection import inpaint_selected_region
+
+        if not self.image_state.has_image or selection_mask is None:
+            return None
+        curr_np = np.array(self.image_state.current_image.convert("RGBA"), dtype=np.uint8)
+        out_np = inpaint_selected_region(curr_np, selection_mask, radius=radius)
+        out_img = Image.fromarray(out_np, mode="RGBA")
+        self.image_state.push_state(out_img, "Rellenar selección (Inpainting)", brush_reference=out_img)
+        return out_img
+
     def build_isolated_subject(self, subject) -> Optional[Image.Image]:
         """Genera la imagen RGBA con el sujeto detectado aislado y el resto transparente."""
         if not self.image_state.has_image or subject is None:
@@ -379,3 +447,92 @@ class DocumentController:
             st.push_state(Image.fromarray(curr_arr, "RGBA"), desc)
 
         return self.image_state.current_image
+
+    def apply_effects(
+        self,
+        sticker_width: int = 0,
+        sticker_color: Tuple[int, int, int] = (255, 255, 255),
+        shadow_opacity: float = 0.0,
+        shadow_blur: int = 16,
+        shadow_offset_x: int = 10,
+        shadow_offset_y: int = 12,
+        bg_mode: str = "transparent",
+        bg_color: Tuple[int, int, int] = (255, 255, 255),
+        bokeh_blur: int = 20,
+        bg_image: Optional[Image.Image] = None,
+        aspect_preset: str = "original",
+    ) -> Optional[Image.Image]:
+        """Aplica efectos creativos (sticker, sombra, bokeh/fondo, relación de aspecto)."""
+        from app.core.effects import (
+            apply_drop_shadow,
+            apply_sticker_outline,
+            compose_background_mode,
+        )
+
+        if not self.image_state.has_image:
+            return None
+
+        states = self.sequence_session.states if self.has_sequence else [self.image_state]
+        for st in states:
+            curr = st.current_image
+            if curr is None:
+                continue
+            orig_ref = st.current_brush_reference
+            out = curr.convert("RGBA")
+            if int(sticker_width) > 0:
+                out = apply_sticker_outline(
+                    out,
+                    width_px=int(sticker_width),
+                    color_rgb=sticker_color,
+                    expand_canvas=True,
+                )
+            if float(shadow_opacity) > 0.0:
+                out = apply_drop_shadow(
+                    out,
+                    offset_x=int(shadow_offset_x),
+                    offset_y=int(shadow_offset_y),
+                    blur_radius=int(shadow_blur),
+                    opacity=float(shadow_opacity),
+                    expand_canvas=True,
+                )
+            out = compose_background_mode(
+                out,
+                mode=bg_mode,
+                bg_color=bg_color,
+                original_rgb=orig_ref,
+                blur_radius=int(bokeh_blur),
+                bg_image=bg_image,
+                aspect_preset=aspect_preset,
+            )
+            st.push_state(out, "Efectos / Estudio Creativo")
+
+        return self.image_state.current_image
+
+    def apply_manual_crop(
+        self, left: int, top: int, right: int, bottom: int
+    ) -> Optional[Image.Image]:
+        """Recorta manualmente la imagen activa o todos los fotogramas de la secuencia."""
+        from app.core.effects import crop_image_box
+
+        return self.apply_pil_transform(
+            lambda img: crop_image_box(img, left, top, right, bottom),
+            description="Recorte manual",
+            update_brush_reference=True,
+        )
+
+    def apply_transform(
+        self,
+        rotate_deg: int = 0,
+        flip_h: bool = False,
+        flip_v: bool = False,
+    ) -> Optional[Image.Image]:
+        """Rota (en pasos de 90° horarios) o voltea la imagen activa o secuencia."""
+        from app.core.effects import rotate_flip_image
+
+        return self.apply_pil_transform(
+            lambda img: rotate_flip_image(
+                img, rotate_deg=rotate_deg, flip_h=flip_h, flip_v=flip_v
+            ),
+            description="Transformación geométrica",
+            update_brush_reference=True,
+        )

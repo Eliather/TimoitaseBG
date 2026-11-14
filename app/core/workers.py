@@ -80,12 +80,20 @@ class BatchWorkerThread(QThread):
     cancelled = Signal()
     failed = Signal(str)
 
-    def __init__(self, input_dir: str, output_dir: str, model_name: str, enable_clothing_protection: bool):
+    def __init__(
+        self,
+        input_dir: str,
+        output_dir: str,
+        model_name: str,
+        enable_clothing_protection: bool,
+        pipeline_config: Optional[Any] = None,
+    ):
         super().__init__()
         self.input_dir = input_dir
         self.output_dir = output_dir
         self.model_name = model_name
         self.enable_clothing_protection = enable_clothing_protection
+        self.pipeline_config = pipeline_config
         self.errors: list[tuple[str, str]] = []
 
     def run(self):
@@ -191,11 +199,21 @@ class BatchWorkerThread(QThread):
                         with Image.open(f) as raw_img:
                             img = raw_img.convert("RGBA")
 
-                        res = remover.remove_background(
-                            img,
-                            model_name=self.model_name,
-                            enable_clothing_protection=self.enable_clothing_protection,
-                        )
+                        if self.pipeline_config is not None:
+                            from app.core.batch_pipeline import process_image_pipeline
+                            res = process_image_pipeline(
+                                img,
+                                model_name=self.model_name,
+                                enable_clothing_protection=self.enable_clothing_protection,
+                                pipeline_config=self.pipeline_config,
+                                remover=remover,
+                            )
+                        else:
+                            res = remover.remove_background(
+                                img,
+                                model_name=self.model_name,
+                                enable_clothing_protection=self.enable_clothing_protection,
+                            )
 
                         out_file = output_path / f"{f.stem}_bgrm.png"
                         res.save(out_file)
@@ -219,6 +237,7 @@ class BatchWorkerThread(QThread):
         except Exception as e:
             traceback.print_exc()
             self.failed.emit(str(e))
+
 
 
 class SamEmbeddingWorker(QThread):
@@ -383,6 +402,7 @@ class GifWorkerThread(QThread):
             self.failed.emit(str(e))
 
 
+
 class SequenceRestoreWorker(QThread):
     """QThread para escalar o mejorar nitidez de todos los fotogramas de una secuencia."""
 
@@ -440,6 +460,7 @@ class SequenceRestoreWorker(QThread):
             self.failed.emit(str(e))
 
 
+
 class SaveSequenceWorker(QThread):
     """QThread para exportar secuencias animadas o video sin congelar la interfaz."""
 
@@ -463,4 +484,125 @@ class SaveSequenceWorker(QThread):
 
 
 
+class ModelActionWorker(QThread):
+    """QThread para descargar, cuantizar INT8 o verificar SHA-256 de un modelo."""
 
+    progressPercent = Signal(int)
+    progressText = Signal(str)
+    finishedAction = Signal(str, str)  # (filename, summary_msg)
+    cancelled = Signal()
+    failed = Signal(str)
+
+    def __init__(self, action: str, filename: str):
+        super().__init__()
+        self.action = action
+        self.filename = filename
+
+    def run(self):
+        import traceback
+        from app.config import MODELS_DIR
+        from app.core.model_fetcher import ensure_model_file, verify_local_model_sha256
+
+        try:
+            self.setPriority(QThread.Priority.LowPriority)
+            if self.action == "download":
+                def _prog(dl: int, tot: int):
+                    if tot > 0:
+                        self.progressPercent.emit(min(100, int(round((dl / tot) * 100))))
+
+                ensure_model_file(
+                    self.filename,
+                    progress_cb=_prog,
+                    status_cb=self.progressText.emit,
+                    cancel_check=self.isInterruptionRequested,
+                )
+                self.finishedAction.emit(self.filename, "ok")
+            elif self.action == "quantize":
+                from app.core.quantizer import quantize_model
+
+                self.progressPercent.emit(15)
+                self.progressText.emit(self.filename)
+                src = MODELS_DIR / self.filename
+                if not src.is_file():
+                    raise FileNotFoundError(self.filename)
+                ok = quantize_model(src)
+                if not ok:
+                    raise RuntimeError(self.filename)
+                self.progressPercent.emit(100)
+                self.finishedAction.emit(self.filename, "quantized")
+            elif self.action == "verify":
+                self.progressPercent.emit(30)
+                ok = verify_local_model_sha256(self.filename)
+                self.progressPercent.emit(100)
+                status = "sha_ok" if ok is True else ("sha_fail" if ok is False else "sha_none")
+                self.finishedAction.emit(self.filename, status)
+            else:
+                raise ValueError(self.action)
+        except InterruptedError:
+            self.cancelled.emit()
+        except Exception as e:
+            traceback.print_exc()
+            self.failed.emit(str(e))
+
+
+
+
+
+class SequenceTrackWorker(QThread):
+    """QThread para rastreo temporal de un sujeto (YOLO11 + MobileSAM) sobre una secuencia."""
+
+    progress = Signal(int, int)
+    progressText = Signal(str)
+    finishedGif = Signal(list, str)
+    cancelled = Signal()
+    failed = Signal(str)
+
+    def __init__(
+        self,
+        frames: List[Image.Image],
+        seed_frame_idx: int = 0,
+        seed_subject: Optional[Any] = None,
+        seed_mask: Optional[Any] = None,
+        trim_start: int = 0,
+        trim_end: Optional[int] = None,
+        description: str = "Rastreo de secuencia",
+    ):
+        super().__init__()
+        self.frames = frames
+        self.seed_frame_idx = seed_frame_idx
+        self.seed_subject = seed_subject
+        self.seed_mask = seed_mask
+        self.trim_start = trim_start
+        self.trim_end = trim_end
+        self.description = description
+
+    def run(self):
+        import traceback
+        from app.core.sequence_tracker import track_subject_across_sequence
+
+        try:
+            self.setPriority(QThread.Priority.LowPriority)
+
+            def _prog(pct: int, msg: str):
+                self.progress.emit(int(pct), 100)
+                self.progressText.emit(msg)
+
+            out_frames = track_subject_across_sequence(
+                frames=self.frames,
+                seed_frame_idx=self.seed_frame_idx,
+                seed_subject=self.seed_subject,
+                seed_mask=self.seed_mask,
+                trim_start=self.trim_start,
+                trim_end=self.trim_end,
+                progress_cb=_prog,
+                cancel_check=self.isInterruptionRequested,
+            )
+            if self.isInterruptionRequested():
+                self.cancelled.emit()
+                return
+            self.finishedGif.emit(out_frames, self.description)
+        except InterruptedError:
+            self.cancelled.emit()
+        except Exception as e:
+            traceback.print_exc()
+            self.failed.emit(str(e))

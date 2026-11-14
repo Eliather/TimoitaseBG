@@ -23,7 +23,7 @@ from app.core.image_utils import (
 )
 from app.core import selection as sel_ops
 from app.config import DEFAULT_BRUSH_SIZE, MIN_BRUSH_SIZE, MAX_BRUSH_SIZE, CHECKER_SIZE
-from app.ui.canvas import BrushEngine, SelectionTool
+from app.ui.canvas import BrushEngine, CropTool, SelectionTool
 
 
 class CanvasWidget(QWidget):
@@ -39,6 +39,7 @@ class CanvasWidget(QWidget):
     browseRequested = Signal()  # Emite cuando el usuario hace clic en la zona vacía para explorar
     imageEditedDirectly = Signal(str)  # Descripción de la edición para el historial
     selectionChanged = Signal(int, int)  # (píxeles seleccionados, píxeles totales)
+    cropConfirmed = Signal(tuple)  # (left, top, right, bottom)
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -84,6 +85,7 @@ class CanvasWidget(QWidget):
         self.eraser_mode: bool = False
         self._brush_engine = BrushEngine()
         self._selection_tool = SelectionTool()
+        self._crop_tool = CropTool()
 
         self._ants_timer = QTimer(self)
         self._ants_timer.setInterval(40)  # 25 FPS reales
@@ -177,6 +179,34 @@ class CanvasWidget(QWidget):
     @_pending_wand_click.setter
     def _pending_wand_click(self, value: Optional[tuple]) -> None:
         self._selection_tool.pending_wand_click = value
+
+    def set_crop_mode(self, enabled: bool, aspect_ratio: Optional[float] = None):
+        """Activa o desactiva la herramienta visual de recorte manual (Crop)."""
+        if enabled and self.current_qimage is not None:
+            self._crop_tool.activate(
+                self.current_qimage.width(),
+                self.current_qimage.height(),
+                aspect_ratio=aspect_ratio,
+            )
+            self.setCursor(Qt.CursorShape.CrossCursor)
+        else:
+            self._crop_tool.deactivate()
+            self.setCursor(self._tool_cursor())
+        self.update()
+
+    def set_crop_aspect_ratio(self, aspect_ratio: Optional[float]):
+        if self.current_qimage is not None:
+            self._crop_tool.set_aspect_ratio(
+                aspect_ratio, self.current_qimage.width(), self.current_qimage.height()
+            )
+            self.update()
+
+    def get_crop_box(self) -> Optional[tuple]:
+        if self.current_qimage is None:
+            return None
+        return self._crop_tool.get_crop_box(
+            self.current_qimage.width(), self.current_qimage.height()
+        )
 
     def set_comparison_mode(self, enabled: bool, before_image: Optional[Image.Image] = None):
         """Activa o desactiva la vista comparativa antes/después con cortina."""
@@ -549,7 +579,7 @@ class CanvasWidget(QWidget):
                 event.accept()
                 return
 
-        # Paneo con botón central, botón derecho o si la barra espaciadora está pulsada
+        # Paneo con botón central, botón derecho (si no es pincel ni varita IA) o barra espaciadora
         if event.button() == Qt.MouseButton.MiddleButton or self.space_pressed or (
             event.button() == Qt.MouseButton.RightButton and not self.brush_mode
         ):
@@ -558,6 +588,33 @@ class CanvasWidget(QWidget):
             self.setCursor(Qt.CursorShape.ClosedHandCursor)
             event.accept()
             return
+
+        if self._crop_tool.active and self.current_qimage and event.button() == Qt.MouseButton.LeftButton:
+            img_pt = self.widget_to_image_coords(pos)
+            if self._crop_tool.handle_mouse_press(
+                img_pt,
+                pos,
+                self.image_to_widget_coords,
+                self.current_qimage.width(),
+                self.current_qimage.height(),
+            ):
+                self.update()
+                event.accept()
+                return
+
+        if self.brush_mode and self.wand_mode and self.wand_ai_mode and self.current_qimage:
+            img_pt = self.widget_to_image_coords(pos)
+            mods = event.modifiers()
+            if event.button() == Qt.MouseButton.RightButton or (
+                event.button() == Qt.MouseButton.LeftButton and bool(mods & Qt.KeyboardModifier.AltModifier)
+            ):
+                self._apply_sam_refinement_point(img_pt, label=0, reset_points=False)
+                event.accept()
+                return
+            if event.button() == Qt.MouseButton.LeftButton and bool(mods & Qt.KeyboardModifier.ShiftModifier):
+                self._apply_sam_refinement_point(img_pt, label=1, reset_points=not self._selection_tool.sam_points)
+                event.accept()
+                return
 
         if event.button() == Qt.MouseButton.LeftButton and self.brush_mode:
             if self.wand_mode and self.current_qimage:
@@ -595,6 +652,15 @@ class CanvasWidget(QWidget):
             self.update()
             event.accept()
             return
+
+        if self._crop_tool.active and self.current_qimage:
+            img_pt = self.widget_to_image_coords(pos)
+            if self._crop_tool.handle_mouse_move(
+                img_pt, self.current_qimage.width(), self.current_qimage.height()
+            ):
+                self.update()
+                event.accept()
+                return
 
         if self.comparison_mode and self.current_qimage:
             img_rect = self.get_image_rect_in_widget()
@@ -657,6 +723,12 @@ class CanvasWidget(QWidget):
             self.is_panning = False
             self.setCursor(self._tool_cursor())
             self.update()
+
+        if self._crop_tool.active and event.button() == Qt.MouseButton.LeftButton:
+            if self._crop_tool.handle_mouse_release():
+                self.update()
+                event.accept()
+                return
 
         if event.button() == Qt.MouseButton.LeftButton and self.is_drawing_mask:
             if self.brush_smoothness > 0 and self.last_draw_point:
@@ -786,6 +858,22 @@ class CanvasWidget(QWidget):
         except Exception as e:
             print(f"Error en Varita: {e}")
 
+    def _apply_sam_refinement_point(self, pt: QPointF, label: int, reset_points: bool = False):
+        """Añade un punto positivo (1) o negativo (0) para refinar la máscara MobileSAM."""
+        if not self.current_qimage:
+            return
+        main_win = self.window()
+        sam_trigger = (
+            main_win._ensure_sam_embedding_async
+            if main_win is not self and hasattr(main_win, "_ensure_sam_embedding_async")
+            else None
+        )
+        mask = self._selection_tool.add_sam_refinement_point(
+            self.current_qimage, pt, label=label, reset_points=reset_points, async_sam_trigger=sam_trigger
+        )
+        if mask is not None:
+            self._set_selection(mask)
+
     def _draw_marching_ants(self, painter: QPainter, img_rect: QRectF):
         """Dibuja el contorno animado de la selección (hormigas marchantes)."""
         self._selection_tool.draw_marching_ants(painter, img_rect, self.zoom_factor)
@@ -868,9 +956,11 @@ class CanvasWidget(QWidget):
         painter.setBrush(Qt.BrushStyle.NoBrush)
         painter.drawRect(img_rect)
 
-        # 6b. Hormigas marchantes de la selección activa
+        # 6b. Hormigas marchantes y pines de refinamiento MobileSAM
         if not self.comparison_mode:
             self._draw_marching_ants(painter, img_rect)
+            self._selection_tool.draw_sam_points(painter, img_rect, self.zoom_factor)
+            self._crop_tool.draw_overlay(painter, img_rect, self.image_to_widget_coords)
 
         # 7. Indicador del cursor del pincel (la varita usa cursor en cruz)
         if (

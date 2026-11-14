@@ -487,3 +487,55 @@ def generate_trimap(
     trimap[fg_mask > 0] = 255
 
     return trimap
+
+
+def refine_alpha_edges(
+    pil_img: Image.Image,
+    choke_px: int = 0,
+    feather_px: int = 0,
+    despill_strength: float = 0.0,
+) -> Image.Image:
+    """
+    Refina los bordes del canal alfa mediante Choke (erosión/dilatación),
+    Feather (suavizado restringido al perímetro) y Despill (descontaminación cromática).
+    """
+    rgba = np.array(pil_img.convert("RGBA"), dtype=np.uint8)
+    alpha = rgba[..., 3]
+
+    if choke_px != 0:
+        r = abs(int(choke_px))
+        k = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (2 * r + 1, 2 * r + 1))
+        alpha = cv2.erode(alpha, k) if choke_px > 0 else cv2.dilate(alpha, k)
+
+    if feather_px > 0:
+        f = int(feather_px)
+        ksize = 2 * f + 1
+        blurred = cv2.GaussianBlur(alpha.astype(np.float32), (ksize, ksize), sigmaX=max(0.5, f * 0.65))
+        # Limitar el suavizado a la banda de transición alrededor del contorno
+        band_k = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (ksize, ksize))
+        edge_band = cv2.dilate((alpha > 127).astype(np.uint8) * 255, band_k) - cv2.erode(
+            (alpha > 127).astype(np.uint8) * 255, band_k
+        )
+        band_weight = cv2.GaussianBlur(edge_band.astype(np.float32) / 255.0, (5, 5), 0)
+        alpha = np.clip(
+            np.round(alpha.astype(np.float32) * (1.0 - band_weight) + blurred * band_weight), 0, 255
+        ).astype(np.uint8)
+
+    if despill_strength > 0.0:
+        strength = float(max(0.0, min(1.0, despill_strength)))
+        rgb_f = rgba[..., :3].astype(np.float32)
+        fg_core = (alpha >= 230).astype(np.float32)[..., None]
+        if np.any(fg_core > 0.0):
+            # Propagar el color del núcleo opaco hacia el halo semitransparente perimetral
+            k_bleed = (15, 15)
+            weighted_rgb = cv2.GaussianBlur(rgb_f * fg_core, k_bleed, sigmaX=4.0)
+            weight_sum = cv2.GaussianBlur(fg_core[:, :, 0], k_bleed, sigmaX=4.0)[..., None]
+            clean_rgb = np.where(weight_sum > 1e-4, weighted_rgb / np.maximum(weight_sum, 1e-4), rgb_f)
+
+            alpha_f = alpha.astype(np.float32) / 255.0
+            halo_mask = ((alpha > 0) & (alpha < 235)).astype(np.float32) * (1.0 - alpha_f * 0.75)
+            mix = (halo_mask * strength)[..., None]
+            rgba[..., :3] = np.clip(np.round(rgb_f * (1.0 - mix) + clean_rgb * mix), 0, 255).astype(np.uint8)
+
+    rgba[..., 3] = alpha
+    return Image.fromarray(rgba, mode="RGBA")

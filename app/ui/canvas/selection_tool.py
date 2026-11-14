@@ -28,6 +28,12 @@ class SelectionTool:
         self.wand_selection_mode: str = "new"
         self.wand_anti_alias: bool = True
         self.wand_contiguous: bool = True
+        self.sam_points: list[tuple[int, int]] = []
+        self.sam_labels: list[int] = []
+
+    def clear_sam_points(self) -> None:
+        self.sam_points.clear()
+        self.sam_labels.clear()
 
     def has_selection(self) -> bool:
         return self.active_mask is not None
@@ -43,6 +49,7 @@ class SelectionTool:
         if mask is None:
             self.overlay_qimage = None
             self.contour_path = None
+            self.clear_sam_points()
             return 0, total
 
         h, w = mask.shape
@@ -111,7 +118,11 @@ class SelectionTool:
                     async_sam_trigger()
                     return None
                 sam_mgr.prepare_image(qimage_to_pil(qimage))
-            new_mask_bool = sam_mgr.predict_mask_at_point(x, y, orig_img_size=(w, h))
+            self.sam_points = [(x, y)]
+            self.sam_labels = [1]
+            new_mask_bool = sam_mgr.predict_mask_at_point(
+                x, y, orig_img_size=(w, h)
+            )
             if new_mask_bool is None:
                 return None
             new_mask = new_mask_bool.astype(np.uint8) * 255
@@ -146,6 +157,71 @@ class SelectionTool:
             return None, False
 
         return pil_to_qimage(Image.fromarray(new_np, "RGBA")), False
+
+    def add_sam_refinement_point(
+        self,
+        qimage: Optional[QImage],
+        pt: QPointF,
+        label: int,
+        reset_points: bool = False,
+        async_sam_trigger: Optional[Callable[[], None]] = None,
+    ) -> Optional[np.ndarray]:
+        """Refina la máscara MobileSAM acumulando puntos positivos (1) y negativos (0)."""
+        if qimage is None or qimage.isNull():
+            return None
+        x, y = int(pt.x()), int(pt.y())
+        w, h = qimage.width(), qimage.height()
+        if x < 0 or y < 0 or x >= w or y >= h:
+            return None
+
+        from app.core.sam_manager import get_sam_manager
+
+        sam_mgr = get_sam_manager()
+        if not sam_mgr.has_embedding():
+            if async_sam_trigger is not None:
+                self.pending_wand_click = (pt, "new" if label > 0 else "subtract")
+                async_sam_trigger()
+                return None
+            sam_mgr.prepare_image(qimage_to_pil(qimage))
+
+        if reset_points:
+            self.sam_points = [(x, y)]
+            self.sam_labels = [1 if label > 0 else 0]
+        else:
+            self.sam_points.append((x, y))
+            self.sam_labels.append(1 if label > 0 else 0)
+
+        new_mask_bool = sam_mgr.predict_mask_from_points(
+            self.sam_points, self.sam_labels, orig_img_size=(w, h)
+        )
+        if new_mask_bool is None:
+            return None
+        return new_mask_bool.astype(np.uint8) * 255
+
+    def inpaint_selected_pixels(self, qimage: Optional[QImage], radius: int = 5) -> Optional[QImage]:
+        """Rellena la selección activa con inpainting OpenCV sobre el QImage actual."""
+        if self.active_mask is None or qimage is None or qimage.isNull():
+            return None
+        img_np = np.array(qimage_to_pil(qimage).convert("RGBA"))
+        if self.active_mask.shape != img_np.shape[:2]:
+            return None
+        new_np = sel_ops.inpaint_selected_region(img_np, self.active_mask, radius=radius)
+        return pil_to_qimage(Image.fromarray(new_np, "RGBA"))
+
+    def draw_sam_points(self, painter: QPainter, img_rect: QRectF, zoom_factor: float) -> None:
+        """Dibuja los pines de refinamiento MobileSAM (+ verde / - rojo)."""
+        if not self.sam_points:
+            return
+        painter.save()
+        painter.setRenderHint(QPainter.RenderHint.Antialiasing, True)
+        for (px, py), lbl in zip(self.sam_points, self.sam_labels):
+            cx = img_rect.left() + float(px) * zoom_factor
+            cy = img_rect.top() + float(py) * zoom_factor
+            fill = QColor(34, 197, 94) if lbl > 0 else QColor(239, 68, 68)
+            painter.setBrush(fill)
+            painter.setPen(QPen(QColor(255, 255, 255), 1.5))
+            painter.drawEllipse(QPointF(cx, cy), 5.0, 5.0)
+        painter.restore()
 
     def draw_overlay(self, painter: QPainter, img_rect: QRectF) -> None:
         if self.overlay_qimage is not None:

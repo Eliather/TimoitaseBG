@@ -71,6 +71,12 @@ if __name__ == "__main__":
         except RuntimeError:
             pass
 
-    # 3. Iniciar la aplicación
+    # 3. Enrutar modo CLI headless si se especifica --cli (sin inicializar QApplication)
+    if "--cli" in sys.argv:
+        sys.argv.remove("--cli")
+        from app.cli import main as cli_main
+        sys.exit(cli_main())
+
+    # 4. Iniciar la aplicación gráfica
     main()
 

@@ -176,8 +176,10 @@ class MainWindow(QMainWindow):
             self.status_bar_widget.retranslate_ui()
         if hasattr(self, "top_bar"):
             self.top_bar.retranslate_ui()
-        if hasattr(self, "sidebar") and hasattr(self.sidebar, "retranslate_ui"):
+        if hasattr(self, "sidebar") and hasattr(self, "sidebar") and hasattr(self.sidebar, "retranslate_ui"):
             self.sidebar.retranslate_ui()
+        if hasattr(self, "gif_bar") and hasattr(self.gif_bar, "retranslate_ui"):
+            self.gif_bar.retranslate_ui()
         if hasattr(self, "canvas"):
             if hasattr(self.canvas, "retranslate_ui"):
                 self.canvas.retranslate_ui()
@@ -243,6 +245,8 @@ class MainWindow(QMainWindow):
         self.sidebar.wandAntiAliasChanged.connect(self.canvas.set_wand_anti_alias)
         self.sidebar.wandContiguousChanged.connect(self.canvas.set_wand_contiguous)
         self.sidebar.deleteSelectionRequested.connect(self.perform_delete_selection)
+        self.sidebar.inpaintRequested.connect(self.perform_inpaint_selection)
+        self.sidebar.edgeRefineRequested.connect(self.perform_edge_refinement)
         self.sidebar.invertSelectionRequested.connect(self.canvas.invert_selection)
         self.sidebar.selectAllRequested.connect(self.canvas.select_all)
         self.sidebar.clearSelectionRequested.connect(self.canvas.clear_selection)
@@ -256,6 +260,10 @@ class MainWindow(QMainWindow):
         self.sidebar.autoCropRequested.connect(self.perform_autocrop)
         self.sidebar.applyBgColorRequested.connect(self.perform_apply_bg_color)
         self.sidebar.restoreTransparencyRequested.connect(self.perform_restore_transparency)
+        self.sidebar.applyEffectsRequested.connect(self.perform_apply_effects)
+        self.sidebar.transformRequested.connect(self.perform_transform)
+        self.sidebar.cropModeToggled.connect(self.on_crop_mode_toggled)
+        self.sidebar.cropApplyRequested.connect(self.perform_manual_crop)
         self.sidebar.deviceModeChanged.connect(self._on_device_mode_changed)
         self.sidebar.batchRequested.connect(self.start_batch_processing)
         self.sidebar.detectSubjectsRequested.connect(self.start_detect_subjects)
@@ -298,6 +306,7 @@ class MainWindow(QMainWindow):
         top_bar = TopBar(self)
         self.top_bar = top_bar
         top_bar.themeToggled.connect(self._toggle_theme)
+        top_bar.modelsRequested.connect(self.open_model_manager)
         top_bar.languageChanged.connect(self._on_lang_changed)
         top_bar.openRequested.connect(self.prompt_open_image)
         top_bar.saveRequested.connect(self.prompt_save_image)
@@ -358,6 +367,14 @@ class MainWindow(QMainWindow):
         dialog = ShortcutsDialog(self, is_dark_theme=getattr(self, "is_dark_theme", True))
         dialog.exec()
 
+    def open_model_manager(self):
+        """Abre el gestor visual de modelos ONNX locales (descargas, INT8 y SHA-256)."""
+        from app.ui.dialogs import ModelManagerDialog
+
+        dialog = ModelManagerDialog(self, is_dark_theme=getattr(self, "is_dark_theme", True))
+        dialog.modelsChanged.connect(self.ai.unload_sessions)
+        dialog.exec()
+
     def _setup_shortcuts(self):
         self._shortcuts = register_shortcuts(self)
 
@@ -370,6 +387,9 @@ class MainWindow(QMainWindow):
         bar.playToggled.connect(self._toggle_gif_playback)
         bar.nextRequested.connect(lambda: self._navigate_gif_frame(self.sequence_session.current_index + 1 if self.sequence_session else 0))
         bar.lastRequested.connect(lambda: self._navigate_gif_frame(self.sequence_session.total_frames - 1 if self.sequence_session else 0))
+        bar.trimRangeChanged.connect(self._on_sequence_trim_changed)
+        bar.fpsChanged.connect(self._on_sequence_fps_changed)
+        bar.trackSequenceRequested.connect(self.start_track_sequence)
 
         self.btn_gif_first = bar.btn_gif_first
         self.btn_gif_prev = bar.btn_gif_prev
@@ -414,14 +434,63 @@ class MainWindow(QMainWindow):
             self.gif_bar.set_playing(True)
 
     def _on_gif_timer_tick(self):
-        """Avanza al siguiente fotograma respetando la duración exacta en milisegundos."""
+        """Avanza al siguiente fotograma respetando recorte temporal y FPS objetivo."""
         if not self.sequence_session or self.sequence_session.total_frames <= 0:
             self.gif_timer.stop()
             return
-        nxt = (self.sequence_session.current_index + 1) % self.sequence_session.total_frames
+        s = self.sequence_session.trim_start
+        e = self.sequence_session.trim_end
+        nxt = self.sequence_session.current_index + 1
+        if nxt > e or nxt < s:
+            nxt = s
         self._navigate_gif_frame(nxt)
-        dur = self.sequence_session.durations[nxt] if self.sequence_session.durations else 80
+        if abs(self.sequence_session.target_fps - self.sequence_session.fps) > 1e-2:
+            dur = max(15, int(round(1000.0 / max(1.0, self.sequence_session.target_fps))))
+        else:
+            dur = self.sequence_session.durations[nxt] if self.sequence_session.durations else 80
         self.gif_timer.setInterval(dur)
+
+    def _on_sequence_trim_changed(self, start: int, end: int):
+        if not self.sequence_session:
+            return
+        s, e = self.sequence_session.set_trim_range(start, end)
+        if self.sequence_session.current_index < s or self.sequence_session.current_index > e:
+            self._navigate_gif_frame(s)
+
+    def _on_sequence_fps_changed(self, fps: float):
+        if not self.sequence_session:
+            return
+        self.sequence_session.set_target_fps(fps)
+
+    def start_track_sequence(self):
+        """Rastrea automáticamente el sujeto activo a lo largo de los fotogramas de la secuencia."""
+        if not self.doc.has_sequence or self.ai.is_active_running():
+            return
+        if self.gif_timer.isActive():
+            self.gif_timer.stop()
+            self.gif_bar.set_playing(False)
+
+        frames = self.sequence_session.get_all_current_frames()
+        seed_idx = self.sequence_session.current_index
+        seed_subject = self.sidebar.panel_bg.get_selected_subject() if hasattr(self.sidebar, "panel_bg") else None
+        seed_mask = self.canvas.active_selection if self.canvas.has_selection() else None
+
+        self.set_processing(True, tr("seq_tracking_status"))
+        self.progress_bar.setRange(0, 100)
+        self.progress_bar.setValue(0)
+        self.ai.start_track_sequence(
+            frames=frames,
+            seed_frame_idx=seed_idx,
+            seed_subject=seed_subject,
+            seed_mask=seed_mask,
+            trim_start=self.sequence_session.trim_start,
+            trim_end=self.sequence_session.trim_end,
+            on_progress=lambda cur, tot: self.progress_bar.setValue(cur),
+            on_progress_text=self._set_status_raw,
+            on_finished=self._on_gif_worker_finished,
+            on_failed=self._on_worker_failed,
+            on_cancelled=self._on_worker_cancelled,
+        )
 
     def perform_delete_selection(self):
         """Borra los píxeles seleccionados con la varita (Supr / botón 'Borrar selección')."""
@@ -500,6 +569,7 @@ class MainWindow(QMainWindow):
             path = info["path"]
             if kind == "video":
                 if hasattr(self, "gif_bar"):
+                    self.gif_bar.configure_sequence(self.sequence_session.total_frames, self.sequence_session.fps)
                     self.gif_bar.setVisible(info["frames_count"] > 1)
                 self._navigate_gif_frame(0)
                 self._reset_workspace_ui(info["image"], reset_zoom=True)
@@ -510,6 +580,7 @@ class MainWindow(QMainWindow):
 
             if kind == "animation":
                 if hasattr(self, "gif_bar"):
+                    self.gif_bar.configure_sequence(self.sequence_session.total_frames, self.sequence_session.fps)
                     self.gif_bar.setVisible(True)
                 self._navigate_gif_frame(0)
                 self._reset_workspace_ui(info["image"], reset_zoom=True)
@@ -1021,6 +1092,12 @@ class MainWindow(QMainWindow):
             )
             self._set_status("status_batch_error")
 
+        pipeline_cfg = (
+            self.sidebar.panel_batch.get_pipeline_config()
+            if hasattr(self.sidebar, "panel_batch")
+            and hasattr(self.sidebar.panel_batch, "get_pipeline_config")
+            else None
+        )
         self.ai.start_batch(
             input_dir=input_dir,
             output_dir=output_dir,
@@ -1032,6 +1109,7 @@ class MainWindow(QMainWindow):
             on_failed=on_batch_failed,
             on_finished_with_errors=on_batch_finished,
             on_cancelled=self._on_worker_cancelled,
+            pipeline_config=pipeline_cfg,
         )
 
     def _on_brush_mode_toggled(self, enabled: bool):
@@ -1250,6 +1328,116 @@ class MainWindow(QMainWindow):
         self.canvas.set_background_color(color_rgb)
         hex_str = f"#{color_rgb[0]:02X}{color_rgb[1]:02X}{color_rgb[2]:02X}"
         self._set_status("status_bg_color", hex=hex_str)
+
+    def perform_edge_refinement(self, choke_px: int, feather_px: int, despill_strength: float):
+        """Refina los bordes alfa (Choke / Feather / Despill) sobre imagen o secuencia."""
+        if not self.image_state.has_image:
+            return
+        if choke_px == 0 and feather_px == 0 and despill_strength <= 0.0:
+            return
+        out = self.doc.apply_edge_refinement(choke_px, feather_px, despill_strength)
+        if out is None:
+            return
+        from app.core.sam_manager import get_sam_manager
+        get_sam_manager().clear_embedding()
+        if self.doc.has_sequence:
+            self._navigate_gif_frame(self.sequence_session.current_index)
+        else:
+            self.canvas.set_image(out, reset_zoom=False)
+            self.canvas.set_original_image(self.image_state.current_brush_reference)
+        self._set_status("status_edge_refined")
+        self._update_image_info_label(out)
+        self._update_action_states()
+
+    def perform_inpaint_selection(self):
+        """Rellena el área seleccionada mediante inpainting OpenCV."""
+        if not self.image_state.has_image or not self.canvas.has_selection():
+            self._set_status("status_selection_nothing")
+            return
+        out = self.doc.apply_inpaint_selection(self.canvas.active_selection)
+        if out is None:
+            return
+        from app.core.sam_manager import get_sam_manager
+        get_sam_manager().clear_embedding()
+        self.canvas.set_image(out, reset_zoom=False)
+        self.canvas.set_original_image(self.image_state.current_brush_reference)
+        self._set_status("status_inpainted")
+        self._update_image_info_label(out)
+        self._update_action_states()
+
+    def _sync_after_document_edit(self, out_img, status_key: str, reset_zoom: bool = False):
+        """Sincroniza canvas, caché SAM e indicadores tras una transformación de documento."""
+        from app.core.sam_manager import get_sam_manager
+        get_sam_manager().clear_embedding()
+        if self.doc.has_sequence:
+            self._navigate_gif_frame(self.sequence_session.current_index)
+        else:
+            self.canvas.set_image(out_img, reset_zoom=reset_zoom)
+            self.canvas.set_original_image(self.image_state.current_brush_reference)
+        self._set_status(status_key)
+        self._update_image_info_label(out_img)
+        self._update_action_states()
+
+    def perform_apply_effects(self, cfg: dict):
+        """Aplica efectos creativos (Sticker, Sombra, Bokeh/Imagen BG, Relación de Aspecto)."""
+        if not self.image_state.has_image:
+            return
+        bg_img = None
+        bg_path = str(cfg.get("bg_image_path", "") or "").strip()
+        if bg_path:
+            from pathlib import Path
+            from PIL import Image
+            p = Path(bg_path)
+            if p.is_file():
+                try:
+                    with Image.open(p) as im:
+                        bg_img = im.convert("RGBA")
+                except Exception:
+                    bg_img = None
+        out = self.doc.apply_effects(
+            sticker_width=int(cfg.get("sticker_width", 0)),
+            sticker_color=tuple(cfg.get("sticker_color", (255, 255, 255))),
+            shadow_opacity=float(cfg.get("shadow_opacity", 0.0)),
+            shadow_blur=int(cfg.get("shadow_blur", 16)),
+            shadow_offset_x=int(cfg.get("shadow_offset_x", 10)),
+            shadow_offset_y=int(cfg.get("shadow_offset_y", 12)),
+            bg_mode=str(cfg.get("bg_mode", "transparent")),
+            bg_color=tuple(cfg.get("bg_color", (255, 255, 255))),
+            bokeh_blur=int(cfg.get("bokeh_blur", 20)),
+            bg_image=bg_img,
+            aspect_preset=str(cfg.get("aspect_preset", "original")),
+        )
+        if out is not None:
+            self._sync_after_document_edit(out, "status_effects_applied", reset_zoom=False)
+
+    def perform_transform(self, rotate_deg: int, flip_h: bool, flip_v: bool):
+        """Aplica rotación horaria de 90° o volteo horizontal/vertical."""
+        if not self.image_state.has_image:
+            return
+        out = self.doc.apply_transform(rotate_deg=rotate_deg, flip_h=flip_h, flip_v=flip_v)
+        if out is not None:
+            self._sync_after_document_edit(out, "status_transformed", reset_zoom=True)
+
+    def on_crop_mode_toggled(self, enabled: bool, aspect_ratio: object):
+        """Activa o desactiva la superposición interactiva de recorte en el lienzo."""
+        if enabled and not self.image_state.has_image:
+            self.sidebar.panel_effects.reset_crop_toggle()
+            return
+        ratio = float(aspect_ratio) if aspect_ratio is not None else None
+        self.canvas.set_crop_mode(bool(enabled), aspect_ratio=ratio)
+
+    def perform_manual_crop(self):
+        """Ejecuta el recorte manual definido sobre el lienzo."""
+        if not self.image_state.has_image:
+            return
+        box = self.canvas.get_crop_box()
+        if not box:
+            return
+        out = self.doc.apply_manual_crop(*box)
+        self.canvas.set_crop_mode(False)
+        self.sidebar.panel_effects.reset_crop_toggle()
+        if out is not None:
+            self._sync_after_document_edit(out, "status_cropped_manual", reset_zoom=True)
 
     def perform_restore_transparency(self):
         """Oculta la capa de color sólido restaurando el fondo transparente original."""
