@@ -33,9 +33,14 @@ def main():
     """Inicializa el entorno gráfico y ejecuta la ventana principal."""
     from PySide6.QtWidgets import QApplication
     from PySide6.QtCore import Qt
-    from PySide6.QtGui import QIcon
+    from PySide6.QtGui import QGuiApplication
     from app.config import APP_NAME, APP_VERSION, APP_AUTHOR
     from app.ui.main_window import MainWindow
+
+    # Configurar escalado fraccional HiDPI antes de instanciar QApplication
+    QGuiApplication.setHighDpiScaleFactorRoundingPolicy(
+        Qt.HighDpiScaleFactorRoundingPolicy.PassThrough
+    )
 
     # Inicializar la aplicación Qt
     app = QApplication(sys.argv)
@@ -43,10 +48,11 @@ def main():
     app.setApplicationVersion(APP_VERSION)
     app.setOrganizationName(APP_AUTHOR)
 
-    # Cargar y aplicar tema QSS
-    stylesheet = load_stylesheet()
-    if stylesheet:
-        app.setStyleSheet(stylesheet)
+    # Cargar y aplicar tema QSS una sola vez a nivel de aplicación
+    if not app.styleSheet():
+        stylesheet = load_stylesheet()
+        if stylesheet:
+            app.setStyleSheet(stylesheet)
 
     # Crear y mostrar la ventana principal
     window = MainWindow()

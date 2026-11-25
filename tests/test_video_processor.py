@@ -160,3 +160,74 @@ def test_sequence_session_video_metadata():
     assert session.is_video is True
     assert session.fps == 30.0
     assert session.total_frames == 3
+
+
+def test_extract_video_frames_ram_budget(tmp_path: Path):
+    """Verifica que extract_video_frames respete max_ram_bytes (submuestreo y rechazo)."""
+    src_frames = _make_synthetic_frames(count=8, size=(64, 48))
+    video_path = tmp_path / "ram_clip.mp4"
+    save_video_sequence(src_frames, video_path, fps=24.0)
+
+    bytes_per_frame = 64 * 48 * 4
+    # Permitir como máximo 2 fotogramas en presupuesto RAM
+    extracted, durations, _ = extract_video_frames(video_path, max_frames=600, max_ram_bytes=bytes_per_frame * 2)
+    assert 1 <= len(extracted) <= 2
+    assert len(durations) == len(extracted)
+
+    # Rechazar si un solo fotograma excede el presupuesto
+    with pytest.raises(ValueError, match="presupuesto"):
+        extract_video_frames(video_path, max_frames=600, max_ram_bytes=bytes_per_frame - 1)
+
+
+def test_find_ffmpeg_safe_excludes_cwd_on_windows(tmp_path: Path, monkeypatch):
+    """Verifica que _find_ffmpeg_safe excluya el CWD del PATH en Windows."""
+    from app.core import video_processor as vp
+
+    monkeypatch.setattr(vp.sys, "platform", "win32")
+    monkeypatch.chdir(tmp_path)
+    other_dir = tmp_path / "bin"
+    other_dir.mkdir()
+    monkeypatch.setenv("PATH", f".;{tmp_path};{other_dir}")
+
+    captured_path = {}
+
+    def fake_which(name, path=None):
+        captured_path["path"] = path
+        return None
+
+    monkeypatch.setattr(vp.shutil, "which", fake_which)
+    vp._find_ffmpeg_safe()
+    parts = (captured_path.get("path") or "").split(vp.os.pathsep)
+    assert str(other_dir) in parts
+    assert "." not in parts
+    assert str(tmp_path) not in parts
+
+
+def test_try_save_transparent_ffmpeg_kills_on_error_and_resolves_path(tmp_path: Path, monkeypatch):
+    """Verifica que _try_save_transparent_ffmpeg pase ruta resuelta y mate el proceso en finally ante fallo."""
+    from unittest.mock import MagicMock
+    from app.core import video_processor as vp
+
+    frames = _make_transparent_frames(count=2, size=(32, 32))
+    out_path = tmp_path / "out.webm"
+
+    fake_proc = MagicMock()
+    fake_proc.stdin = MagicMock()
+    fake_proc.stdin.closed = False
+    fake_proc.stdin.write.side_effect = BrokenPipeError("broken pipe")
+    fake_proc.poll.return_value = None
+
+    captured_cmd = {}
+
+    def fake_popen(cmd, **kwargs):
+        captured_cmd["cmd"] = cmd
+        return fake_proc
+
+    monkeypatch.setattr(vp, "_find_ffmpeg_safe", lambda: "/usr/bin/ffmpeg")
+    monkeypatch.setattr(vp.subprocess, "Popen", fake_popen)
+
+    ok = vp._try_save_transparent_ffmpeg(frames, out_path, fps=24.0)
+    assert ok is False
+    assert captured_cmd["cmd"][-1] == str(out_path.resolve())
+    fake_proc.kill.assert_called_once()
+    fake_proc.wait.assert_called()

@@ -6,7 +6,7 @@ import logging
 import threading
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Callable, Dict, List, Optional, Tuple
+from typing import Any, Callable, Dict, List, Optional, Tuple, Union
 
 import cv2
 import numpy as np
@@ -72,7 +72,8 @@ class YOLODetector:
 
     def __init__(self):
         self._session: Optional[Any] = None
-        self._lock = threading.Lock()
+        self._model_path: Optional[Path] = None
+        self._lock = threading.RLock()
 
     def ensure_model(
         self,
@@ -87,6 +88,7 @@ class YOLODetector:
                     progress_cb=progress_cb,
                     status_cb=status_cb,
                 )
+                self._model_path = Path(model_path)
                 import onnxruntime as ort
                 from app.core.gpu_manager import get_gpu_manager
 
@@ -103,6 +105,53 @@ class YOLODetector:
                         str(model_path), sess_options, providers=["CPUExecutionProvider"]
                     )
 
+    def _run_with_cpu_fallback(self, input_name: str, tensor: np.ndarray):
+        """Ejecuta la sesión ONNX y hace fallback automático a CPU si falla en GPU."""
+        try:
+            return self._session.run(None, {input_name: tensor})
+        except Exception as exc:
+            providers = []
+            if hasattr(self._session, "get_providers"):
+                try:
+                    providers = list(self._session.get_providers())
+                except Exception:
+                    providers = []
+            is_cpu_only = providers == ["CPUExecutionProvider"]
+            if is_cpu_only:
+                raise
+            logger.warning(f"Fallo en inferencia GPU de YOLO11 ({exc}). Reintentando en CPU...")
+            import onnxruntime as ort
+            from app.core.model_fetcher import resolve_local_model
+
+            model_path = self._model_path or resolve_local_model("yolo11n-seg.onnx")
+            if model_path is None:
+                raise
+            sess_options = get_optimized_session_options() or ort.SessionOptions()
+            self._session = ort.InferenceSession(
+                str(model_path), sess_options, providers=["CPUExecutionProvider"]
+            )
+            return self._session.run(None, {input_name: tensor})
+
+    def _get_target_hw(self) -> Tuple[int, int]:
+        """Lee dinámicamente (target_h, target_w) del tensor de entrada ONNX (ej. 480x640 o 640x640)."""
+        if self._session is not None:
+            try:
+                inputs = self._session.get_inputs()
+                if inputs:
+                    shape = getattr(inputs[0], "shape", None)
+                    if (
+                        isinstance(shape, (list, tuple))
+                        and len(shape) >= 4
+                        and isinstance(shape[2], int)
+                        and isinstance(shape[3], int)
+                        and shape[2] > 0
+                        and shape[3] > 0
+                    ):
+                        return int(shape[2]), int(shape[3])
+            except Exception:
+                pass
+        return (640, 640)
+
     def unload_sessions(self) -> None:
         """Libera la sesión ONNX activa de YOLO11-seg para desocupar VRAM o reiniciar en otro proveedor."""
         with self._lock:
@@ -112,20 +161,25 @@ class YOLODetector:
         gc.collect()
 
     def _preprocess(
-        self, pil_img: Image.Image, target_size: int = 640
+        self, pil_img: Image.Image, target_size: Union[int, Tuple[int, int]] = 640
     ) -> Tuple[np.ndarray, Tuple[int, int, int, int], Tuple[int, int], float]:
-        """Letterboxing simétrico a target_size x target_size con relleno 114.0."""
+        """Letterboxing simétrico a target_h x target_w (cuadrado o rectangular) con relleno 114.0."""
+        if isinstance(target_size, (tuple, list)):
+            target_h, target_w = int(target_size[0]), int(target_size[1])
+        else:
+            target_h = target_w = int(target_size)
+
         orig_w, orig_h = pil_img.size
-        scale = min(target_size / orig_w, target_size / orig_h)
+        scale = min(target_w / orig_w, target_h / orig_h)
         new_w = max(1, int(round(orig_w * scale)))
         new_h = max(1, int(round(orig_h * scale)))
 
         resized = pil_img.convert("RGB").resize((new_w, new_h), resample=Image.Resampling.BILINEAR)
         rgb = np.asarray(resized, dtype=np.float32)
 
-        canvas = np.full((target_size, target_size, 3), 114.0, dtype=np.float32)
-        pad_x = (target_size - new_w) // 2
-        pad_y = (target_size - new_h) // 2
+        canvas = np.full((target_h, target_w, 3), 114.0, dtype=np.float32)
+        pad_x = (target_w - new_w) // 2
+        pad_y = (target_h - new_h) // 2
         canvas[pad_y : pad_y + new_h, pad_x : pad_x + new_w] = rgb
 
         # Normalización estándar YOLO [0, 1] y NCHW
@@ -159,13 +213,14 @@ class YOLODetector:
 
             if progress_cb:
                 progress_cb(50, "Preprocesando imagen para detección YOLO11...")
-            tensor, crop_box, (orig_w, orig_h), scale = self._preprocess(pil_img, 640)
+            target_h, target_w = self._get_target_hw()
+            tensor, crop_box, (orig_w, orig_h), scale = self._preprocess(pil_img, (target_h, target_w))
             pad_x, pad_y, new_w, new_h = crop_box
 
             if progress_cb:
                 progress_cb(70, "Ejecutando inferencia multiobjeto YOLO11-seg...")
             input_name = self._session.get_inputs()[0].name
-            outputs = self._session.run(None, {input_name: tensor})
+            outputs = self._run_with_cpu_fallback(input_name, tensor)
             if progress_cb:
                 progress_cb(90, "Generando máscaras de sujetos detectados...")
 
@@ -211,36 +266,40 @@ class YOLODetector:
         if isinstance(nms_indices, np.ndarray):
             nms_indices = nms_indices.flatten().tolist()
 
-        # Multiplicación matricial por lotes (N, 32) @ (32, 25600) -> (N, 160, 160)
-        protos_flat = output1[0].reshape(32, 160 * 160)
+        # Multiplicación matricial por lotes (N, proto_c) @ (proto_c, proto_h * proto_w) -> (N, proto_h, proto_w)
+        proto_c, proto_h, proto_w = output1.shape[1:]
+        protos_flat = output1[0].reshape(proto_c, proto_h * proto_w)
         nms_coeffs = coeffs_filt[nms_indices]
-        masks_160_all = np.dot(nms_coeffs, protos_flat).reshape(-1, 160, 160)
+        masks_proto_all = np.dot(nms_coeffs, protos_flat).reshape(-1, proto_h, proto_w)
+
+        scale_px = proto_w / float(target_w)
+        scale_py = proto_h / float(target_h)
 
         results: List[DetectedSubject] = []
         for rank, idx in enumerate(nms_indices):
             cx, cy, bw, bh = boxes_filt[idx]
-            x1_640 = max(float(pad_x), cx - bw / 2.0)
-            y1_640 = max(float(pad_y), cy - bh / 2.0)
-            x2_640 = min(float(pad_x + new_w), cx + bw / 2.0)
-            y2_640 = min(float(pad_y + new_h), cy + bh / 2.0)
+            x1_in = max(float(pad_x), cx - bw / 2.0)
+            y1_in = max(float(pad_y), cy - bh / 2.0)
+            x2_in = min(float(pad_x + new_w), cx + bw / 2.0)
+            y2_in = min(float(pad_y + new_h), cy + bh / 2.0)
 
             # Bounding box en coordenadas de la imagen original
-            orig_x1 = max(0, min(orig_w, int(round((x1_640 - pad_x) / scale))))
-            orig_y1 = max(0, min(orig_h, int(round((y1_640 - pad_y) / scale))))
-            orig_x2 = max(0, min(orig_w, int(round((x2_640 - pad_x) / scale))))
-            orig_y2 = max(0, min(orig_h, int(round((y2_640 - pad_y) / scale))))
+            orig_x1 = max(0, min(orig_w, int(round((x1_in - pad_x) / scale))))
+            orig_y1 = max(0, min(orig_h, int(round((y1_in - pad_y) / scale))))
+            orig_x2 = max(0, min(orig_w, int(round((x2_in - pad_x) / scale))))
+            orig_y2 = max(0, min(orig_h, int(round((y2_in - pad_y) / scale))))
 
             binary_mask = np.zeros((orig_h, orig_w), dtype=bool)
             box_w = orig_x2 - orig_x1
             box_h = orig_y2 - orig_y1
             if box_w > 0 and box_h > 0:
-                # Recortar en el espacio prototipo 160x160 (factor 0.25 respecto a 640x640)
-                px1 = max(0, min(159, int(np.floor(x1_640 * 0.25))))
-                py1 = max(0, min(159, int(np.floor(y1_640 * 0.25))))
-                px2 = max(px1 + 1, min(160, int(np.ceil(x2_640 * 0.25))))
-                py2 = max(py1 + 1, min(160, int(np.ceil(y2_640 * 0.25))))
+                # Recortar en el espacio prototipo dinámico (proto_h x proto_w)
+                px1 = max(0, min(proto_w - 1, int(np.floor(x1_in * scale_px))))
+                py1 = max(0, min(proto_h - 1, int(np.floor(y1_in * scale_py))))
+                px2 = max(px1 + 1, min(proto_w, int(np.ceil(x2_in * scale_px))))
+                py2 = max(py1 + 1, min(proto_h, int(np.ceil(y2_in * scale_py))))
 
-                proto_crop = masks_160_all[rank, py1:py2, px1:px2]
+                proto_crop = masks_proto_all[rank, py1:py2, px1:px2]
                 # Redimensionar únicamente el ROI del sujeto (sigmoid(x) > 0.5 <=> logit > 0.0)
                 patch_logits = cv2.resize(
                     proto_crop, (box_w, box_h), interpolation=cv2.INTER_LINEAR

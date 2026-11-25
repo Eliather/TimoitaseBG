@@ -2,6 +2,7 @@
 Barra superior arrastrable (TopBar) y diálogo sin marco (FramelessPopup) para TimoitaseBG.
 """
 from PySide6.QtCore import Qt, Signal, QSize
+from PySide6.QtGui import QAction, QActionGroup
 from PySide6.QtWidgets import (
     QWidget,
     QVBoxLayout,
@@ -10,11 +11,13 @@ from PySide6.QtWidgets import (
     QPushButton,
     QComboBox,
     QDialog,
+    QFrame,
+    QMenu,
 )
 
 from app.config import APP_NAME, APP_VERSION
 from app.i18n import tr, get_available_languages, get_current_language
-from app.ui.icons import get_icon
+from app.ui.icons import LUCIDE_SVG_PATHS, get_icon
 
 
 class FramelessDragMixin:
@@ -84,9 +87,9 @@ class FramelessPopup(FramelessDragMixin, QDialog):
         top_layout.addWidget(title_lbl)
         top_layout.addStretch()
 
-        self.btn_close = QPushButton("")
-        self.btn_close.setObjectName("macCloseBtn")
-        self.btn_close.setFixedSize(14, 14)
+        self.btn_close = QPushButton("×")
+        self.btn_close.setObjectName("WinCloseBtn")
+        self.btn_close.setFixedSize(26, 24)
         self.btn_close.clicked.connect(self.close)
         top_layout.addWidget(self.btn_close)
 
@@ -112,7 +115,7 @@ class FramelessPopup(FramelessDragMixin, QDialog):
 
 
 class TopBar(CustomTopBar):
-    """Barra superior completa con controles de archivo, historial, zoom, tema e idioma."""
+    """Barra superior minimalista con archivo, historial, tema, menú de ajustes y controles de ventana."""
 
     themeToggled = Signal()
     languageChanged = Signal(int)
@@ -134,13 +137,14 @@ class TopBar(CustomTopBar):
     def __init__(self, parent_window):
         super().__init__(parent_window)
         self.setObjectName("TopBar")
-        self.setFixedHeight(58)
+        self.setFixedHeight(48)
+        self._lang_actions: dict[str, QAction] = {}
         self._setup_ui()
 
     def _setup_ui(self):
         layout = QHBoxLayout(self)
-        layout.setContentsMargins(16, 0, 16, 0)
-        layout.setSpacing(10)
+        layout.setContentsMargins(16, 0, 10, 0)
+        layout.setSpacing(8)
 
         title_label = QLabel(APP_NAME)
         title_label.setObjectName("AppTitle")
@@ -150,83 +154,121 @@ class TopBar(CustomTopBar):
         self.version_badge.setObjectName("appVersionBadge")
         self.version_badge.setToolTip(f"{APP_NAME} v{APP_VERSION}")
         layout.addWidget(self.version_badge, alignment=Qt.AlignmentFlag.AlignVCenter)
-        layout.addSpacing(6)
+        layout.addSpacing(10)
 
-        self.btn_theme = self._make_icon_btn("compactIconButton", 34, 34, "tooltip_theme", self.themeToggled.emit)
+        self.btn_open = self._make_text_btn("secondaryActionButton", 32, "btn_open", "tooltip_open", self.openRequested.emit)
+        self.btn_save = self._make_text_btn("PrimaryBtn", 32, "btn_save", "tooltip_save", self.saveRequested.emit)
+        layout.addWidget(self.btn_open)
+        layout.addWidget(self.btn_save)
+
+        self._history_sep = QFrame(self)
+        self._history_sep.setFixedSize(1, 20)
+        self._history_sep.setStyleSheet("background-color: rgba(155, 163, 174, 0.22); border: none;")
+        layout.addSpacing(2)
+        layout.addWidget(self._history_sep)
+        layout.addSpacing(2)
+
+        self.btn_undo = self._make_icon_btn("compactIconButton", 32, 32, "tooltip_undo", self.undoRequested.emit)
+        self.btn_redo = self._make_icon_btn("compactIconButton", 32, 32, "tooltip_redo", self.redoRequested.emit)
+        self.btn_reset_orig = self._make_icon_btn("compactIconButton", 32, 32, "tooltip_reset", self.resetRequested.emit)
+        self.btn_reset = self.btn_reset_orig
+        layout.addWidget(self.btn_undo)
+        layout.addWidget(self.btn_redo)
+        layout.addWidget(self.btn_reset_orig)
+
+        layout.addStretch()
+
+        self.btn_theme = self._make_icon_btn("compactIconButton", 32, 32, "tooltip_theme", self.themeToggled.emit)
         layout.addWidget(self.btn_theme)
 
-        self.btn_models = self._make_icon_btn("compactIconButton", 34, 34, "tooltip_models", self.modelsRequested.emit)
-        layout.addWidget(self.btn_models)
+        # Botón de Ajustes (⚙) con menú limpio (Idioma + Gestor de Modelos IA)
+        self.btn_settings = QPushButton("⚙")
+        self.btn_settings.setObjectName("SettingsBtn")
+        self.btn_settings.setFixedSize(32, 32)
+        self.btn_settings.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.btn_settings.setToolTip(tr("tooltip_lang"))
+        self._setup_settings_menu()
+        self.btn_settings.clicked.connect(self._open_settings_menu)
+        layout.addWidget(self.btn_settings)
 
-        self.combo_lang = QComboBox()
+        # Controles ocultos para compatibilidad total con tests y código previo
+        self.btn_models = QPushButton(self)
+        self.btn_models.setObjectName("compactIconButton")
+        self.btn_models.setToolTip(tr("tooltip_models"))
+        self.btn_models.clicked.connect(self.modelsRequested.emit)
+        self.btn_models.hide()
+
+        self.combo_lang = QComboBox(self)
         self.combo_lang.setObjectName("langSelector")
         self.combo_lang.setToolTip(tr("tooltip_lang"))
-        self.combo_lang.setFixedHeight(34)
-        self.combo_lang.setFixedWidth(110)
         for code, name in get_available_languages():
             self.combo_lang.addItem(name, code)
         idx = self.combo_lang.findData(get_current_language())
         if idx >= 0:
             self.combo_lang.setCurrentIndex(idx)
-        self.combo_lang.currentIndexChanged.connect(self.languageChanged.emit)
-        layout.addWidget(self.combo_lang)
-        layout.addSpacing(6)
+        self.combo_lang.currentIndexChanged.connect(self._on_combo_lang_changed)
+        self.combo_lang.hide()
 
-        self.btn_open = self._make_text_btn("PrimaryBtn", 34, "btn_open", "tooltip_open", self.openRequested.emit)
-        self.btn_save = self._make_text_btn("PrimaryBtn", 34, "btn_save", "tooltip_save", self.saveRequested.emit)
-        layout.addWidget(self.btn_open)
-        layout.addWidget(self.btn_save)
-        layout.addSpacing(4)
+        layout.addSpacing(8)
 
-        self.btn_undo = self._make_icon_btn("compactIconButton", 34, 34, "tooltip_undo", self.undoRequested.emit)
-        self.btn_redo = self._make_icon_btn("compactIconButton", 34, 34, "tooltip_redo", self.redoRequested.emit)
-        self.btn_reset_orig = self._make_icon_btn("compactIconButton", 34, 34, "tooltip_reset", self.resetRequested.emit)
-        layout.addWidget(self.btn_undo)
-        layout.addWidget(self.btn_redo)
-        layout.addWidget(self.btn_reset_orig)
-        layout.addStretch()
-
-        self.btn_zoom_out = self._make_icon_btn("zoomButton", 32, 32, "tooltip_zoom_out", self.zoomOutRequested.emit)
-        layout.addWidget(self.btn_zoom_out)
-
-        self.lbl_zoom = QLabel("100%")
-        self.lbl_zoom.setObjectName("zoomLabel")
-        self.lbl_zoom.setFixedWidth(52)
-        self.lbl_zoom.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        layout.addWidget(self.lbl_zoom)
-
-        self.btn_zoom_in = self._make_icon_btn("zoomButton", 32, 32, "tooltip_zoom_in", self.zoomInRequested.emit)
-        layout.addWidget(self.btn_zoom_in)
-
-        self.btn_fit = self._make_text_btn("zoomButton", 32, "btn_zoom_fit", "tooltip_zoom_fit", self.fitRequested.emit)
-        layout.addWidget(self.btn_fit)
-
-        self.btn_zoom_100 = QPushButton("1:1")
-        self.btn_zoom_100.setObjectName("zoomButton")
-        self.btn_zoom_100.setFixedHeight(32)
-        self.btn_zoom_100.setToolTip(tr("tooltip_zoom_100"))
-        self.btn_zoom_100.clicked.connect(self.zoom100Requested.emit)
-        layout.addWidget(self.btn_zoom_100)
-        layout.addSpacing(6)
-
-        self.btn_compare = self._make_text_btn(
-            "PrimaryBtn", 34, "btn_compare", "tooltip_compare", checkable=True
-        )
-        self.btn_compare.clicked.connect(self.compareToggled.emit)
-        layout.addWidget(self.btn_compare)
-        layout.addSpacing(14)
-
-        self.btn_min = self._make_window_dot("macMinBtn", "Minimizar", self.minimizeRequested.emit)
-        self.btn_max = self._make_window_dot("macMaxBtn", "Maximizar/Restaurar", self.maximizeRequested.emit)
-        self.btn_close = self._make_window_dot("macCloseBtn", "Cerrar", self.closeRequested.emit)
+        # Controles de ventana monocromos en orden estándar Windows: minimizar, maximizar, cerrar
+        self.btn_min = self._make_window_btn("WinMinBtn", "—", "Minimizar", self.minimizeRequested.emit)
+        self.btn_max = self._make_window_btn("WinMaxBtn", "□", "Maximizar/Restaurar", self.maximizeRequested.emit)
+        self.btn_close = self._make_window_btn("WinCloseBtn", "×", "Cerrar", self.closeRequested.emit)
         layout.addWidget(self.btn_min)
         layout.addWidget(self.btn_max)
         layout.addWidget(self.btn_close)
+
+    def _setup_settings_menu(self) -> None:
+        self.settings_menu = QMenu(self)
+        self.settings_menu.setObjectName("SettingsMenu")
+
+        self.lang_menu = self.settings_menu.addMenu(tr("tooltip_lang"))
+        self._lang_action_group = QActionGroup(self)
+        self._lang_action_group.setExclusive(True)
+        current_lang = get_current_language()
+
+        for idx, (code, name) in enumerate(get_available_languages()):
+            act = QAction(name, self)
+            act.setCheckable(True)
+            act.setChecked(code == current_lang)
+            act.triggered.connect(lambda _checked=False, lang_idx=idx: self._select_language_index(lang_idx))
+            self._lang_action_group.addAction(act)
+            self.lang_menu.addAction(act)
+            self._lang_actions[code] = act
+
+        self.settings_menu.addSeparator()
+
+        self.action_models = QAction(tr("models_dialog_title"), self)
+        self.action_models.setToolTip(tr("tooltip_models"))
+        self.action_models.triggered.connect(self.modelsRequested.emit)
+        self.settings_menu.addAction(self.action_models)
+
+    def _open_settings_menu(self) -> None:
+        pos = self.btn_settings.mapToGlobal(self.btn_settings.rect().bottomRight())
+        menu_hint = self.settings_menu.sizeHint()
+        pos.setX(pos.x() - menu_hint.width())
+        pos.setY(pos.y() + 4)
+        self.settings_menu.exec(pos)
+
+    def _select_language_index(self, index: int) -> None:
+        if 0 <= index < self.combo_lang.count():
+            if self.combo_lang.currentIndex() != index:
+                self.combo_lang.setCurrentIndex(index)
+            else:
+                self.languageChanged.emit(index)
+
+    def _on_combo_lang_changed(self, index: int) -> None:
+        code = self.combo_lang.itemData(index)
+        if code and code in self._lang_actions:
+            self._lang_actions[code].setChecked(True)
+        self.languageChanged.emit(index)
 
     def _make_icon_btn(self, obj_name: str, w: int, h: int, tip_key: str, slot) -> QPushButton:
         btn = QPushButton()
         btn.setObjectName(obj_name)
         btn.setFixedSize(w, h)
+        btn.setCursor(Qt.CursorShape.PointingHandCursor)
         btn.setToolTip(tr(tip_key))
         btn.clicked.connect(slot)
         return btn
@@ -238,76 +280,80 @@ class TopBar(CustomTopBar):
         btn.setObjectName(obj_name)
         btn.setFixedHeight(h)
         btn.setCheckable(checkable)
+        btn.setCursor(Qt.CursorShape.PointingHandCursor)
         btn.setToolTip(tr(tip_key))
         if slot is not None:
             btn.clicked.connect(slot)
         return btn
 
-    def _make_window_dot(self, obj_name: str, tip: str, slot) -> QPushButton:
-        btn = QPushButton("")
+    def _make_window_btn(self, obj_name: str, glyph: str, tip: str, slot) -> QPushButton:
+        btn = QPushButton(glyph)
         btn.setObjectName(obj_name)
-        btn.setFixedSize(14, 14)
+        btn.setFixedSize(32, 28)
+        btn.setCursor(Qt.CursorShape.PointingHandCursor)
         btn.setToolTip(tip)
         btn.clicked.connect(slot)
         return btn
 
     def apply_theme(self, is_dark: bool):
-        fg_color = "#EAEAEA" if is_dark else "#292524"
-        accent_color = "#FF4F79"
-        dis_color = "#666666" if is_dark else "#A8A29E"
+        fg_color = "#F2F4F7" if is_dark else "#14171A"
+        accent_color = "#2E7CF6" if is_dark else "#1D63DC"
+        dis_color = "#5C6470" if is_dark else "#9BA3AE"
 
-        self.btn_theme.setIcon(get_icon("sun" if is_dark else "moon", color=fg_color, active_color=accent_color, size=18))
-        self.btn_theme.setIconSize(QSize(18, 18))
+        self.btn_theme.setIcon(get_icon("sun" if is_dark else "moon", color=fg_color, active_color=accent_color, size=17))
+        self.btn_theme.setIconSize(QSize(17, 17))
         self.btn_theme.setText("")
 
-        self.btn_models.setIcon(get_icon("hard-drive", color=fg_color, active_color=accent_color, size=18))
-        self.btn_models.setIconSize(QSize(18, 18))
-        self.btn_models.setText("")
+        if "settings" in LUCIDE_SVG_PATHS:
+            self.btn_settings.setIcon(get_icon("settings", color=fg_color, active_color=accent_color, size=17))
+            self.btn_settings.setIconSize(QSize(17, 17))
+            self.btn_settings.setText("")
+        else:
+            self.btn_settings.setText("⚙")
 
-        for btn, icon_name in ((self.btn_open, "folder-open"), (self.btn_save, "save")):
-            btn.setIcon(get_icon(icon_name, color="#FFFFFF", active_color="#FFFFFF", disabled_color="#FECDD3", size=16))
-            btn.setIconSize(QSize(16, 16))
+        self.btn_models.setIcon(get_icon("hard-drive", color=fg_color, active_color=accent_color, size=16))
+        self.btn_models.setIconSize(QSize(16, 16))
+        self.action_models.setIcon(get_icon("hard-drive", color=fg_color, active_color=accent_color, size=15))
+
+        self.btn_open.setIcon(get_icon("folder-open", color=fg_color, active_color=accent_color, disabled_color=dis_color, size=15))
+        self.btn_open.setIconSize(QSize(15, 15))
+
+        self.btn_save.setIcon(get_icon("save", color="#FFFFFF", active_color="#FFFFFF", disabled_color=dis_color, size=15))
+        self.btn_save.setIconSize(QSize(15, 15))
 
         for btn, icon_name in ((self.btn_undo, "undo"), (self.btn_redo, "redo"), (self.btn_reset_orig, "reset")):
-            btn.setIcon(get_icon(icon_name, color=fg_color, active_color=accent_color, disabled_color=dis_color, size=18))
-            btn.setIconSize(QSize(18, 18))
+            btn.setIcon(get_icon(icon_name, color=fg_color, active_color=accent_color, disabled_color=dis_color, size=17))
+            btn.setIconSize(QSize(17, 17))
             btn.setText("")
 
-        for btn, icon_name in ((self.btn_zoom_out, "zoom-out"), (self.btn_zoom_in, "zoom-in")):
-            btn.setIcon(get_icon(icon_name, color=fg_color, active_color=accent_color, disabled_color=dis_color, size=16))
-            btn.setIconSize(QSize(16, 16))
-            btn.setText("")
+        for btn, icon_name, fallback in (
+            (self.btn_min, "win-min", "—"),
+            (self.btn_max, "win-max", "□"),
+            (self.btn_close, "win-close", "×"),
+        ):
+            if icon_name in LUCIDE_SVG_PATHS:
+                btn.setIcon(get_icon(icon_name, color=fg_color, active_color="#FFFFFF" if icon_name == "win-close" else fg_color, size=14))
+                btn.setIconSize(QSize(14, 14))
+                btn.setText("")
+            else:
+                btn.setText(fallback)
 
-        for btn, icon_name in ((self.btn_fit, "fit"), (self.btn_compare, "compare")):
-            btn.setIcon(get_icon(icon_name, color=fg_color, active_color=accent_color, disabled_color=dis_color, size=16))
-            btn.setIconSize(QSize(16, 16))
-
-        if is_dark:
-            self.version_badge.setStyleSheet("""
-                background-color: #334155; color: #CBD5E1; border: 1px solid #475569;
-                padding: 2px 8px; border-radius: 5px; font-size: 11px; font-weight: 600;
-            """)
-        else:
-            self.version_badge.setStyleSheet("""
-                background-color: #F1F5F9; color: #64748B; border: 1px solid #E2E8F0;
-                padding: 2px 8px; border-radius: 5px; font-size: 11px; font-weight: 600;
-            """)
+        sep_color = "rgba(255, 255, 255, 0.10)" if is_dark else "rgba(20, 23, 26, 0.12)"
+        self._history_sep.setStyleSheet(f"background-color: {sep_color}; border: none;")
+        self.version_badge.setStyleSheet("")
 
     def retranslate_ui(self):
         self.btn_open.setText(tr("btn_open"))
         self.btn_open.setToolTip(tr("tooltip_open"))
         self.btn_save.setText(tr("btn_save"))
         self.btn_save.setToolTip(tr("tooltip_save"))
-        self.btn_compare.setText(tr("btn_compare"))
-        self.btn_compare.setToolTip(tr("tooltip_compare"))
-        self.btn_fit.setText(tr("btn_zoom_fit"))
-        self.btn_fit.setToolTip(tr("tooltip_zoom_fit"))
         self.btn_theme.setToolTip(tr("tooltip_theme"))
+        self.btn_settings.setToolTip(tr("tooltip_lang"))
+        self.lang_menu.setTitle(tr("tooltip_lang"))
+        self.action_models.setText(tr("models_dialog_title"))
+        self.action_models.setToolTip(tr("tooltip_models"))
         self.btn_models.setToolTip(tr("tooltip_models"))
         self.combo_lang.setToolTip(tr("tooltip_lang"))
         self.btn_undo.setToolTip(tr("tooltip_undo"))
         self.btn_redo.setToolTip(tr("tooltip_redo"))
         self.btn_reset_orig.setToolTip(tr("tooltip_reset"))
-        self.btn_zoom_out.setToolTip(tr("tooltip_zoom_out"))
-        self.btn_zoom_in.setToolTip(tr("tooltip_zoom_in"))
-        self.btn_zoom_100.setToolTip(tr("tooltip_zoom_100"))

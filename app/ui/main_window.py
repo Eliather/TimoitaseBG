@@ -8,8 +8,8 @@ from typing import Any, Optional, Tuple
 
 import numpy as np
 from PIL import Image
-from PySide6.QtCore import Qt, Signal, Slot, QTimer
-from PySide6.QtWidgets import QHBoxLayout, QMainWindow, QMessageBox, QVBoxLayout, QWidget
+from PySide6.QtCore import QEvent, Qt, Signal, Slot, QTimer
+from PySide6.QtWidgets import QApplication, QHBoxLayout, QMainWindow, QMessageBox, QVBoxLayout, QWidget
 
 from app.config import (
     APP_DIR,
@@ -27,6 +27,7 @@ from app.i18n import get_current_language, set_language, tr
 from app.ui import media_actions
 from app.ui.canvas_widget import CanvasWidget
 from app.ui.components import SequenceBar, StatusBar, TopBar, register_shortcuts
+from app.ui.components.canvas_hud import CanvasHudBar, ToastBanner
 from app.ui.shortcuts_dialog import ShortcutsDialog
 from app.ui.toolbar import ToolSidebar
 
@@ -67,6 +68,7 @@ class MainWindow(QMainWindow):
 
         self.doc = DocumentController()
         self.ai = AICoordinator()
+        self._last_brush_ref: Optional[Image.Image] = None
 
         self.gif_timer = QTimer(self)
         self.gif_timer.timeout.connect(self._on_gif_timer_tick)
@@ -81,7 +83,7 @@ class MainWindow(QMainWindow):
         self.gpuStatusNotified.connect(self._handle_gpu_status)
         self._gpu().set_status_callback(lambda msg: self.gpuStatusNotified.emit(msg))
 
-        self._load_stylesheet()
+        self._load_stylesheet(force=False)
 
     @staticmethod
     def _sam():
@@ -104,12 +106,19 @@ class MainWindow(QMainWindow):
         else:
             self.showMaximized()
 
+    def show_toast(self, message: str, duration_ms: int = 2600) -> None:
+        """Muestra una notificación flotante breve en la parte superior del lienzo."""
+        if hasattr(self, "toast_banner") and self.toast_banner is not None:
+            self.toast_banner.show_message(message, duration_ms=duration_ms)
+
     def _set_status(self, key: str, **kwargs: Any) -> None:
-        """Asigna texto traducido a la barra de estado."""
+        """Asigna texto traducido a la barra de estado y dispara toasts en eventos clave."""
         if hasattr(self, "status_bar_widget"):
             self.status_bar_widget.set_status(key, **kwargs)
         elif hasattr(self, "lbl_status"):
             self.lbl_status.setText(tr(key, **kwargs))
+        if key in ("status_saved", "status_copied_clipboard", "status_completed"):
+            self.show_toast(tr(key, **kwargs))
 
     def _set_status_raw(self, text: str) -> None:
         """Asigna texto directo en barra de estado para mensajes externos."""
@@ -133,33 +142,41 @@ class MainWindow(QMainWindow):
 
     def retranslate_ui(self) -> None:
         """Actualiza dinámicamente los textos de toda la interfaz al cambiar de idioma."""
-        for widget_name in ("status_bar_widget", "top_bar", "sidebar", "gif_bar", "canvas"):
+        for widget_name in ("status_bar_widget", "top_bar", "canvas_hud", "sidebar", "gif_bar", "canvas"):
             widget = getattr(self, widget_name, None)
             if widget is not None and hasattr(widget, "retranslate_ui"):
                 widget.retranslate_ui()
         if hasattr(self, "canvas"):
             self.canvas.update()
+        self._reposition_canvas_overlays()
         self.update_device_badge()
 
-    def _load_stylesheet(self) -> None:
+    def _load_stylesheet(self, force: bool = True) -> None:
         self.is_dark_theme = getattr(self, "is_dark_theme", True)
-        style_file = "style.qss" if self.is_dark_theme else "style_light.qss"
-        style_path = Path(APP_DIR) / "ui" / style_file
-        if style_path.exists():
-            with open(style_path, "r", encoding="utf-8") as f:
-                content = f.read()
-            assets_path = (Path(APP_DIR) / "ui" / "assets").as_posix()
-            self.setStyleSheet(content.replace("{ASSETS_PATH}", assets_path))
+        app = QApplication.instance()
+        if force or app is None or not app.styleSheet():
+            style_file = "style.qss" if self.is_dark_theme else "style_light.qss"
+            style_path = Path(APP_DIR) / "ui" / style_file
+            if style_path.exists():
+                with open(style_path, "r", encoding="utf-8") as f:
+                    content = f.read()
+                assets_path = (Path(APP_DIR) / "ui" / "assets").as_posix()
+                qss = content.replace("{ASSETS_PATH}", assets_path)
+                if app is not None:
+                    app.setStyleSheet(qss)
+                else:
+                    self.setStyleSheet(qss)
         self._update_theme_icons()
 
     def _toggle_theme(self) -> None:
         self.is_dark_theme = not getattr(self, "is_dark_theme", True)
-        self._load_stylesheet()
+        self._load_stylesheet(force=True)
 
     def _update_theme_icons(self) -> None:
         """Aplica iconos vectoriales adaptados al contraste del tema activo."""
         for widget_name, method_name in (
             ("top_bar", "apply_theme"),
+            ("canvas_hud", "apply_theme"),
             ("status_bar_widget", "apply_theme"),
             ("sidebar", "update_theme_icons"),
             ("canvas", "update_theme"),
@@ -188,6 +205,8 @@ class MainWindow(QMainWindow):
         content_layout.setSpacing(0)
 
         canvas_container = QWidget()
+        self.canvas_container = canvas_container
+        canvas_container.installEventFilter(self)
         canvas_vbox = QVBoxLayout(canvas_container)
         canvas_vbox.setContentsMargins(0, 0, 0, 0)
         canvas_vbox.setSpacing(0)
@@ -197,12 +216,67 @@ class MainWindow(QMainWindow):
         self.gif_bar.setVisible(False)
         canvas_vbox.addWidget(self.gif_bar)
 
+        self._init_canvas_overlays(canvas_container)
+
         content_layout.addWidget(canvas_container, stretch=1)
         content_layout.addWidget(self.sidebar)
         root_layout.addWidget(main_content, stretch=1)
 
         self.status_bar = self._create_status_bar()
         root_layout.addWidget(self.status_bar)
+
+    def _init_canvas_overlays(self, container: QWidget) -> None:
+        """Crea la cápsula HUD flotante y el banner Toast sobre el contenedor del lienzo."""
+        self.canvas_hud = CanvasHudBar(container)
+        self.canvas_hud.zoomOutRequested.connect(lambda: self.canvas.set_zoom_delta(1.0 / 1.2))
+        self.canvas_hud.zoomInRequested.connect(lambda: self.canvas.set_zoom_delta(1.2))
+        self.canvas_hud.fitRequested.connect(self.canvas.fit_to_view)
+        self.canvas_hud.zoom100Requested.connect(self.canvas.reset_zoom_100)
+        self.canvas_hud.compareToggled.connect(self._on_toggle_compare)
+        self.canvas_hud.hide()
+
+        self.toast_banner = ToastBanner(container)
+
+        hud_attrs = ("btn_zoom_out", "lbl_zoom", "btn_zoom_in", "btn_fit", "btn_zoom_100", "btn_compare")
+        self._bind_widget_attrs(self.canvas_hud, hud_attrs)
+        if hasattr(self, "top_bar"):
+            for name in hud_attrs:
+                setattr(self.top_bar, name, getattr(self.canvas_hud, name))
+
+    def _reposition_canvas_overlays(self) -> None:
+        """Centra la cápsula HUD abajo y el toast arriba dentro del contenedor del lienzo."""
+        container = getattr(self, "canvas_container", None)
+        if container is None:
+            return
+        cw = container.width()
+        ch = container.height()
+        if cw <= 0 or ch <= 0:
+            return
+
+        if hasattr(self, "canvas_hud") and self.canvas_hud is not None:
+            self.canvas_hud.adjustSize()
+            hud_w = self.canvas_hud.width()
+            hud_h = self.canvas_hud.height()
+            bottom_offset = 16
+            if hasattr(self, "gif_bar") and self.gif_bar.isVisible():
+                bottom_offset += self.gif_bar.height() + 6
+            hx = max(12, (cw - hud_w) // 2)
+            hy = max(12, ch - hud_h - bottom_offset)
+            self.canvas_hud.move(hx, hy)
+            if self.canvas_hud.isVisible():
+                self.canvas_hud.raise_()
+
+        if hasattr(self, "toast_banner") and self.toast_banner is not None:
+            self.toast_banner.reposition()
+
+    def eventFilter(self, watched: Any, event: Any) -> bool:
+        if watched is getattr(self, "canvas_container", None) and event.type() == QEvent.Type.Resize:
+            self._reposition_canvas_overlays()
+        return super().eventFilter(watched, event)
+
+    def resizeEvent(self, event: Any) -> None:
+        super().resizeEvent(event)
+        self._reposition_canvas_overlays()
 
     def _init_canvas_and_sidebar(self) -> None:
         """Instancia y conecta señales entre CanvasWidget, ToolSidebar y MainWindow."""
@@ -274,9 +348,8 @@ class MainWindow(QMainWindow):
         self._bind_widget_attrs(
             top_bar,
             (
-                "version_badge", "btn_theme", "combo_lang", "btn_open", "btn_save",
-                "btn_undo", "btn_redo", "btn_reset_orig", "btn_zoom_out", "lbl_zoom",
-                "btn_zoom_in", "btn_fit", "btn_zoom_100", "btn_compare",
+                "version_badge", "btn_theme", "btn_settings", "btn_models", "combo_lang",
+                "btn_open", "btn_save", "btn_undo", "btn_redo", "btn_reset_orig",
                 "btn_min", "btn_max", "btn_close",
             ),
         )
@@ -339,6 +412,14 @@ class MainWindow(QMainWindow):
         )
         return bar
 
+    def _sync_canvas_brush_reference(self) -> None:
+        """Actualiza original_qimage en el canvas solo si la referencia PIL cambió."""
+        ref = self.image_state.current_brush_reference
+        if ref is self._last_brush_ref:
+            return
+        self._last_brush_ref = ref
+        self.canvas.set_original_image(ref)
+
     def _navigate_gif_frame(self, new_index: int) -> None:
         """Navega a un fotograma específico y conmuta el ImageState activo."""
         if not self.sequence_session or self.sequence_session.total_frames <= 0:
@@ -349,7 +430,7 @@ class MainWindow(QMainWindow):
         if curr_img:
             self.canvas.set_image(curr_img, reset_zoom=False)
             if not is_playing:
-                self.canvas.set_original_image(self.image_state.current_brush_reference)
+                self._sync_canvas_brush_reference()
                 self._update_image_info_label(curr_img)
         if not is_playing:
             self._update_action_states()
@@ -365,7 +446,7 @@ class MainWindow(QMainWindow):
             self.gif_bar.set_playing(False)
             curr_img = self.image_state.current_image
             if curr_img:
-                self.canvas.set_original_image(self.image_state.current_brush_reference)
+                self._sync_canvas_brush_reference()
                 self._update_image_info_label(curr_img)
             self._update_action_states()
         else:
@@ -459,13 +540,17 @@ class MainWindow(QMainWindow):
         self.canvas.clear_selection()
         if loaded_img is not None:
             self.canvas.set_image(loaded_img, reset_zoom=reset_zoom)
-            self.canvas.set_original_image(self.image_state.current_brush_reference)
+            self._sync_canvas_brush_reference()
             self._update_image_info_label(loaded_img)
         self._update_action_states()
 
     def load_new_pil_image(self, pil_img: Image.Image, source_name: str, filepath: Optional[Path] = None) -> None:
         """Carga una nueva imagen PIL en el estado inmutable y actualiza el workspace."""
-        loaded = self.doc.load_pil_image(pil_img, filepath=filepath, clear_seq=False)
+        if self.gif_timer.isActive():
+            self.gif_timer.stop()
+        if hasattr(self, "gif_bar"):
+            self.gif_bar.setVisible(False)
+        loaded = self.doc.load_pil_image(pil_img, filepath=filepath, clear_seq=True)
         if loaded is None:
             return
         self._reset_workspace_ui(loaded, reset_zoom=True)
@@ -506,7 +591,7 @@ class MainWindow(QMainWindow):
             self._navigate_gif_frame(self.sequence_session.current_index)
         else:
             self.canvas.set_image(out_img, reset_zoom=reset_zoom)
-            self.canvas.set_original_image(self.image_state.current_brush_reference)
+            self._sync_canvas_brush_reference()
         self._set_status(status_key, **status_kwargs)
         self._update_image_info_label(out_img)
         self._update_action_states()
@@ -572,6 +657,11 @@ class MainWindow(QMainWindow):
         for btn in (self.btn_zoom_in, self.btn_zoom_out, self.btn_fit, self.btn_zoom_100):
             btn.setEnabled(has_img)
 
+        if hasattr(self, "canvas_hud") and self.canvas_hud is not None:
+            self.canvas_hud.setVisible(has_img)
+            if has_img:
+                self._reposition_canvas_overlays()
+
         can_compare = has_img and self.image_state._current_index > 0
         self.btn_compare.setEnabled(can_compare)
         if not can_compare and self.canvas.comparison_mode:
@@ -582,9 +672,15 @@ class MainWindow(QMainWindow):
 
         self.sidebar.btn_remove_bg.setEnabled(has_img)
         self.sidebar.btn_restore.setEnabled(has_img)
+        has_prev_fn = getattr(self.image_state, "has_previous_transparent_state", None)
+        can_restore = (
+            bool(has_prev_fn())
+            if callable(has_prev_fn)
+            else (self.image_state.get_last_transparent_state() is not None)
+        )
         self.sidebar.set_transparency_available(
             has_transparency=self.image_state.has_transparency,
-            can_restore=self.image_state.get_last_transparent_state() is not None,
+            can_restore=can_restore,
         )
 
     def _update_image_info_label(self, img: Image.Image) -> None:
@@ -659,7 +755,7 @@ class MainWindow(QMainWindow):
             enable_clothing_protection = getattr(self.sidebar, "is_clothing_protection_enabled", lambda: True)()
 
         if self.doc.has_sequence:
-            total = len(self.sequence_session.get_all_current_frames())
+            total = self.sequence_session.total_frames
             media_lbl = "Video" if getattr(self.sequence_session, "is_video", False) else "GIF"
             frames, media_lbl = self._prepare_sequence_run(f"Procesando {media_lbl} ({total} frames) con {model_id}")
             self.ai.start_remove_bg_sequence(
@@ -702,7 +798,7 @@ class MainWindow(QMainWindow):
         desc = desc_map.get(scale_mode, f"Escalado {scale_mode}")
 
         if self.doc.has_sequence:
-            total = len(self.sequence_session.get_all_current_frames())
+            total = self.sequence_session.total_frames
             frames, media_lbl = self._prepare_sequence_run(f"{desc} ({total} frames)")
             self.ai.start_restore_sequence(
                 frames=frames,
@@ -879,6 +975,8 @@ class MainWindow(QMainWindow):
             self.lbl_device.style().unpolish(self.lbl_device)
             self.lbl_device.style().polish(self.lbl_device)
         if hasattr(self, "sidebar"):
+            if is_gpu and not is_blocked and hasattr(self.sidebar, "set_gpu_label"):
+                self.sidebar.set_gpu_label(text)
             self.sidebar.set_device_mode(is_gpu=is_gpu, is_blocked=is_blocked)
 
     def update_device_badge(self) -> None:
@@ -1048,7 +1146,8 @@ class MainWindow(QMainWindow):
                 try:
                     with Image.open(p) as im:
                         bg_img = im.convert("RGBA")
-                except Exception:
+                except Exception as exc:
+                    logger.warning("No se pudo cargar imagen de fondo '%s': %s", p, exc)
                     bg_img = None
         out = self.doc.apply_effects(
             sticker_width=int(cfg.get("sticker_width", 0)),
@@ -1172,6 +1271,7 @@ class MainWindow(QMainWindow):
         self.ai.shutdown_workers(timeout_ms=1000)
         try:
             super().closeEvent(event)
-        except Exception:
+        except Exception as exc:
+            logger.debug("Excepción al cerrar ventana principal: %s", exc)
             if hasattr(event, "accept"):
                 event.accept()

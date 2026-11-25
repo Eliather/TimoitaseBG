@@ -10,13 +10,14 @@ from PySide6.QtWidgets import QWidget, QScrollBar
 from PySide6.QtGui import (
     QPainter,
     QImage,
+    QPixmap,
     QWheelEvent,
     QMouseEvent,
     QPaintEvent,
 )
 
 from app.i18n import tr
-from app.core.image_utils import qimage_to_pil, create_checkerboard_pattern
+from app.core.image_utils import pil_to_qimage, qimage_to_pil, create_checkerboard_pattern
 from app.core import selection as sel_ops
 from app.config import DEFAULT_BRUSH_SIZE, MIN_BRUSH_SIZE, MAX_BRUSH_SIZE, CHECKER_SIZE
 from app.ui.canvas import (
@@ -29,6 +30,7 @@ from app.ui.canvas import (
     draw_comparison_divider,
     ensure_rgba_qimage,
 )
+from app.ui.canvas.renderer import build_hidpi_checkerboard, build_hidpi_dot_grid
 
 logger = logging.getLogger("TimoitaseBG.CanvasWidget")
 
@@ -122,7 +124,19 @@ class CanvasWidget(QWidget):
         self._ants_timer.setInterval(40)  # 25 FPS reales
         self._ants_timer.timeout.connect(self._advance_marching_ants)
 
-        self.checker_pixmap = create_checkerboard_pattern(size=CHECKER_SIZE)
+        self._is_dark_theme: bool = True
+        self._checker_dpr: float = 0.0
+        self.checker_pixmap: QPixmap = QPixmap()
+        self.dot_grid_pixmap: QPixmap = QPixmap()
+        self._rebuild_checker_pixmap()
+
+        # Caché de QPixmap del lienzo (evita reescalar QImage en CPU a 25 FPS en marching ants)
+        self._image_version: int = 0
+        self._before_version: int = 0
+        self._cached_pixmap: Optional[QPixmap] = None
+        self._cached_pixmap_key: Optional[tuple] = None
+        self._cached_before_pixmap: Optional[QPixmap] = None
+        self._cached_before_key: Optional[tuple] = None
 
         # Modo Comparación (Antes / Después con cortina deslizante)
         self.comparison_mode: bool = False
@@ -169,15 +183,81 @@ class CanvasWidget(QWidget):
             self.current_qimage.width(), self.current_qimage.height()
         )
 
+    def _invalidate_image_cache(self) -> None:
+        self._image_version += 1
+        self._cached_pixmap = None
+        self._cached_pixmap_key = None
+
+    def _invalidate_before_cache(self) -> None:
+        self._before_version += 1
+        self._cached_before_pixmap = None
+        self._cached_before_key = None
+
+    def _rebuild_checker_pixmap(self) -> None:
+        dpr = max(1.0, float(self.devicePixelRatioF() or 1.0))
+        self._checker_dpr = dpr
+        is_dark = getattr(self, "_is_dark_theme", True)
+        self.checker_pixmap = build_hidpi_checkerboard(
+            size=CHECKER_SIZE,
+            dpr=dpr,
+            is_dark=is_dark,
+        )
+        self.dot_grid_pixmap = build_hidpi_dot_grid(
+            spacing=20,
+            dpr=dpr,
+            is_dark=is_dark,
+        )
+
+    def _get_cached_layer_pixmap(
+        self,
+        qimg: Optional[QImage],
+        version: int,
+        img_rect: QRectF,
+        is_before: bool = False,
+    ) -> Optional[QPixmap]:
+        """Devuelve un QPixmap cacheado para la imagen/zoom actual, evitando reescalado en CPU a 25 FPS."""
+        if qimg is None or qimg.isNull():
+            return None
+        dpr = max(1.0, float(self.devicePixelRatioF() or 1.0))
+        target_w = max(1, int(round(img_rect.width() * dpr)))
+        target_h = max(1, int(round(img_rect.height() * dpr)))
+        downscale = target_w < qimg.width() and target_h < qimg.height()
+        key = (version, target_w, target_h, dpr) if downscale else (version, 0, 0, 1.0)
+
+        cached_pix = self._cached_before_pixmap if is_before else self._cached_pixmap
+        cached_key = self._cached_before_key if is_before else self._cached_pixmap_key
+        if cached_pix is not None and cached_key == key:
+            return cached_pix
+
+        if downscale:
+            scaled = qimg.scaled(
+                target_w,
+                target_h,
+                Qt.AspectRatioMode.IgnoreAspectRatio,
+                Qt.TransformationMode.SmoothTransformation,
+            )
+            pix = QPixmap.fromImage(scaled)
+        else:
+            pix = QPixmap.fromImage(qimg)
+
+        if is_before:
+            self._cached_before_pixmap = pix
+            self._cached_before_key = key
+        else:
+            self._cached_pixmap = pix
+            self._cached_pixmap_key = key
+        return pix
+
     def set_comparison_mode(self, enabled: bool, before_image: Optional[Image.Image] = None):
         """Activa o desactiva la vista comparativa antes/después con cortina."""
         self.comparison_mode = enabled
         if enabled and before_image is not None:
-            self.before_qimage = pil_to_qimage(before_image)
+            self.before_qimage = ensure_rgba_qimage(before_image)
             self.comparison_split_ratio = 0.5
         else:
             self.before_qimage = None
             self.comparison_mode = False
+        self._invalidate_before_cache()
         self.is_dragging_split = False
         self.update()
 
@@ -194,6 +274,7 @@ class CanvasWidget(QWidget):
         """Establece la imagen activa y ajusta o preserva la máscara."""
         if pil_img is None:
             self.current_qimage = None
+            self._invalidate_image_cache()
             self.clear_selection()
             if hasattr(self, "drop_zone"):
                 self.drop_zone.show()
@@ -209,6 +290,7 @@ class CanvasWidget(QWidget):
         prev_h = self.current_qimage.height() if self.current_qimage else 0
 
         self.current_qimage = ensure_rgba_qimage(pil_img)
+        self._invalidate_image_cache()
         img_w = self.current_qimage.width()
         img_h = self.current_qimage.height()
 
@@ -301,7 +383,7 @@ class CanvasWidget(QWidget):
         if br is not None:
             tl = self.image_to_widget_coords(br.topLeft())
             br_pt = self.image_to_widget_coords(br.bottomRight())
-            ants_rect = QRectF(tl, br_pt).normalized().toAlignedRect().adjusted(-4, -4, 4, 4)
+            ants_rect = QRectF(tl, br_pt).normalized().toAlignedRect().adjusted(-6, -6, 6, 6)
             self.update(ants_rect)
         else:
             self.update()
@@ -330,6 +412,7 @@ class CanvasWidget(QWidget):
             if new_qimg is None:
                 return False
             self.current_qimage = new_qimg
+            self._invalidate_image_cache()
             self.imageEditedDirectly.emit(tr("history_delete_selection"))
             self.update()
             return True
@@ -446,7 +529,7 @@ class CanvasWidget(QWidget):
         self.comparison_split_ratio = max(0.01, min(0.99, ratio))
 
     def _brush_cursor_rect(self, center: QPoint) -> QRect:
-        r = int((self.brush_size * self.zoom_factor) / 2.0) + 6
+        r = int((self.brush_size * self.zoom_factor) / 2.0) + 8
         return QRect(center.x() - r, center.y() - r, r * 2, r * 2)
 
     def wheelEvent(self, event: QWheelEvent):
@@ -577,19 +660,20 @@ class CanvasWidget(QWidget):
                     .united(self._brush_cursor_rect(w_p2))
                     .united(self._brush_cursor_rect(prev_cursor_pos))
                     .united(self._brush_cursor_rect(self.mouse_cursor_pos))
+                    .adjusted(-2, -2, 2, 2)
                 )
                 self.update(dirty_rect)
             else:
                 self.last_draw_point = img_pt
-                self.update(self._brush_cursor_rect(self.mouse_cursor_pos))
+                self.update(self._brush_cursor_rect(self.mouse_cursor_pos).adjusted(-2, -2, 2, 2))
             event.accept()
             return
 
         if self.brush_mode and not self.wand_mode:
             self.update(
-                self._brush_cursor_rect(prev_cursor_pos).united(
-                    self._brush_cursor_rect(self.mouse_cursor_pos)
-                )
+                self._brush_cursor_rect(prev_cursor_pos)
+                .united(self._brush_cursor_rect(self.mouse_cursor_pos))
+                .adjusted(-2, -2, 2, 2)
             )
         super().mouseMoveEvent(event)
 
@@ -659,11 +743,16 @@ class CanvasWidget(QWidget):
         if mime.hasUrls():
             urls = mime.urls()
             if urls:
-                path = urls[0].toLocalFile()
-                if path:
-                    self.fileDropped.emit(path)
-                    event.acceptProposedAction()
-                    return
+                url = urls[0]
+                if url.isLocalFile() and not url.host():
+                    path = url.toLocalFile()
+                    if path and not str(path).startswith(("\\\\", "//")):
+                        self.fileDropped.emit(path)
+                        event.acceptProposedAction()
+                        return
+                logger.warning("URL remota o ruta UNC rechazada en dropEvent del lienzo.")
+                event.ignore()
+                return
         if mime.hasImage():
             img_data = mime.imageData()
             qimg = img_data if isinstance(img_data, QImage) else QImage(img_data)
@@ -705,7 +794,7 @@ class CanvasWidget(QWidget):
     # Trazado y Varita
     # -------------------------------------------------------------
     def _draw_brush_stroke(self, start_pt: QPointF, end_pt: QPointF):
-        self._brush_engine.draw_stroke(
+        if self._brush_engine.draw_stroke(
             target_qimage=self.current_qimage,
             original_qimage=self.original_qimage,
             start_pt=start_pt,
@@ -715,7 +804,8 @@ class CanvasWidget(QWidget):
             brush_hardness=self.brush_hardness,
             eraser_mode=self.eraser_mode,
             active_selection=getattr(self, "active_selection", None),
-        )
+        ):
+            self._invalidate_image_cache()
 
     def _effective_selection_mode(self, modifiers) -> str:
         return self._selection_tool.effective_mode(modifiers)
@@ -762,6 +852,13 @@ class CanvasWidget(QWidget):
         painter.setRenderHint(QPainter.RenderHint.Antialiasing, True)
         painter.setRenderHint(QPainter.RenderHint.SmoothPixmapTransform, True)
 
+        dpr = max(1.0, float(self.devicePixelRatioF() or 1.0))
+        if abs(dpr - self._checker_dpr) > 1e-3:
+            self._rebuild_checker_pixmap()
+
+        if not self.dot_grid_pixmap.isNull():
+            painter.drawTiledPixmap(self.rect(), self.dot_grid_pixmap)
+
         if not self.current_qimage:
             if hasattr(self, "drop_zone"):
                 if not self.drop_zone.isVisible():
@@ -770,6 +867,16 @@ class CanvasWidget(QWidget):
             return
 
         img_rect = self.get_image_rect_in_widget()
+        cached_pix = self._get_cached_layer_pixmap(
+            self.current_qimage, self._image_version, img_rect, is_before=False
+        )
+        cached_before = (
+            self._get_cached_layer_pixmap(
+                self.before_qimage, self._before_version, img_rect, is_before=True
+            )
+            if self.comparison_mode and self.before_qimage is not None
+            else None
+        )
         draw_canvas_scene(
             painter=painter,
             img_rect=img_rect,
@@ -781,6 +888,8 @@ class CanvasWidget(QWidget):
             before_qimage=self.before_qimage,
             comparison_split_ratio=self.comparison_split_ratio,
             is_dark=getattr(self, "_is_dark_theme", True),
+            cached_pixmap=cached_pix,
+            cached_before_pixmap=cached_before,
         )
 
         if not self.comparison_mode:
@@ -815,6 +924,7 @@ class CanvasWidget(QWidget):
 
     def update_theme(self, is_dark: bool):
         self._is_dark_theme = is_dark
+        self._rebuild_checker_pixmap()
         if hasattr(self, "drop_zone"):
             self.drop_zone.update_theme(is_dark)
         style = self._scrollbar_style(is_dark)

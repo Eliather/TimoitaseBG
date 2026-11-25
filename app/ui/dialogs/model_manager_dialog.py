@@ -115,8 +115,8 @@ class ModelManagerDialog(QDialog):
         self.lbl_total_size.setText(tr("models_total_size", mb=f"{total_mb:.1f}"))
 
         busy = self._worker is not None and self._worker.isRunning()
-        fg = "#EAEAEA" if self.is_dark_theme else "#292524"
-        accent = "#FF4F79"
+        fg = "#F2F4F7" if self.is_dark_theme else "#14171A"
+        accent = "#2E7CF6" if self.is_dark_theme else "#1D63DC"
 
         for entry in inventory:
             fname = entry["filename"]

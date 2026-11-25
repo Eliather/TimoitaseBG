@@ -202,6 +202,50 @@ def test_package_release_msix_and_appimage_staging(tmp_path):
     assert (appdir / "usr" / "bin" / "TimoitaseBG").exists()
 
 
+def test_prepare_inno_script(tmp_path):
+    """Verifica que prepare_inno_script() genere un .iss válido con versión, instalador x64 y ejecutable."""
+    from scripts.package_release import prepare_inno_script
+
+    fake_dist = tmp_path / "dist" / "TimoitaseBG"
+    fake_dist.mkdir(parents=True, exist_ok=True)
+    (fake_dist / "TimoitaseBG.exe").write_bytes(b"MZ")
+
+    fake_icon = tmp_path / "build" / "app_icon.ico"
+    fake_icon.parent.mkdir(parents=True, exist_ok=True)
+    fake_icon.write_bytes(b"\x00\x00\x01\x00")
+
+    fake_license = tmp_path / "LICENSE"
+    fake_license.write_text("GNU AGPLv3", encoding="utf-8")
+
+    out_iss = tmp_path / "build" / "TimoitaseBG.iss"
+    out_dir = tmp_path / "release-out"
+
+    result = prepare_inno_script(
+        dist_dir=fake_dist,
+        output_iss=out_iss,
+        output_dir=out_dir,
+        icon_path=fake_icon,
+        license_path=fake_license,
+    )
+    assert result == out_iss
+    assert out_iss.is_file()
+    assert out_dir.is_dir()
+
+    iss_text = out_iss.read_text(encoding="utf-8")
+    assert "1.3.2" in iss_text
+    assert "TimoitaseBG-Setup-Windows-x64" in iss_text
+    assert "TimoitaseBG.exe" in iss_text
+    assert "PrivilegesRequired=lowest" in iss_text
+    assert "PrivilegesRequiredOverridesAllowed=dialog" in iss_text
+    assert "Compression=lzma2/max" in iss_text
+    assert "ArchitecturesAllowed=x64compatible" in iss_text
+    assert "ArchitecturesInstallIn64BitMode=x64compatible" in iss_text
+    assert "SetupIconFile=" in iss_text
+    assert "LicenseFile=" in iss_text
+    assert 'MessagesFile: "compiler:Default.isl"' in iss_text
+    assert 'MessagesFile: "compiler:Languages\\Spanish.isl"' in iss_text
+
+
 def test_configure_ssl_certificates_repairs_invalid_linux_runner_path():
     """
     Verifica que configure_ssl_certificates() reemplace rutas de compilación inexistentes
@@ -271,7 +315,16 @@ def test_model_fetcher_ssl_context_and_fallback_on_cert_error(tmp_path):
     with patch.object(mf, "MODELS_DIR", tmp_path), \
          patch.dict(mf.MODEL_SHA256, {"inspyrenet.onnx": expected_sha}), \
          patch("urllib.request.urlopen", side_effect=fake_urlopen):
-        downloaded_path = mf.ensure_model_file("inspyrenet.onnx")
+        # 1. Por defecto (allow_insecure_fallback=False) debe fallar cerrado sin degradar TLS
+        with pytest.raises(urllib.error.URLError):
+            mf.ensure_model_file("inspyrenet.onnx")
+        assert len(call_contexts) == 1
+        assert isinstance(call_contexts[0], ssl.SSLContext)
+        assert not (tmp_path / "inspyrenet.onnx").exists()
+
+        # 2. Con allow_insecure_fallback=True realiza el fallback explícito verificado por SHA-256
+        call_contexts.clear()
+        downloaded_path = mf.ensure_model_file("inspyrenet.onnx", allow_insecure_fallback=True)
         assert downloaded_path == tmp_path / "inspyrenet.onnx"
         assert downloaded_path.exists()
         assert downloaded_path.stat().st_size == len(dummy_payload)

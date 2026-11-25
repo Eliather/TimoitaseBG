@@ -1,7 +1,9 @@
 """
 TimoitaseBG - Contenedor principal del panel lateral derecho (Sidebar).
-Orquesta la cabecera fija, el rail de pestañas y los subpaneles modulares en app/ui/panels/.
+Layout de 2 columnas: Inspector limpio (336 px) a la izquierda + Rail vertical de iconos (58 px) a la derecha.
 """
+import logging
+import re
 from PySide6.QtCore import Qt, Signal, QSize
 from PySide6.QtWidgets import (
     QWidget,
@@ -33,14 +35,48 @@ __all__ = [
     "ToolSidebar",
 ]
 
+_INSPECTOR_WIDTH = 356
+_RAIL_WIDTH = 58
+
+
+def _format_short_gpu_name(raw_name: str) -> str:
+    """Reduce un nombre de GPU largo a una etiqueta compacta (p. ej. 'RTX 5050')."""
+    if not raw_name:
+        return "GPU"
+    clean = raw_name.strip()
+    if clean.upper().startswith("GPU"):
+        match = re.search(r"\(([^)]+)\)", clean)
+        if match:
+            clean = match.group(1).strip()
+        else:
+            clean = re.sub(r"^GPU\s*[:\-–]?\s*", "", clean, flags=re.IGNORECASE).strip()
+    clean = re.sub(r"^(?:CUDA|DirectML|ROCm)\s*[:\-–]\s*", "", clean, flags=re.IGNORECASE).strip()
+    for token in (
+        "NVIDIA ",
+        "GeForce ",
+        "AMD ",
+        "Radeon ",
+        "Intel(R) ",
+        "Intel ",
+        " Laptop GPU",
+        " Graphics",
+        "Advanced Micro Devices, Inc. ",
+    ):
+        clean = clean.replace(token, "")
+    clean = " ".join(clean.split())
+    if not clean or clean.upper() == "CPU":
+        return "GPU"
+    return clean[:14].strip() if len(clean) > 14 else clean
+
 
 class ToolSidebar(QWidget):
     """
-    Panel lateral derecho con selector de herramientas estilo rail:
-    1. Quitar Fondo
-    2. Restaurar
-    3. Pincel Mágico
-    4. Lotes (Batch)
+    Panel lateral derecho con inspector scrolleable y rail vertical de iconos:
+    0. Quitar Fondo
+    1. Escalar / Restaurar
+    2. Pincel Mágico
+    3. Lotes (Batch)
+    4. Estudio Creativo
     """
 
     removeBgRequested = Signal(str, bool)
@@ -77,26 +113,42 @@ class ToolSidebar(QWidget):
     cropModeToggled = Signal(bool, object)
     cropApplyRequested = Signal()
 
+    _TAB_KEYS = (
+        "sidebar_tab_bg",
+        "sidebar_tab_restore",
+        "sidebar_tab_brush",
+        "sidebar_tab_batch",
+        "sidebar_tab_effects",
+    )
+
     def __init__(self, parent=None):
         super().__init__(parent)
         self.setObjectName("SidePanel")
-        self.setFixedWidth(380)
+        self.setFixedWidth(_INSPECTOR_WIDTH + _RAIL_WIDTH)
         self.is_dark_theme: bool = True
+        self._gpu_short_label: str = "GPU"
         self._setup_ui()
         self._init_accel_state()
 
     def _setup_ui(self):
-        main_layout = QVBoxLayout(self)
-        main_layout.setContentsMargins(0, 0, 0, 0)
-        main_layout.setSpacing(0)
+        root_layout = QHBoxLayout(self)
+        root_layout.setContentsMargins(0, 0, 0, 0)
+        root_layout.setSpacing(0)
+
+        # Columna izquierda: inspector (cabecera + área scrolleable)
+        self.inspector_column = QWidget(self)
+        self.inspector_column.setObjectName("inspector_column")
+        self.inspector_column.setFixedWidth(_INSPECTOR_WIDTH)
+        inspector_layout = QVBoxLayout(self.inspector_column)
+        inspector_layout.setContentsMargins(0, 0, 0, 0)
+        inspector_layout.setSpacing(0)
 
         # Cabecera fija superior
-        self.sidebar_header = QWidget()
+        self.sidebar_header = QWidget(self.inspector_column)
         self.sidebar_header.setObjectName("sidebar_header")
-        self.sidebar_header.setStyleSheet("background: transparent;")
         self.sidebar_header.setSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Fixed)
         header_layout = QVBoxLayout(self.sidebar_header)
-        header_layout.setContentsMargins(16, 14, 16, 6)
+        header_layout.setContentsMargins(16, 14, 14, 10)
         header_layout.setSpacing(4)
 
         header_top_row = QHBoxLayout()
@@ -107,55 +159,28 @@ class ToolSidebar(QWidget):
         text_layout.setContentsMargins(0, 0, 0, 0)
         text_layout.setSpacing(2)
 
-        self._title_label = QLabel(tr("sidebar_title"))
+        self._title_label = QLabel(tr(self._TAB_KEYS[0]))
         self._title_label.setObjectName("SectionTitle")
         self._title_label.setStyleSheet("background: transparent;")
         self._subtitle_label = QLabel(tr("sidebar_subtitle"))
         self._subtitle_label.setObjectName("SubTitle")
+        self._subtitle_label.setWordWrap(True)
         self._subtitle_label.setStyleSheet("background: transparent;")
         text_layout.addWidget(self._title_label)
         text_layout.addWidget(self._subtitle_label)
-        header_top_row.addLayout(text_layout)
-        header_top_row.addStretch()
+        header_top_row.addLayout(text_layout, stretch=1)
 
         self.gpu_toggle = GpuToggle(self)
+        self.gpu_toggle.setSizePolicy(QSizePolicy.Policy.Fixed, QSizePolicy.Policy.Fixed)
         self.gpu_toggle.toggled.connect(self.deviceModeChanged.emit)
-        header_top_row.addWidget(self.gpu_toggle, alignment=Qt.AlignmentFlag.AlignVCenter)
+        self.gpu_switch = self.gpu_toggle
+        header_top_row.addWidget(self.gpu_toggle, alignment=Qt.AlignmentFlag.AlignTop)
 
         header_layout.addLayout(header_top_row)
-        main_layout.addWidget(self.sidebar_header)
-
-        # Rail de pestañas fijo
-        self.tool_tabs_row = QWidget()
-        self.tool_tabs_row.setObjectName("tool_tabs_row")
-        self.tool_tabs_row.setStyleSheet("background: transparent;")
-        self.tool_tabs_row.setSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Fixed)
-        tabs_layout = QHBoxLayout(self.tool_tabs_row)
-        tabs_layout.setContentsMargins(16, 2, 16, 8)
-        tabs_layout.setSpacing(6)
-
-        self.rail_group = QButtonGroup(self)
-        self.rail_group.setExclusive(True)
-
-        self.btn_rail_bg = self._make_rail_tab("sidebar_tab_bg", 0, checked=True)
-        self.btn_rail_restore = self._make_rail_tab("sidebar_tab_restore", 1)
-        self.btn_rail_brush = self._make_rail_tab("sidebar_tab_brush", 2)
-        self.btn_rail_batch = self._make_rail_tab("sidebar_tab_batch", 3)
-        self.btn_rail_effects = self._make_rail_tab("sidebar_tab_effects", 4)
-
-        for btn in (
-            self.btn_rail_bg,
-            self.btn_rail_restore,
-            self.btn_rail_brush,
-            self.btn_rail_batch,
-            self.btn_rail_effects,
-        ):
-            tabs_layout.addWidget(btn)
-
-        main_layout.addWidget(self.tool_tabs_row)
+        inspector_layout.addWidget(self.sidebar_header)
 
         # Área scrolleable de paneles
-        self.scroll_area = QScrollArea()
+        self.scroll_area = QScrollArea(self.inspector_column)
         self.scroll_area.setObjectName("toolScrollArea")
         self.scroll_area.setWidgetResizable(True)
         self.scroll_area.setFrameShape(QFrame.Shape.NoFrame)
@@ -165,9 +190,9 @@ class ToolSidebar(QWidget):
 
         self.scroll_content = QWidget()
         self.scroll_content.setObjectName("scroll_content")
-        self.scroll_content.setMaximumWidth(380)
+        self.scroll_content.setMaximumWidth(_INSPECTOR_WIDTH)
         scroll_layout = QVBoxLayout(self.scroll_content)
-        scroll_layout.setContentsMargins(16, 16, 20, 16)
+        scroll_layout.setContentsMargins(14, 10, 16, 16)
         scroll_layout.setSpacing(12)
 
         self.stack = AutoResizingStackedWidget()
@@ -191,18 +216,53 @@ class ToolSidebar(QWidget):
 
         scroll_layout.addWidget(self.stack)
         self.scroll_area.setWidget(self.scroll_content)
-        main_layout.addWidget(self.scroll_area, stretch=1)
+        inspector_layout.addWidget(self.scroll_area, stretch=1)
+
+        root_layout.addWidget(self.inspector_column)
+
+        # Columna derecha exterior: Rail vertical de iconos (#ToolRail)
+        self.tool_rail = QFrame(self)
+        self.tool_rail.setObjectName("ToolRail")
+        self.tool_rail.setFixedWidth(_RAIL_WIDTH)
+        self.tool_tabs_row = self.tool_rail
+        rail_layout = QVBoxLayout(self.tool_rail)
+        rail_layout.setContentsMargins(7, 12, 7, 12)
+        rail_layout.setSpacing(6)
+
+        self.rail_group = QButtonGroup(self)
+        self.rail_group.setExclusive(True)
+
+        self.btn_rail_bg = self._make_rail_tab("sidebar_tab_bg", 0, checked=True)
+        self.btn_rail_restore = self._make_rail_tab("sidebar_tab_restore", 1)
+        self.btn_rail_brush = self._make_rail_tab("sidebar_tab_brush", 2)
+        self.btn_rail_batch = self._make_rail_tab("sidebar_tab_batch", 3)
+        self.btn_rail_effects = self._make_rail_tab("sidebar_tab_effects", 4)
+
+        self.tab_buttons = [
+            self.btn_rail_bg,
+            self.btn_rail_restore,
+            self.btn_rail_brush,
+            self.btn_rail_batch,
+            self.btn_rail_effects,
+        ]
+        for btn in self.tab_buttons:
+            rail_layout.addWidget(btn, alignment=Qt.AlignmentFlag.AlignHCenter)
+        rail_layout.addStretch()
+
+        root_layout.addWidget(self.tool_rail)
 
         self._connect_panel_signals()
         self.rail_group.idClicked.connect(self._on_rail_clicked)
         self.update_theme_icons(is_dark=True)
 
     def _make_rail_tab(self, label_key: str, idx: int, checked: bool = False) -> QPushButton:
-        btn = QPushButton(tr(label_key))
-        btn.setObjectName("ToolTab")
+        btn = QPushButton("")
+        btn.setObjectName("RailTabBtn")
         btn.setCheckable(True)
         btn.setChecked(checked)
-        btn.setFixedHeight(44)
+        btn.setFixedSize(44, 44)
+        btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        btn.setToolTip(tr(label_key))
         self.rail_group.addButton(btn, idx)
         return btn
 
@@ -246,6 +306,8 @@ class ToolSidebar(QWidget):
     def _on_rail_clicked(self, index: int):
         self.stack.setCurrentIndex(index)
         self.scroll_area.verticalScrollBar().setValue(0)
+        if 0 <= index < len(self._TAB_KEYS):
+            self._title_label.setText(tr(self._TAB_KEYS[index]))
         if index != 4:
             self.panel_effects.reset_crop_toggle()
             self.cropModeToggled.emit(False, None)
@@ -262,9 +324,10 @@ class ToolSidebar(QWidget):
         """Aplica y refresca iconos vectoriales y temas en cabecera, rail y subpaneles."""
         self.is_dark_theme = is_dark
         self.gpu_toggle.set_dark_theme(is_dark)
+        self._apply_gpu_short_label()
 
-        accent_color = "#FF4F79"
-        sub_color = "#999999" if is_dark else "#78716C"
+        accent_color = "#2E7CF6" if is_dark else "#1D63DC"
+        sub_color = "#9BA3AE" if is_dark else "#555E6B"
 
         for btn, icon_name in (
             (self.btn_rail_bg, "sparkles"),
@@ -273,21 +336,26 @@ class ToolSidebar(QWidget):
             (self.btn_rail_batch, "folder"),
             (self.btn_rail_effects, "sliders"),
         ):
-            btn.setIcon(get_icon(icon_name, color=sub_color, active_color=accent_color, size=18))
-            btn.setIconSize(QSize(18, 18))
+            btn.setIcon(get_icon(icon_name, color=sub_color, active_color=accent_color, size=20))
+            btn.setIconSize(QSize(20, 20))
+            btn.setText("")
 
         for panel in self._panels:
             panel.apply_theme(is_dark)
 
+    def update_icons(self, is_dark: bool = True):
+        """Alias compatible para actualizar los iconos según el tema."""
+        self.update_theme_icons(is_dark=is_dark)
+
     def retranslate_ui(self):
         """Actualiza etiquetas, combos y tooltips de la barra lateral y sus subpaneles."""
-        self._title_label.setText(tr("sidebar_title"))
+        idx = self.stack.currentIndex()
+        title_key = self._TAB_KEYS[idx] if 0 <= idx < len(self._TAB_KEYS) else "sidebar_title"
+        self._title_label.setText(tr(title_key))
         self._subtitle_label.setText(tr("sidebar_subtitle"))
-        self.btn_rail_bg.setText(tr("sidebar_tab_bg"))
-        self.btn_rail_restore.setText(tr("sidebar_tab_restore"))
-        self.btn_rail_brush.setText(tr("sidebar_tab_brush"))
-        self.btn_rail_batch.setText(tr("sidebar_tab_batch"))
-        self.btn_rail_effects.setText(tr("sidebar_tab_effects"))
+        for btn, key in zip(self.tab_buttons, self._TAB_KEYS):
+            btn.setToolTip(tr(key))
+            btn.setText("")
         for panel in self._panels:
             panel.retranslate_ui()
 
@@ -302,17 +370,33 @@ class ToolSidebar(QWidget):
 
     def _init_accel_state(self):
         try:
+            from app.config import get_gpu_name
             from app.core.gpu_manager import get_gpu_manager
             gpu_mgr = get_gpu_manager()
+            raw_gpu = get_gpu_name()
+            if raw_gpu:
+                self._gpu_short_label = _format_short_gpu_name(raw_gpu)
             self.set_device_mode(
                 is_gpu=gpu_mgr.is_gpu_enabled(),
                 is_blocked=gpu_mgr.has_orphaned_worker(),
             )
-        except Exception:
-            pass
+        except Exception as exc:
+            logging.getLogger("TimoitaseBG.Toolbar").debug("No se pudo inicializar estado GPU: %s", exc)
+
+    def _apply_gpu_short_label(self) -> None:
+        if self.gpu_toggle.is_gpu_active() and not self.gpu_toggle._is_blocked:
+            self.gpu_toggle.lbl_text.setText(self._gpu_short_label or "GPU")
+            self.gpu_toggle.lbl_text.adjustSize()
+            self.gpu_toggle.adjustSize()
+
+    def set_gpu_label(self, name: str) -> None:
+        """Actualiza la etiqueta corta de GPU mostrada junto al toggle (p. ej. 'RTX 5050')."""
+        self._gpu_short_label = _format_short_gpu_name(name)
+        self._apply_gpu_short_label()
 
     def set_device_mode(self, is_gpu: bool, is_blocked: bool = False):
         self.gpu_toggle.set_state(is_gpu, is_blocked)
+        self._apply_gpu_short_label()
 
     # --- API pública delegada a los subpaneles (compatibilidad con MainWindow y tests) ---
     def is_clothing_protection_enabled(self) -> bool:

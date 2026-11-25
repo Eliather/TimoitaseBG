@@ -18,6 +18,26 @@ from app.config import APP_NAME, APP_VERSION, set_gpu_acceleration
 from app.core.batch_pipeline import BatchPipelineConfig, process_image_pipeline
 
 
+def _sticker_width_type(value: str) -> int:
+    try:
+        parsed = int(value)
+    except ValueError as exc:
+        raise argparse.ArgumentTypeError(f"Invalid integer value: {value!r}") from exc
+    if parsed < 0 or parsed > 200:
+        raise argparse.ArgumentTypeError("--sticker-width must be between 0 and 200")
+    return parsed
+
+
+def _shadow_opacity_type(value: str) -> float:
+    try:
+        parsed = float(value)
+    except ValueError as exc:
+        raise argparse.ArgumentTypeError(f"Invalid float value: {value!r}") from exc
+    if not (0.0 <= parsed <= 1.0):
+        raise argparse.ArgumentTypeError("--shadow must be between 0.0 and 1.0")
+    return parsed
+
+
 def _build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="timoitasebg-cli",
@@ -41,8 +61,8 @@ def _build_parser() -> argparse.ArgumentParser:
             help="Optional Real-ESRGAN upscale step",
         )
         p.add_argument("--autocrop", action="store_true", help="Trim transparent borders")
-        p.add_argument("--sticker-width", type=int, default=0, help="Sticker outline width in px")
-        p.add_argument("--shadow", type=float, default=0.0, help="Drop shadow opacity (0.0-1.0)")
+        p.add_argument("--sticker-width", type=_sticker_width_type, default=0, help="Sticker outline width in px (0-200)")
+        p.add_argument("--shadow", type=_shadow_opacity_type, default=0.0, help="Drop shadow opacity (0.0-1.0)")
         p.add_argument(
             "--aspect",
             default="original",
@@ -89,8 +109,8 @@ def _save_image_out(img: Image.Image, output_path: Path) -> None:
 
 
 def _cmd_models(args: argparse.Namespace) -> int:
-    from app.config import MODELS_DIR
     from app.core.model_fetcher import (
+        _resolve_safe_model_path,
         ensure_model_file,
         get_models_inventory,
         verify_local_model_sha256,
@@ -121,7 +141,11 @@ def _cmd_models(args: argparse.Namespace) -> int:
         return 0
 
     if args.quantize:
-        src = MODELS_DIR / args.quantize
+        try:
+            src = _resolve_safe_model_path(args.quantize)
+        except ValueError as exc:
+            print(f"Invalid model name: {exc}", file=sys.stderr)
+            return 1
         if not src.is_file():
             print(f"Missing model file: {src}", file=sys.stderr)
             return 1

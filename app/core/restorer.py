@@ -1,12 +1,14 @@
 """
 TimoitaseBG - Módulo de restauración y aumento de resolución (Real-ESRGAN Anime con ONNX Runtime).
 """
+import gc
 import math
 import logging
 import traceback
 from typing import Optional, Tuple
 from pathlib import Path
 import numpy as np
+import scipy.ndimage
 from PIL import Image
 
 from app.config import get_inference_providers, MODELS_DIR
@@ -27,6 +29,12 @@ class ImageRestorer:
     def __init__(self):
         self._session = None
         self._cpu_session = None
+
+    def unload_sessions(self) -> None:
+        """Libera las sesiones ONNX de Real-ESRGAN de RAM y VRAM."""
+        self._session = None
+        self._cpu_session = None
+        gc.collect()
 
     def _get_cpu_session(self, progress_cb=None):
         """Inicializa o retorna la sesión garantizada en CPU."""
@@ -72,10 +80,11 @@ class ImageRestorer:
         orig_w, orig_h = image.size
 
         # Gráficos integrados (APUs AMD Ryzen / Intel iGPU con VRAM compartida):
-        # Forzar use_tiling=True para evitar colapsar la memoria compartida del sistema.
+        # Forzar use_tiling=True y tile_size=256 para evitar colapsar la memoria compartida.
         from app.config import is_integrated_gpu
         if is_integrated_gpu():
             use_tiling = True
+            tile_size = min(tile_size, 256)
 
         # Protección Automática Anti-Saturación de VRAM:
         # Límite seguro para GPU sin tiling: aprox 2.07 megapíxeles (1920x1080).
@@ -150,10 +159,11 @@ class ImageRestorer:
     ) -> Image.Image:
         orig_w, orig_h = image.size
 
-        # Gráficos integrados: forzar uso de tiling por seguridad de memoria compartida
+        # Gráficos integrados: forzar uso de tiling con tile_size=256 por seguridad de memoria compartida
         from app.config import is_integrated_gpu
         if is_integrated_gpu():
             use_tiling = True
+            tile_size = min(tile_size, 256)
 
         # Pre-auditoría de seguridad de tiles antes de procesar o transformar arrays
         if use_tiling:
@@ -174,12 +184,23 @@ class ImageRestorer:
 
         rgb_img, alpha_channel = separate_alpha(image)
 
+        # Edge-bleeding en píxeles alpha == 0 para imágenes RGBA (evita halos oscuros tras super-resolución)
+        rgb_arr = np.array(rgb_img, dtype=np.uint8)
+        if alpha_channel is not None:
+            alpha_arr = np.array(alpha_channel, dtype=np.uint8)
+            transparent_mask = alpha_arr == 0
+            if np.any(transparent_mask) and np.any(~transparent_mask):
+                indices = scipy.ndimage.distance_transform_edt(
+                    transparent_mask, return_distances=False, return_indices=True
+                )
+                rgb_arr = rgb_arr[indices[0], indices[1]]
+
         session = self._get_session(force_cpu=force_cpu, progress_cb=progress_cb)
         input_name = session.get_inputs()[0].name
         output_name = session.get_outputs()[0].name
 
         # Convertir a array float32 [0.0, 1.0] con formato NCHW contiguo
-        img_np = np.ascontiguousarray(np.array(rgb_img, dtype=np.float32) / 255.0)
+        img_np = np.ascontiguousarray(rgb_arr.astype(np.float32) / 255.0)
         h, w, c = img_np.shape
         img_nchw = np.ascontiguousarray(np.transpose(img_np, (2, 0, 1))[np.newaxis, ...])
 
@@ -273,6 +294,7 @@ class ImageRestorer:
 
         output_hwc = np.empty((out_h, out_w, 3), dtype=np.uint8)
         done_tiles = 0
+        fixed_tile_dim = tile_size + 2 * tile_pad
 
         for ty in range(tiles_y):
             for tx in range(tiles_x):
@@ -296,8 +318,20 @@ class ImageRestorer:
                 py1 = max(y1 - tile_pad, 0)
                 py2 = min(y2 + tile_pad, h)
 
-                # Extraer tile y forzar C-contiguous en memoria
-                tile = np.ascontiguousarray(img_nchw[:, :, py1:py2, px1:px2])
+                # Extraer tile y aplicar padding uniforme en bordes para evitar recompilación DirectML
+                raw_tile = img_nchw[:, :, py1:py2, px1:px2]
+                pad_bottom = max(0, fixed_tile_dim - raw_tile.shape[2])
+                pad_right = max(0, fixed_tile_dim - raw_tile.shape[3])
+                if pad_bottom > 0 or pad_right > 0:
+                    tile = np.ascontiguousarray(
+                        np.pad(
+                            raw_tile,
+                            ((0, 0), (0, 0), (0, pad_bottom), (0, pad_right)),
+                            mode="edge",
+                        )
+                    )
+                else:
+                    tile = np.ascontiguousarray(raw_tile)
                 out_tile = session.run([output_name], {input_name: tile})[0][0]
 
                 # Recortar el padding del resultado

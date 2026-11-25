@@ -47,7 +47,7 @@ class ShortcutsDialog(FramelessDragMixin, QDialog):
         header_layout.setSpacing(8)
 
         # Icono de teclado
-        icon_color = "#FF4F79"
+        icon_color = "#2E7CF6" if self.is_dark_theme else "#1D63DC"
         lbl_icon = QLabel()
         lbl_icon.setPixmap(get_icon("keyboard", color=icon_color, size=18).pixmap(18, 18))
         header_layout.addWidget(lbl_icon)

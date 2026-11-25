@@ -1,5 +1,6 @@
 """
 TimoitaseBG - Generador de recursos y manifiestos para empaquetado multiplataforma:
+- Windows (.exe): Genera script de Inno Setup (.iss) para instalador x64 sin privilegios elevados obligatorios.
 - Windows (.msix): Genera AppxManifest.xml y recursos visuales PNG requeridos por MakeAppx.
 - Linux (.AppImage): Prepara la estructura AppDir (AppRun, .desktop, icono PNG).
 """
@@ -114,6 +115,78 @@ def prepare_msix_stage(dist_dir: Path, stage_dir: Path, arch: str = "x64") -> No
     print(f"[MSIX] Directorio de staging preparado en: {stage_dir} (v{msix_version}, arch={manifest_arch})")
 
 
+def prepare_inno_script(
+    dist_dir: Path,
+    output_iss: Path,
+    output_dir: Path,
+    icon_path: Path,
+    license_path: Path,
+) -> Path:
+    """Genera el script de Inno Setup (.iss) para compilar TimoitaseBG-Setup-Windows-x64.exe."""
+    output_iss.parent.mkdir(parents=True, exist_ok=True)
+    output_dir.mkdir(parents=True, exist_ok=True)
+
+    dist_resolved = dist_dir.resolve()
+    output_dir_resolved = output_dir.resolve()
+    icon_resolved = icon_path.resolve()
+    license_resolved = license_path.resolve()
+
+    optional_setup_lines = []
+    if icon_resolved.exists():
+        optional_setup_lines.append(f"SetupIconFile={icon_resolved}")
+    if license_resolved.exists():
+        optional_setup_lines.append(f"LicenseFile={license_resolved}")
+    optional_setup_block = ("\n".join(optional_setup_lines) + "\n") if optional_setup_lines else ""
+
+    iss_content = f"""; Script de instalador Inno Setup generado automáticamente para {APP_NAME} v{APP_VERSION}
+[Setup]
+AppId={{{{E6F7A8B9-4C1D-4E2F-9A3B-8D7C6E5F4A3B}}
+AppName={APP_NAME}
+AppVersion={APP_VERSION}
+AppVerName={APP_NAME} {APP_VERSION}
+AppPublisher={APP_AUTHOR}
+AppPublisherURL=https://github.com/Eliather/TimoitaseBG
+AppSupportURL=https://github.com/Eliather/TimoitaseBG/issues
+DefaultDirName={{autopf}}\\{APP_NAME}
+DefaultGroupName={APP_NAME}
+DisableProgramGroupPage=yes
+PrivilegesRequired=lowest
+PrivilegesRequiredOverridesAllowed=dialog
+ArchitecturesAllowed=x64compatible
+ArchitecturesInstallIn64BitMode=x64compatible
+OutputDir={output_dir_resolved}
+OutputBaseFilename=TimoitaseBG-Setup-Windows-x64
+Compression=lzma2/max
+SolidCompression=yes
+WizardStyle=modern
+UninstallDisplayIcon={{app}}\\TimoitaseBG.exe
+UninstallDisplayName={APP_NAME} {APP_VERSION}
+{optional_setup_block}
+[Languages]
+Name: "spanish"; MessagesFile: "compiler:Languages\\Spanish.isl"
+Name: "english"; MessagesFile: "compiler:Default.isl"
+
+[Tasks]
+Name: "desktopicon"; Description: "{{cm:CreateDesktopIcon}}"; GroupDescription: "{{cm:AdditionalIcons}}"; Flags: unchecked
+
+[Files]
+Source: "{dist_resolved}\\*"; DestDir: "{{app}}"; Flags: ignoreversion recursesubdirs createallsubdirs
+
+[Icons]
+Name: "{{autoprograms}}\\{APP_NAME}"; Filename: "{{app}}\\TimoitaseBG.exe"
+Name: "{{autodesktop}}\\{APP_NAME}"; Filename: "{{app}}\\TimoitaseBG.exe"; Tasks: desktopicon
+
+[Run]
+Filename: "{{app}}\\TimoitaseBG.exe"; Description: "{{cm:LaunchProgram,{APP_NAME}}}"; Flags: nowait postinstall skipifsilent
+
+[UninstallDelete]
+Type: filesandordirs; Name: "{{app}}\\__pycache__"
+"""
+    output_iss.write_text(iss_content, encoding="utf-8")
+    print(f"[InnoSetup] Script generado en: {output_iss} (v{APP_VERSION})")
+    return output_iss
+
+
 def prepare_appimage_stage(dist_dir: Path, appdir: Path) -> None:
     """Prepara la estructura AppDir para empaquetar en formato .AppImage en Linux."""
     if appdir.exists():
@@ -182,7 +255,7 @@ def prepare_icons(build_dir: Path) -> None:
 
 if __name__ == "__main__":
     if len(sys.argv) < 2:
-        print("Uso: python -m scripts.package_release [msix|appimage|icons] [arch]")
+        print("Uso: python -m scripts.package_release [msix|inno|appimage|icons] [arch]")
         sys.exit(1)
 
     mode = sys.argv[1].lower()
@@ -192,6 +265,14 @@ if __name__ == "__main__":
 
     if mode == "msix":
         prepare_msix_stage(dist_folder, root / "build" / "msix_stage", arch=target_arch)
+    elif mode == "inno":
+        prepare_inno_script(
+            dist_dir=dist_folder,
+            output_iss=root / "build" / "TimoitaseBG.iss",
+            output_dir=root / "release-out",
+            icon_path=root / "build" / "app_icon.ico",
+            license_path=root / "LICENSE",
+        )
     elif mode == "appimage":
         prepare_appimage_stage(dist_folder, root / "build" / "TimoitaseBG.AppDir")
     elif mode == "icons":

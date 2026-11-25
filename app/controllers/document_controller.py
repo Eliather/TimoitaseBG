@@ -10,7 +10,13 @@ from typing import Any, Callable, Dict, Optional, Tuple
 import numpy as np
 from PIL import Image
 
-from app.core.image_state import ImageState, SequenceSession
+from app.core.image_state import (
+    ImageState,
+    OP_BG_REMOVAL,
+    OP_CROP,
+    OP_MANUAL_EDIT,
+    SequenceSession,
+)
 from app.core.image_utils import apply_solid_background
 from app.core.yolo_detector import refine_yolo_subject_mask
 
@@ -103,13 +109,17 @@ class DocumentController:
                 }
 
         self.sequence_session = None
-        pil_img = Image.open(path)
-        loaded = self.load_pil_image(pil_img, filepath=path, clear_seq=True)
+        with Image.open(path) as pil_img:
+            loaded = self.load_pil_image(pil_img, filepath=path, clear_seq=True)
         return {
             "kind": "image",
             "path": path,
             "image": loaded,
         }
+
+    def has_previous_transparent_state(self) -> bool:
+        """Comprueba sin clonar si el documento activo tiene un estado previo transparente."""
+        return self.image_state.has_previous_transparent_state()
 
     def select_sequence_frame(self, new_index: int) -> Tuple[int, int, int, Optional[Image.Image]]:
         """Selecciona el fotograma `new_index` de la secuencia activa y actualiza `image_state`."""
@@ -120,14 +130,19 @@ class DocumentController:
         cur_dur = self.sequence_session.durations[idx] if self.sequence_session.durations else 80
         return idx, total, cur_dur, self.image_state.current_image
 
-    def apply_sequence_results(self, processed_frames: list, description: str) -> int:
+    def apply_sequence_results(
+        self,
+        processed_frames: list,
+        description: str,
+        op_type: Optional[str] = None,
+    ) -> int:
         """Registra una lista de fotogramas procesados en `sequence_session` y retorna el índice activo."""
         if not processed_frames:
             return 0
         if self.sequence_session and len(self.sequence_session.states) == len(processed_frames):
             cur_idx = self.sequence_session.current_index
             for st, proc_frm in zip(self.sequence_session.states, processed_frames):
-                st.push_state(proc_frm, description=description)
+                st.push_state(proc_frm, description=description, op_type=op_type)
             return min(cur_idx, len(processed_frames) - 1)
 
         durations = self.sequence_session.durations if self.sequence_session else [80] * len(processed_frames)
@@ -316,10 +331,13 @@ class DocumentController:
             return "status_crop_first_remove", None
 
         union_box = None
-        w0, h0 = states[0].current_image.size
+        first_img = states[0].peek_current_image()
+        if first_img is None:
+            return "status_crop_none", None
+        w0, h0 = first_img.size
         for st in states:
-            img = st.current_image
-            if img.mode == "RGBA":
+            img = st.peek_current_image()
+            if img is not None and img.mode == "RGBA":
                 box = img.getchannel("A").getbbox()
                 if box:
                     if union_box is None:
@@ -345,10 +363,13 @@ class DocumentController:
 
         desc = f"Recorte al contenido ({crop_box[2] - crop_box[0]}x{crop_box[3] - crop_box[1]})"
         for st in states:
-            cropped_fr = st.current_image.crop(crop_box)
+            curr = st.peek_current_image()
+            if curr is None:
+                continue
+            cropped_fr = curr.crop(crop_box)
             ref = st.current_brush_reference
             cropped_ref = ref.crop(crop_box) if ref is not None else None
-            st.push_state(cropped_fr, desc, brush_reference=cropped_ref)
+            st.push_state(cropped_fr, desc, brush_reference=cropped_ref, op_type=OP_CROP)
 
         active = self.image_state
         return None, (active.current_image, active.current_brush_reference, desc)
@@ -358,6 +379,7 @@ class DocumentController:
         transform_fn,
         description: str,
         update_brush_reference: bool = False,
+        op_type: Optional[str] = None,
     ) -> Optional[Image.Image]:
         """Aplica una transformación PIL pura sobre la imagen activa o toda la secuencia."""
         if not self.image_state.has_image:
@@ -370,7 +392,7 @@ class DocumentController:
                     continue
                 out = transform_fn(img)
                 ref = transform_fn(st.current_brush_reference) if (update_brush_reference and st.current_brush_reference is not None) else None
-                st.push_state(out, description, brush_reference=ref)
+                st.push_state(out, description, brush_reference=ref, op_type=op_type)
             return self.image_state.current_image
 
         out = transform_fn(self.image_state.current_image)
@@ -379,7 +401,7 @@ class DocumentController:
             if (update_brush_reference and self.image_state.current_brush_reference is not None)
             else None
         )
-        self.image_state.push_state(out, description, brush_reference=ref)
+        self.image_state.push_state(out, description, brush_reference=ref, op_type=op_type)
         return self.image_state.current_image
 
     def apply_edge_refinement(
@@ -414,7 +436,12 @@ class DocumentController:
         curr_np = np.array(self.image_state.current_image.convert("RGBA"), dtype=np.uint8)
         out_np = inpaint_selected_region(curr_np, selection_mask, radius=radius)
         out_img = Image.fromarray(out_np, mode="RGBA")
-        self.image_state.push_state(out_img, "Rellenar selección (Inpainting)", brush_reference=out_img)
+        self.image_state.push_state(
+            out_img,
+            "Rellenar selección (Inpainting)",
+            brush_reference=out_img,
+            op_type=OP_MANUAL_EDIT,
+        )
         return out_img
 
     def build_isolated_subject(self, subject) -> Optional[Image.Image]:
@@ -444,7 +471,7 @@ class DocumentController:
                 continue
             curr_arr = np.array(img.convert("RGBA"), dtype=np.uint8)
             curr_arr[..., 3] = np.minimum(curr_arr[..., 3], high_res_mask)
-            st.push_state(Image.fromarray(curr_arr, "RGBA"), desc)
+            st.push_state(Image.fromarray(curr_arr, "RGBA"), desc, op_type=OP_BG_REMOVAL)
 
         return self.image_state.current_image
 
@@ -518,6 +545,7 @@ class DocumentController:
             lambda img: crop_image_box(img, left, top, right, bottom),
             description="Recorte manual",
             update_brush_reference=True,
+            op_type=OP_CROP,
         )
 
     def apply_transform(

@@ -17,7 +17,7 @@ def _read_app_version() -> str:
         m = re.search(r'^APP_VERSION\s*=\s*["\']([^"\']+)["\']', cfg.read_text(encoding="utf-8"), re.MULTILINE)
         if m:
             return m.group(1)
-    return "1.3.1"
+    return "1.3.2"
 
 
 APP_VERSION = _read_app_version()
@@ -132,7 +132,7 @@ exe = EXE(
     debug=False,
     bootloader_ignore_signals=False,
     strip=False,
-    upx=True,
+    upx=False,
     console=False,
     disable_windowed_traceback=False,
     argv_emulation=False,
@@ -148,7 +148,7 @@ coll = COLLECT(
     a.zipfiles,
     a.datas,
     strip=False,
-    upx=True,
+    upx=False,
     upx_exclude=[],
     name='TimoitaseBG',
 )

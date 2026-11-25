@@ -12,8 +12,10 @@ a formatos libres de regalías / gratuitos:
   - Secuencia PNG transparente en archivo `.zip` (universal para editores de video)
 """
 import io
+import os
 import shutil
 import subprocess
+import sys
 import zipfile
 from pathlib import Path
 from typing import Callable, List, Optional, Tuple
@@ -24,6 +26,7 @@ from PIL import Image
 
 from app.core.bg_remover import get_bg_remover
 from app.core.gif_processor import (
+    MAX_SEQUENCE_RAM_BYTES,
     save_animated_apng,
     save_animated_gif,
     save_animated_webp,
@@ -91,15 +94,45 @@ def is_sequence_or_video_file(file_path: Path | str) -> bool:
     return is_video_file(p) or is_animated_image(p)
 
 
+def _find_ffmpeg_safe() -> Optional[str]:
+    """
+    Busca el binario `ffmpeg` en el PATH del sistema excluyendo el directorio actual (CWD)
+    en Windows para mitigar CWD binary planting.
+    """
+    if sys.platform == "win32":
+        raw_path = os.environ.get("PATH", "")
+        try:
+            cwd_resolved = Path.cwd().resolve()
+        except OSError:
+            cwd_resolved = None
+        safe_entries = []
+        for entry in raw_path.split(os.pathsep):
+            cleaned = entry.strip().strip('"')
+            if not cleaned or cleaned == ".":
+                continue
+            try:
+                if cwd_resolved is not None and Path(cleaned).resolve() == cwd_resolved:
+                    continue
+            except OSError:
+                continue
+            safe_entries.append(cleaned)
+        if not safe_entries:
+            return None
+        return shutil.which("ffmpeg", path=os.pathsep.join(safe_entries))
+    return shutil.which("ffmpeg")
+
+
 def extract_video_frames(
     video_path: Path | str,
     max_frames: int = 600,
+    max_ram_bytes: int = MAX_SEQUENCE_RAM_BYTES,
 ) -> Tuple[List[Image.Image], List[int], float]:
     """
     Extrae los fotogramas de un archivo de video convirtiéndolos a imágenes PIL RGBA.
 
-    Si el video supera `max_frames`, realiza un submuestreo uniforme (stride)
-    para evitar desbordamientos de memoria RAM manteniendo la fluidez temporal.
+    Si el video supera `max_frames` o el presupuesto de memoria RGBA (`max_ram_bytes`),
+    realiza un submuestreo uniforme (stride) o rechaza el video si un solo fotograma
+    excede el presupuesto, protegiendo la RAM del sistema.
 
     Retorna:
         (frames_rgba, durations_ms, effective_fps)
@@ -114,26 +147,52 @@ def extract_video_frames(
         if raw_fps <= 0.0 or raw_fps > 240.0 or np.isnan(raw_fps):
             raw_fps = 24.0
 
+        width = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH) or 0)
+        height = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT) or 0)
+        effective_max = int(max_frames) if max_frames > 0 else 0
+
+        if max_ram_bytes > 0 and width > 0 and height > 0:
+            bytes_per_frame = width * height * 4
+            if bytes_per_frame > max_ram_bytes:
+                raise ValueError(
+                    f"Un solo fotograma de video ({width}x{height} RGBA = {bytes_per_frame // (1024 * 1024)} MB) "
+                    f"excede el presupuesto máximo de memoria ({max_ram_bytes // (1024 * 1024)} MB)."
+                )
+            ram_max_frames = max(1, max_ram_bytes // bytes_per_frame)
+            effective_max = min(effective_max, ram_max_frames) if effective_max > 0 else ram_max_frames
+
         total_est = int(cap.get(cv2.CAP_PROP_FRAME_COUNT) or 0)
         stride = 1
-        if max_frames > 0 and total_est > max_frames:
-            stride = max(1, int(np.ceil(total_est / float(max_frames))))
+        if effective_max > 0 and total_est > effective_max:
+            stride = max(1, int(np.ceil(total_est / float(effective_max))))
 
         effective_fps = max(1.0, raw_fps / float(stride))
         frame_duration_ms = max(15, int(round(1000.0 / effective_fps)))
 
         frames: List[Image.Image] = []
         raw_idx = 0
+        ram_checked = (width > 0 and height > 0)
 
         while True:
             ret, frame_bgr = cap.read()
             if not ret or frame_bgr is None:
                 break
 
+            if not ram_checked and max_ram_bytes > 0:
+                fh, fw = frame_bgr.shape[:2]
+                bytes_per_frame = max(1, fh * fw * 4)
+                if bytes_per_frame > max_ram_bytes:
+                    raise ValueError(
+                        f"Un solo fotograma de video ({fw}x{fh} RGBA) excede el presupuesto máximo de memoria."
+                    )
+                ram_max_frames = max(1, max_ram_bytes // bytes_per_frame)
+                effective_max = min(effective_max, ram_max_frames) if effective_max > 0 else ram_max_frames
+                ram_checked = True
+
             if raw_idx % stride == 0:
                 frame_rgba = cv2.cvtColor(frame_bgr, cv2.COLOR_BGR2RGBA)
                 frames.append(Image.fromarray(frame_rgba, mode="RGBA"))
-                if 0 < max_frames <= len(frames):
+                if 0 < effective_max <= len(frames):
                     break
 
             raw_idx += 1
@@ -228,7 +287,7 @@ def _try_save_transparent_ffmpeg(
       - `.mov`: PNG en contenedor QuickTime (`rgba`)
     Retorna True si tuvo éxito, False para hacer fallback a OpenCV VideoWriter.
     """
-    ffmpeg_bin = shutil.which("ffmpeg")
+    ffmpeg_bin = _find_ffmpeg_safe()
     if not ffmpeg_bin or not frames_rgba:
         return False
 
@@ -260,6 +319,7 @@ def _try_save_transparent_ffmpeg(
     else:
         return False
 
+    resolved_output = output_path.resolve()
     cmd = [
         ffmpeg_bin,
         "-y",
@@ -271,27 +331,46 @@ def _try_save_transparent_ffmpeg(
         "-i", "-",
         "-an",
         *codec_args,
-        str(output_path),
+        str(resolved_output),
     ]
 
+    proc: Optional[subprocess.Popen] = None
     try:
+        flags = getattr(subprocess, "CREATE_NO_WINDOW", 0) if sys.platform == "win32" else 0
         proc = subprocess.Popen(
             cmd,
             stdin=subprocess.PIPE,
             stdout=subprocess.DEVNULL,
             stderr=subprocess.DEVNULL,
+            creationflags=flags,
         )
         assert proc.stdin is not None
         for frm in frames_rgba:
-            rgba_img = frm.convert("RGBA")
+            rgba_img = frm if frm.mode == "RGBA" else frm.convert("RGBA")
             if rgba_img.size != (base_w, base_h):
                 rgba_img = rgba_img.resize((base_w, base_h), Image.Resampling.LANCZOS)
             proc.stdin.write(rgba_img.tobytes())
         proc.stdin.close()
         ret_code = proc.wait(timeout=120)
-        return ret_code == 0 and output_path.exists() and output_path.stat().st_size > 0
+        return ret_code == 0 and resolved_output.exists() and resolved_output.stat().st_size > 0
     except Exception:
         return False
+    finally:
+        if proc is not None:
+            try:
+                if proc.stdin is not None and not proc.stdin.closed:
+                    proc.stdin.close()
+            except Exception:
+                pass
+            if proc.poll() is None:
+                try:
+                    proc.kill()
+                except Exception:
+                    pass
+                try:
+                    proc.wait(timeout=5)
+                except Exception:
+                    pass
 
 
 def _save_png_zip_sequence(
@@ -301,7 +380,8 @@ def _save_png_zip_sequence(
 ) -> None:
     """
     Exporta todos los fotogramas como una secuencia numerada de PNGs (`frame_00001.png`...)
-    dentro de un archivo `.zip` manteniendo transparencia RGBA de 8 bits.
+    dentro de un archivo `.zip` manteniendo transparencia RGBA de 8 bits,
+    escribiendo en streaming por lotes acotados para evitar picos de memoria RAM.
     """
     def _encode_png_frame(frm: Image.Image) -> bytes:
         rgba_img = frm if frm.mode == "RGBA" else frm.convert("RGBA")
@@ -316,19 +396,22 @@ def _save_png_zip_sequence(
         out_img.save(buf, format="PNG")
         return buf.getvalue()
 
-    if len(frames_rgba) > 4:
-        import os
-        from concurrent.futures import ThreadPoolExecutor
-
-        workers = max(1, min(4, os.cpu_count() or 2))
-        with ThreadPoolExecutor(max_workers=workers) as pool:
-            encoded_pngs = list(pool.map(_encode_png_frame, frames_rgba))
-    else:
-        encoded_pngs = [_encode_png_frame(frm) for frm in frames_rgba]
-
     with zipfile.ZipFile(output_path, mode="w", compression=zipfile.ZIP_STORED) as zf:
-        for idx, png_bytes in enumerate(encoded_pngs, start=1):
-            zf.writestr(f"frame_{idx:05d}.png", png_bytes)
+        if len(frames_rgba) > 4:
+            from concurrent.futures import ThreadPoolExecutor
+
+            workers = max(1, min(4, os.cpu_count() or 2))
+            chunk_size = workers * 2
+            frame_idx = 1
+            with ThreadPoolExecutor(max_workers=workers) as pool:
+                for start in range(0, len(frames_rgba), chunk_size):
+                    chunk = frames_rgba[start:start + chunk_size]
+                    for png_bytes in pool.map(_encode_png_frame, chunk):
+                        zf.writestr(f"frame_{frame_idx:05d}.png", png_bytes)
+                        frame_idx += 1
+        else:
+            for idx, frm in enumerate(frames_rgba, start=1):
+                zf.writestr(f"frame_{idx:05d}.png", _encode_png_frame(frm))
 
 
 def save_video_sequence(

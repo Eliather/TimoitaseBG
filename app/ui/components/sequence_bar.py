@@ -159,9 +159,9 @@ class SequenceBar(QFrame):
             sp.blockSignals(False)
 
     def apply_theme(self, is_dark: bool, is_playing: bool = False):
-        fg_color = "#F8FAFC" if is_dark else "#0F172A"
-        accent_color = "#38BDF8" if is_dark else "#0284C7"
-        dis_color = "#475569" if is_dark else "#CBD5E1"
+        fg_color = "#F2F4F7" if is_dark else "#14171A"
+        accent_color = "#2E7CF6" if is_dark else "#1D63DC"
+        dis_color = "#5C6470" if is_dark else "#9BA3AE"
 
         for btn, icon_name, sz in (
             (self.btn_gif_first, "skip-back", 15),

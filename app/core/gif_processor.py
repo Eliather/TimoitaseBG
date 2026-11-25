@@ -9,6 +9,9 @@ import numpy as np
 from PIL import Image, ImageSequence
 
 
+MAX_SEQUENCE_RAM_BYTES: int = 1024 * 1024 * 1024  # 1 GB máximo para fotogramas RGBA en RAM
+
+
 def is_animated_image(file_path: Path) -> bool:
     """Verifica si un archivo (.gif, .webp, .png/.apng) contiene múltiples fotogramas animados."""
     try:
@@ -18,40 +21,72 @@ def is_animated_image(file_path: Path) -> bool:
         return False
 
 
-def extract_gif_frames(gif_path: Path) -> Tuple[List[Image.Image], List[int], int]:
+def extract_gif_frames(
+    gif_path: Path,
+    max_frames: int = 600,
+    max_ram_bytes: int = MAX_SEQUENCE_RAM_BYTES,
+) -> Tuple[List[Image.Image], List[int], int]:
     """
-    Extrae todos los fotogramas de una imagen animada (.gif, .webp, .png/.apng)
+    Extrae los fotogramas de una imagen animada (.gif, .webp, .png/.apng)
     componiéndolos en RGBA completo para evitar artefactos de frames parciales (delta frames).
+    Aplica límites estrictos de `max_frames` y presupuesto máximo de memoria RGBA (`max_ram_bytes`)
+    mediante submuestreo uniforme o rechazo temprano si un solo fotograma excede el presupuesto.
     Retorna: (lista_frames_rgba, lista_duraciones_ms, loop_count)
     """
     frames: List[Image.Image] = []
     durations: List[int] = []
 
     with Image.open(gif_path) as im:
+        w, h = im.size
+        bytes_per_frame = max(1, int(w) * int(h) * 4)
+        if max_ram_bytes > 0 and bytes_per_frame > max_ram_bytes:
+            raise ValueError(
+                f"Fotograma animado ({w}x{h} RGBA = {bytes_per_frame // (1024 * 1024)} MB) "
+                f"excede el presupuesto máximo de memoria ({max_ram_bytes // (1024 * 1024)} MB)."
+            )
+
+        ram_max_frames = max(1, max_ram_bytes // bytes_per_frame) if max_ram_bytes > 0 else max_frames
+        if max_frames > 0:
+            effective_max = min(int(max_frames), ram_max_frames)
+        else:
+            effective_max = ram_max_frames
+
+        total_est = int(getattr(im, "n_frames", 1) or 1)
+        stride = 1
+        if effective_max > 0 and total_est > effective_max:
+            stride = max(1, int(np.ceil(total_est / float(effective_max))))
+
         is_gif = (getattr(im, "format", "") or "").upper() == "GIF"
         loop = int(im.info.get("loop", 0))
         default_duration = int(im.info.get("duration", 80)) or 80
 
         # Componer sobre lienzo base para respetar GIFs optimizados por deltas
         base_canvas = Image.new("RGBA", im.size, (0, 0, 0, 0))
-        for frame in ImageSequence.Iterator(im):
+        for raw_idx, frame in enumerate(ImageSequence.Iterator(im)):
+            keep_frame = (raw_idx % stride == 0)
+            if not is_gif and not keep_frame:
+                continue
+
             frame_rgba = frame.convert("RGBA")
-            duration = int(frame.info.get("duration", default_duration)) or default_duration
-            durations.append(max(20, duration))
 
             if not is_gif:
-                composed = frame_rgba.copy()
+                composed = frame_rgba
             else:
                 disposal = frame.info.get("disposal", 2)
                 if disposal == 2:
                     # Restaurar a transparente en cada frame
-                    composed = frame_rgba.copy()
+                    composed = frame_rgba
                 else:
                     composed = base_canvas.copy()
                     composed.alpha_composite(frame_rgba)
-                    base_canvas = composed.copy()
+                    base_canvas = composed
 
-            frames.append(composed)
+            if keep_frame:
+                duration = int(frame.info.get("duration", default_duration)) or default_duration
+                durations.append(max(20, duration * stride))
+                frames.append(composed)
+                if effective_max > 0 and len(frames) >= effective_max:
+                    break
 
     return frames, durations, loop
 
@@ -166,7 +201,7 @@ def save_animated_webp(
         if bg_color_rgb is not None:
             prepared_frames.append(apply_solid_background(frame, bg_color_rgb).convert("RGB"))
         else:
-            prepared_frames.append(frame.convert("RGBA"))
+            prepared_frames.append(frame if frame.mode == "RGBA" else frame.convert("RGBA"))
 
     save_kwargs = {
         "format": "WEBP",
@@ -202,7 +237,7 @@ def save_animated_apng(
         if bg_color_rgb is not None:
             prepared_frames.append(apply_solid_background(frame, bg_color_rgb).convert("RGB"))
         else:
-            prepared_frames.append(frame.convert("RGBA"))
+            prepared_frames.append(frame if frame.mode == "RGBA" else frame.convert("RGBA"))
 
     save_kwargs = {
         "format": "PNG",

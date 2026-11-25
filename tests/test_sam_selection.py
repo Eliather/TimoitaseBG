@@ -26,13 +26,15 @@ def test_sam_preprocess_scaling():
     mgr = SAMManager()
     img = Image.new("RGB", (800, 400), (255, 0, 0))
     tensor, scale, new_w, new_h = mgr._preprocess_image(img)
-    
-    assert tensor.shape == (1024, 1024, 3)
+
+    # Sin pre-padding manual negro: pasa (new_h, new_w, 3) float32 [0, 255] directamente al encoder ONNX
     assert tensor.dtype == np.float32
     # El lado más largo (800) se escala a 1024: factor = 1024/800 = 1.28
     assert scale == pytest.approx(1024 / 800, 1e-4)
     assert new_w == 1024
     assert new_h == int(round(400 * (1024 / 800)))  # 512
+    assert tensor.shape == (new_h, new_w, 3)
+    assert float(tensor.max()) == pytest.approx(255.0)
 
 
 def test_sam_mocked_prediction():
@@ -214,3 +216,75 @@ def test_magic_wand_region_inrange_and_image_state_extrema():
     state.push_state(opaque, "Color de fondo sólido")
     assert not state.has_transparency
     assert state.get_last_transparent_state() is not None
+
+
+def test_sam_decoder_validates_orig_size_and_prefers_low_res_masks():
+    """El decoder valida orig_img_size == self.orig_size y escala desde outputs[2] (low_res_masks)."""
+    mgr = SAMManager()
+    orig_w, orig_h = 200, 100
+    img = Image.new("RGB", (orig_w, orig_h), (80, 90, 100))
+
+    mock_encoder = MagicMock()
+    enc_inp = MagicMock()
+    enc_inp.name = "image"
+    mock_encoder.get_inputs.return_value = [enc_inp]
+    mock_encoder.run.return_value = [np.zeros((1, 256, 64, 64), dtype=np.float32)]
+
+    mock_decoder = MagicMock()
+    mock_inputs = []
+    for n in ["image_embeddings", "point_coords", "point_labels", "mask_input", "has_mask_input", "orig_im_size"]:
+        m = MagicMock()
+        m.name = n
+        mock_inputs.append(m)
+    mock_decoder.get_inputs.return_value = mock_inputs
+
+    # outputs[0] todo negativo, pero outputs[2] (low_res_masks 256x256) positivo en la zona válida
+    high_res_neg = np.full((1, 1, 1024, 1024), -10.0, dtype=np.float32)
+    iou = np.array([[0.95]], dtype=np.float32)
+    low_res_pos = np.full((1, 1, 256, 256), -5.0, dtype=np.float32)
+    low_res_pos[0, 0, :128, :256] = 6.0  # región válida para imagen 2:1 (1024x512 -> 256x128)
+    mock_decoder.run.return_value = [high_res_neg, iou, low_res_pos]
+
+    mgr.encoder_session = mock_encoder
+    mgr.decoder_session = mock_decoder
+    mgr.prepare_image(img)
+
+    # Mismatch de tamaño debe rechazarse devolviendo None
+    assert mgr.predict_mask_at_point(10, 10, orig_img_size=(300, 150)) is None
+
+    # Tamaño coincidente debe usar outputs[2] (low_res_masks)
+    mask = mgr.predict_mask_at_point(100, 50, orig_img_size=(orig_w, orig_h))
+    assert mask is not None
+    assert mask.shape == (orig_h, orig_w)
+    assert bool(mask[50, 100]) is True
+
+
+def test_sam_cpu_fallback_on_gpu_run_error(tmp_path):
+    """Si encoder_session.run() falla en GPU, SAMManager hace fallback automático a CPU."""
+    mgr = SAMManager()
+    enc_file = tmp_path / "mobile_sam_image_encoder.onnx"
+    enc_file.write_bytes(b"0" * 16)
+    mgr._enc_path = enc_file
+
+    gpu_enc = MagicMock()
+    enc_inp = MagicMock()
+    enc_inp.name = "image"
+    gpu_enc.get_inputs.return_value = [enc_inp]
+    gpu_enc.get_providers.return_value = ["DmlExecutionProvider", "CPUExecutionProvider"]
+    gpu_enc.run.side_effect = RuntimeError("DirectML TDR")
+
+    cpu_enc = MagicMock()
+    cpu_enc.get_inputs.return_value = [enc_inp]
+    cpu_enc.get_providers.return_value = ["CPUExecutionProvider"]
+    cpu_enc.run.return_value = [np.zeros((1, 256, 64, 64), dtype=np.float32)]
+
+    mgr.encoder_session = gpu_enc
+    mgr.decoder_session = MagicMock()
+
+    with patch("onnxruntime.InferenceSession", return_value=cpu_enc) as mock_ort:
+        ok = mgr.prepare_image(Image.new("RGB", (64, 64), (10, 20, 30)))
+
+    assert ok is True
+    assert mgr.encoder_session is cpu_enc
+    mock_ort.assert_called_once()
+    assert mock_ort.call_args.kwargs["providers"] == ["CPUExecutionProvider"]

@@ -139,12 +139,13 @@ class ToggleSwitch(QAbstractButton):
 
         t = self._thumb_pos
         if not self.isEnabled():
-            track_color = QColor("#1E293B") if self._is_dark else QColor("#E2E8F0")
+            track_color = QColor("#1D2127") if self._is_dark else QColor("#E2E6EC")
         else:
-            r0, g0, b0 = (51, 65, 85) if self._is_dark else (203, 213, 225)
-            r = int(r0 * (1 - t) + 16 * t)
-            g = int(g0 * (1 - t) + 185 * t)
-            b = int(b0 * (1 - t) + 129 * t)
+            r0, g0, b0 = (45, 51, 61) if self._is_dark else (207, 214, 223)
+            r1, g1, b1 = (46, 124, 246) if self._is_dark else (29, 99, 220)
+            r = int(r0 * (1 - t) + r1 * t)
+            g = int(g0 * (1 - t) + g1 * t)
+            b = int(b0 * (1 - t) + b1 * t)
             track_color = QColor(r, g, b)
 
         p.setPen(Qt.PenStyle.NoPen)
@@ -240,7 +241,7 @@ class GpuToggle(QWidget):
 
     def _apply_pill_style(self, fg: str, bg: str, bd: str, weight: int):
         self.lbl_text.setStyleSheet(
-            f"color: {fg}; font-weight: {weight}; font-size: 11px; border: none; background: transparent;"
+            f"color: {fg}; font-weight: {weight}; font-size: 12px; border: none; background: transparent;"
         )
         self.setStyleSheet(
             f"#gpuToggleWidget {{ background-color: {bg}; border: 1px solid {bd}; border-radius: 14px; padding: 0 4px; }}"
@@ -248,28 +249,28 @@ class GpuToggle(QWidget):
 
     def _update_presentation(self):
         if self._is_blocked:
-            fg = "#F87171" if self._is_dark else "#DC2626"
-            bg = "#450A0A" if self._is_dark else "#FEF2F2"
-            bd = "#DC2626" if self._is_dark else "#FECACA"
+            fg = "#FCA5A5" if self._is_dark else "#B91C1C"
+            bg = "rgba(224, 79, 95, 0.16)" if self._is_dark else "#FEF2F2"
+            bd = "rgba(224, 79, 95, 0.45)" if self._is_dark else "#FECACA"
             self.lbl_icon.setPixmap(get_pixmap("alert-triangle", size=14, color=fg))
             self.lbl_text.setText("CPU (Seguro)")
-            self._apply_pill_style(fg, bg, bd, 700)
+            self._apply_pill_style(fg, bg, bd, 600)
             self.setToolTip("GPU bloqueada por fallo previo. La app funciona en CPU de forma segura.")
         elif not self.switch.isEnabled():
-            fg = "#94A3B8"
-            bg = "#0F172A" if self._is_dark else "#F1F5F9"
-            bd = "#334155" if self._is_dark else "#E2E8F0"
+            fg = "#9BA3AE" if self._is_dark else "#555E6B"
+            bg = "#1D2127" if self._is_dark else "#ECEFF2"
+            bd = "rgba(255, 255, 255, 0.08)" if self._is_dark else "#DCE1E8"
             self.lbl_icon.setPixmap(get_pixmap("cpu", size=14, color=fg))
             self.lbl_text.setText("CPU")
             self._apply_pill_style(fg, bg, bd, 600)
             self.setToolTip("GPU no disponible en este equipo. Modo CPU activo.")
         elif self.switch.isChecked():
-            fg = "#34D399" if self._is_dark else "#059669"
-            bg = "#064E3B" if self._is_dark else "#ECFDF5"
-            bd = "#059669" if self._is_dark else "#A7F3D0"
+            fg = "#6EE7B7" if self._is_dark else "#047857"
+            bg = "rgba(31, 169, 113, 0.16)" if self._is_dark else "#ECFDF5"
+            bd = "rgba(31, 169, 113, 0.45)" if self._is_dark else "#A7F3D0"
             self.lbl_icon.setPixmap(get_pixmap("zap", size=14, color=fg))
-            self.lbl_text.setText("⚡ GPU Activa")
-            self._apply_pill_style(fg, bg, bd, 700)
+            self.lbl_text.setText("GPU")
+            self._apply_pill_style(fg, bg, bd, 600)
             try:
                 from app.config import get_gpu_name, detect_device
                 detected = detect_device()
@@ -284,11 +285,11 @@ class GpuToggle(QWidget):
             except Exception:
                 self.setToolTip("Aceleración GPU activa. Clic para pasar a CPU.")
         else:
-            fg = "#CBD5E1" if self._is_dark else "#64748B"
-            bg = "#0F172A" if self._is_dark else "#F1F5F9"
-            bd = "#334155" if self._is_dark else "#CBD5E1"
+            fg = "#9BA3AE" if self._is_dark else "#555E6B"
+            bg = "#1D2127" if self._is_dark else "#ECEFF2"
+            bd = "rgba(255, 255, 255, 0.08)" if self._is_dark else "#DCE1E8"
             self.lbl_icon.setPixmap(get_pixmap("cpu", size=14, color=fg))
-            self.lbl_text.setText("CPU Activo")
+            self.lbl_text.setText("CPU")
             self._apply_pill_style(fg, bg, bd, 600)
             self.setToolTip("Modo CPU activo (0 MB VRAM). Clic para activar GPU.")
 

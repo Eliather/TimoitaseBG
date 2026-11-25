@@ -121,8 +121,10 @@ def _postprocess_inspyrenet_mask(out: np.ndarray, orig_size: Tuple[int, int]) ->
     con interpolación bicúbica sin ningún recorte de padding.
     """
     raw_1024 = np.squeeze(out).astype(np.float32)
-    if raw_1024.min() < 0.0 or raw_1024.max() > 1.0:
-        raw_1024 = 1.0 / (1.0 + np.exp(-raw_1024))
+    if float(raw_1024.min()) < -0.05 or float(raw_1024.max()) > 1.05:
+        raw_1024 = 1.0 / (1.0 + np.exp(-np.clip(raw_1024, -50.0, 50.0)))
+    else:
+        raw_1024 = np.clip(raw_1024, 0.0, 1.0)
     orig_w, orig_h = orig_size
     resized = cv2.resize(raw_1024, (orig_w, orig_h), interpolation=cv2.INTER_CUBIC)
     return np.clip(resized, 0.0, 1.0)
@@ -156,9 +158,10 @@ def postprocess_inspyrenet(
 
     try:
         bin_solid = (alpha > 0.4).astype(np.uint8) * 255
-        h_m, w_m = bin_solid.shape
-        flood = bin_solid.copy()
-        cv2.floodFill(flood, np.zeros((h_m + 2, w_m + 2), dtype=np.uint8), (0, 0), 255)
+        padded = cv2.copyMakeBorder(bin_solid, 1, 1, 1, 1, cv2.BORDER_CONSTANT, value=0)
+        h_p, w_p = padded.shape
+        cv2.floodFill(padded, np.zeros((h_p + 2, w_p + 2), dtype=np.uint8), (0, 0), 255)
+        flood = padded[1:-1, 1:-1]
         enclosed_holes = cv2.bitwise_not(flood)
         if np.any(enclosed_holes > 0):
             alpha = np.maximum(alpha, (enclosed_holes > 0).astype(np.float32))
@@ -174,9 +177,8 @@ def postprocess_inspyrenet(
         )
         alpha = np.clip(alpha, 0.0, 1.0)
 
-    cleaned_rgb = rgb_arr.copy()
     final_alpha = np.clip(np.round(alpha * 255.0), 0, 255).astype(np.uint8)
-    return cleaned_rgb, final_alpha
+    return rgb_arr, final_alpha
 
 
 def _guided_filter_box(guide: np.ndarray, src: np.ndarray, radius: int, eps: float) -> np.ndarray:
@@ -411,7 +413,11 @@ def fuse_clothing_protection_core_only(
     if not np.any(valid_clothing):
         return main_alpha
 
-    injection_alpha = np.where(valid_clothing, eroded_clothing, 0).astype(np.uint8)
+    injection_alpha = np.where(
+        valid_clothing,
+        np.where(safe_main_core > 0, clothing_alpha, eroded_clothing),
+        0,
+    ).astype(np.uint8)
     blur_k = max(5, int(round(7 * scale_factor)) | 1)
     injection_alpha = cv2.GaussianBlur(injection_alpha, (blur_k, blur_k), sigmaX=2.0)
 
@@ -513,9 +519,8 @@ def refine_alpha_edges(
         blurred = cv2.GaussianBlur(alpha.astype(np.float32), (ksize, ksize), sigmaX=max(0.5, f * 0.65))
         # Limitar el suavizado a la banda de transición alrededor del contorno
         band_k = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (ksize, ksize))
-        edge_band = cv2.dilate((alpha > 127).astype(np.uint8) * 255, band_k) - cv2.erode(
-            (alpha > 127).astype(np.uint8) * 255, band_k
-        )
+        alpha_bin = (alpha > 127).astype(np.uint8) * 255
+        edge_band = cv2.dilate(alpha_bin, band_k) - cv2.erode(alpha_bin, band_k)
         band_weight = cv2.GaussianBlur(edge_band.astype(np.float32) / 255.0, (5, 5), 0)
         alpha = np.clip(
             np.round(alpha.astype(np.float32) * (1.0 - band_weight) + blurred * band_weight), 0, 255

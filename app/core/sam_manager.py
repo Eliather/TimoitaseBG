@@ -31,9 +31,11 @@ class SAMManager:
     """
 
     def __init__(self):
-        self._lock = threading.Lock()
+        self._lock = threading.RLock()
         self.encoder_session = None
         self.decoder_session = None
+        self._enc_path: Optional[Path] = None
+        self._dec_path: Optional[Path] = None
         self.cached_embedding: Optional[np.ndarray] = None
         self.current_image_id: Optional[int] = None
         self.orig_size: Tuple[int, int] = (0, 0)  # (w, h)
@@ -74,6 +76,9 @@ class SAMManager:
         import onnxruntime as ort
         from app.core.gpu_manager import get_gpu_manager
 
+        self._enc_path = Path(enc_path)
+        self._dec_path = Path(dec_path)
+
         gpu_mgr = get_gpu_manager()
         if gpu_mgr.is_gpu_enabled() and not gpu_mgr.has_orphaned_worker():
             providers = get_inference_providers()
@@ -104,6 +109,40 @@ class SAMManager:
                 str(dec_path), sess_options, providers=["CPUExecutionProvider"]
             )
 
+    def _run_session_with_cpu_fallback(
+        self,
+        session_attr: str,
+        path_attr: str,
+        default_filename: str,
+        inputs: dict,
+    ):
+        """Ejecuta session.run() y hace fallback automático a CPU si falla en GPU."""
+        session = getattr(self, session_attr)
+        try:
+            return session.run(None, inputs)
+        except Exception as exc:
+            providers = []
+            if hasattr(session, "get_providers"):
+                try:
+                    providers = list(session.get_providers())
+                except Exception:
+                    providers = []
+            if providers == ["CPUExecutionProvider"]:
+                raise
+            logger.warning(f"Fallo en inferencia GPU de MobileSAM ({session_attr}): {exc}. Reintentando en CPU...")
+            import onnxruntime as ort
+            from app.core.model_fetcher import resolve_local_model
+
+            model_path = getattr(self, path_attr, None) or resolve_local_model(default_filename)
+            if model_path is None:
+                raise
+            sess_options = get_optimized_session_options() or ort.SessionOptions()
+            cpu_session = ort.InferenceSession(
+                str(model_path), sess_options, providers=["CPUExecutionProvider"]
+            )
+            setattr(self, session_attr, cpu_session)
+            return cpu_session.run(None, inputs)
+
     def unload_sessions(self):
         """Libera las sesiones ONNX de MobileSAM de la VRAM cuando se cambia el modo de dispositivo."""
         import gc
@@ -131,23 +170,54 @@ class SAMManager:
     def _preprocess_image(self, pil_img: Image.Image) -> Tuple[np.ndarray, float, int, int]:
         """
         Preprocesa la imagen para el encoder de MobileSAM.
-        El modelo ONNX de Acly espera entrada de Rango 3: (1024, 1024, 3) en float32 (HWC),
-        y contiene internamente la resta de media y división por std.
+        El modelo ONNX de Acly espera entrada (new_h, new_w, 3) en float32 [0, 255] (HWC)
+        y aplica internamente normalización (mean/std) y padding a 1024x1024.
         """
         w, h = pil_img.size
         scale = 1024.0 / max(w, h)
         new_w = max(1, int(round(w * scale)))
         new_h = max(1, int(round(h * scale)))
 
-        # Redimensionar conservando aspect ratio (lado más largo a 1024)
+        # Redimensionar conservando aspect ratio (lado más largo a 1024) sin pre-padding manual negro
         resized = pil_img.convert("RGB").resize((new_w, new_h), resample=_BILINEAR)
-        rgb = np.asarray(resized, dtype=np.float32)
+        rgb = np.ascontiguousarray(np.asarray(resized, dtype=np.float32))
 
-        # Padding a 1024x1024x3 (HWC, float32 en rango 0-255)
-        input_tensor = np.zeros((1024, 1024, 3), dtype=np.float32)
-        input_tensor[:new_h, :new_w, :] = rgb
+        return rgb, scale, new_w, new_h
 
-        return input_tensor, scale, new_w, new_h
+    def _extract_decoder_crop(self, outputs: list) -> np.ndarray:
+        """
+        Extrae el mapa de logits 2D recortado al área válida de la imagen.
+        Prioriza `low_res_masks` (outputs[2], 256x256) para evitar doble interpolación;
+        si no está disponible, usa `outputs[0]` recortando a `scaled_size`.
+        """
+        new_w, new_h = self.scaled_size
+        if len(outputs) >= 3 and outputs[2] is not None:
+            raw_low = outputs[2]
+            if raw_low.ndim == 4:
+                mask_2d = raw_low[0, 0]
+            elif raw_low.ndim == 3:
+                mask_2d = raw_low[0]
+            else:
+                mask_2d = np.squeeze(raw_low)
+
+            if new_w > 0 and new_h > 0 and mask_2d.ndim == 2:
+                low_h, low_w = mask_2d.shape
+                crop_w = max(1, min(low_w, int(round(new_w * (low_w / 1024.0)))))
+                crop_h = max(1, min(low_h, int(round(new_h * (low_h / 1024.0)))))
+                return mask_2d[:crop_h, :crop_w]
+            return mask_2d
+
+        raw_mask = outputs[0]
+        if raw_mask.ndim == 4:
+            mask_2d = raw_mask[0, 0]
+        elif raw_mask.ndim == 3:
+            mask_2d = raw_mask[0]
+        else:
+            mask_2d = np.squeeze(raw_mask)
+
+        if new_w > 0 and new_h > 0 and mask_2d.shape[0] >= new_h and mask_2d.shape[1] >= new_w:
+            return mask_2d[:new_h, :new_w]
+        return mask_2d
 
     def prepare_image(
         self,
@@ -193,7 +263,12 @@ class SAMManager:
             if progress_cb:
                 progress_cb(70, "Calculando mapa semántico (MobileSAM Encoder)...")
             enc_input_name = self.encoder_session.get_inputs()[0].name
-            outputs = self.encoder_session.run(None, {enc_input_name: input_tensor})
+            outputs = self._run_session_with_cpu_fallback(
+                "encoder_session",
+                "_enc_path",
+                "mobile_sam_image_encoder.onnx",
+                {enc_input_name: input_tensor},
+            )
             embedding = outputs[0]  # shape: (1, 256, 64, 64)
 
             with self._lock:
@@ -233,6 +308,18 @@ class SAMManager:
                 logger.warning("No hay embedding en caché o el decoder no está inicializado.")
                 return None
 
+            if (
+                orig_img_size is not None
+                and self.orig_size != (0, 0)
+                and tuple(orig_img_size) != self.orig_size
+            ):
+                logger.warning(
+                    "MobileSAM: orig_img_size %s no coincide con el embedding en caché %s.",
+                    orig_img_size,
+                    self.orig_size,
+                )
+                return None
+
             orig_w, orig_h = orig_img_size or self.orig_size
             scale = self.scale_factor or (1024.0 / max(orig_w, orig_h))
 
@@ -262,21 +349,13 @@ class SAMManager:
                     decoder_inputs[name] = orig_im_size
 
             try:
-                outputs = self.decoder_session.run(None, decoder_inputs)
-                raw_mask = outputs[0]
-
-                if raw_mask.ndim == 4:
-                    mask_2d = raw_mask[0, 0]
-                elif raw_mask.ndim == 3:
-                    mask_2d = raw_mask[0]
-                else:
-                    mask_2d = np.squeeze(raw_mask)
-
-                new_w, new_h = self.scaled_size
-                if new_w > 0 and new_h > 0 and mask_2d.shape[0] >= new_h and mask_2d.shape[1] >= new_w:
-                    crop_mask = mask_2d[:new_h, :new_w]
-                else:
-                    crop_mask = mask_2d
+                outputs = self._run_session_with_cpu_fallback(
+                    "decoder_session",
+                    "_dec_path",
+                    "sam_mask_decoder_single.onnx",
+                    decoder_inputs,
+                )
+                crop_mask = self._extract_decoder_crop(outputs)
 
                 resized_mask = cv2.resize(
                     crop_mask, (orig_w, orig_h), interpolation=cv2.INTER_LINEAR
@@ -309,6 +388,18 @@ class SAMManager:
         """
         with self._lock:
             if self.cached_embedding is None or self.decoder_session is None:
+                return None
+
+            if (
+                orig_img_size is not None
+                and self.orig_size != (0, 0)
+                and tuple(orig_img_size) != self.orig_size
+            ):
+                logger.warning(
+                    "MobileSAM: orig_img_size %s no coincide con el embedding en caché %s.",
+                    orig_img_size,
+                    self.orig_size,
+                )
                 return None
 
             orig_w, orig_h = orig_img_size or self.orig_size
@@ -366,20 +457,13 @@ class SAMManager:
                     decoder_inputs[name] = orig_im_size
 
             try:
-                outputs = self.decoder_session.run(None, decoder_inputs)
-                raw_mask = outputs[0]
-                if raw_mask.ndim == 4:
-                    mask_2d = raw_mask[0, 0]
-                elif raw_mask.ndim == 3:
-                    mask_2d = raw_mask[0]
-                else:
-                    mask_2d = np.squeeze(raw_mask)
-
-                new_w, new_h = self.scaled_size
-                if new_w > 0 and new_h > 0 and mask_2d.shape[0] >= new_h and mask_2d.shape[1] >= new_w:
-                    crop_mask = mask_2d[:new_h, :new_w]
-                else:
-                    crop_mask = mask_2d
+                outputs = self._run_session_with_cpu_fallback(
+                    "decoder_session",
+                    "_dec_path",
+                    "sam_mask_decoder_single.onnx",
+                    decoder_inputs,
+                )
+                crop_mask = self._extract_decoder_crop(outputs)
 
                 # Aplicar sigmoide en baja resolución antes de escalar a (orig_w, orig_h)
                 prob_lowres = 1.0 / (1.0 + np.exp(-np.clip(crop_mask, -15.0, 15.0)))

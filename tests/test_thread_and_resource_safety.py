@@ -110,6 +110,74 @@ class TestThreadAndResourceSafety(unittest.TestCase):
 
         win.close()
 
+    def test_ai_coordinator_cancels_save_worker_and_cleans_up_on_finished(self):
+        """Verifica cancel_active sobre save_worker, unload_sessions y liberación de referencias en finished."""
+        from app.controllers.ai_coordinator import AICoordinator
+
+        coord = AICoordinator()
+
+        class _FakeSignal:
+            def __init__(self):
+                self.callbacks = []
+
+            def connect(self, cb):
+                self.callbacks.append(cb)
+
+            def emit(self):
+                for cb in list(self.callbacks):
+                    cb()
+
+        mock_save = MagicMock(spec=QThread)
+        mock_save.isRunning.return_value = True
+        mock_save.finished = _FakeSignal()
+
+        coord._register_worker("save_worker", mock_save)
+        self.assertTrue(coord.cancel_active())
+        mock_save.requestInterruption.assert_called_once()
+
+        # Al disparar finished debe limpiar la referencia y llamar deleteLater()
+        mock_save.finished.emit()
+        self.assertIsNone(coord.save_worker)
+        mock_save.deleteLater.assert_called_once()
+
+    def test_ai_coordinator_unload_sessions_and_blocking_shutdown(self):
+        """Verifica que unload_sessions invoque bg_remover/restorer y shutdown_workers cierre GPU de forma bloqueante."""
+        from app.controllers.ai_coordinator import AICoordinator
+
+        coord = AICoordinator()
+        mock_bg = MagicMock()
+        mock_restorer = MagicMock()
+        mock_sam = MagicMock()
+        mock_yolo = MagicMock()
+        mock_gpu = MagicMock()
+
+        with patch("app.controllers.ai_coordinator.get_bg_remover", return_value=mock_bg), \
+             patch("app.controllers.ai_coordinator.get_image_restorer", return_value=mock_restorer), \
+             patch("app.core.sam_manager.get_sam_manager", return_value=mock_sam), \
+             patch("app.core.yolo_detector.get_yolo_detector", return_value=mock_yolo), \
+             patch("app.core.gpu_manager.get_gpu_manager", return_value=mock_gpu):
+            coord.unload_sessions()
+            mock_bg.unload_sessions.assert_called_once()
+            mock_restorer.unload_sessions.assert_called_once()
+            mock_sam.unload_sessions.assert_called_once()
+            mock_yolo.unload_sessions.assert_called_once()
+            mock_gpu.shutdown.assert_called_with(blocking=False)
+
+            mock_gpu.reset_mock()
+            coord.shutdown_workers(timeout_ms=500)
+            mock_gpu.shutdown.assert_called_with(blocking=True)
+
+    def test_model_action_worker_quantize_rejects_path_traversal(self):
+        """Verifica que ModelActionWorker valide el nombre del modelo con _resolve_safe_model_path."""
+        from app.core.workers import ModelActionWorker
+
+        worker = ModelActionWorker("quantize", "../../evil.onnx")
+        errors = []
+        worker.failed.connect(errors.append)
+        worker.run()
+        self.assertEqual(len(errors), 1)
+        self.assertIn("Nombre de modelo inválido", errors[0])
+
 
 if __name__ == "__main__":
     unittest.main()

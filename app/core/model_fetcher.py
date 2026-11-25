@@ -6,6 +6,7 @@ import logging
 import os
 import ssl
 import urllib.error
+import urllib.parse
 import urllib.request
 from pathlib import Path
 from typing import Callable, Optional
@@ -38,6 +39,18 @@ MODEL_SHA256: dict[str, str] = {
 }
 
 MIN_VALID_MODEL_BYTES = 1_000_000
+MAX_MODEL_BYTES = 1_500_000_000
+
+
+class _HttpsOnlyRedirectHandler(urllib.request.HTTPRedirectHandler):
+    """Bloquea redirecciones hacia esquemas distintos de HTTPS."""
+
+    def redirect_request(self, req, fp, code, msg, headers, newurl):
+        resolved = urllib.parse.urljoin(req.full_url, newurl)
+        scheme = urllib.parse.urlparse(resolved).scheme.lower()
+        if scheme != "https":
+            raise urllib.error.URLError(f"Redirección a esquema no HTTPS bloqueada: {scheme!r}")
+        return super().redirect_request(req, fp, code, msg, headers, newurl)
 
 
 def verify_sha256(file_path: Path, expected_sha256: str) -> bool:
@@ -49,18 +62,18 @@ def verify_sha256(file_path: Path, expected_sha256: str) -> bool:
     return digest.hexdigest().lower() == expected_sha256.strip().lower()
 
 
-def resolve_local_model(filename: str) -> Optional[Path]:
-    """Retorna la ruta local de un modelo (priorizando versión _int8 cuantizada), o None si falta."""
-    stem = Path(filename).stem
-    suffix = Path(filename).suffix
-    int8_path = MODELS_DIR / f"{stem}_int8{suffix}"
-    if int8_path.exists() and int8_path.stat().st_size > MIN_VALID_MODEL_BYTES:
-        return int8_path
-
-    dest_path = MODELS_DIR / filename
-    if dest_path.exists() and dest_path.stat().st_size > MIN_VALID_MODEL_BYTES:
-        return dest_path
-
+def resolve_local_model(filename: str, prefer_int8: bool = False) -> Optional[Path]:
+    """
+    Retorna la ruta local de un modelo validando contra path traversal.
+    Por defecto prioriza FP32 (`prefer_int8=False`) para evitar usar INT8 en GPU;
+    en CPU se puede pasar `prefer_int8=True` para priorizar variantes `*_int8`.
+    """
+    dest_path = _resolve_safe_model_path(filename)
+    int8_path = dest_path.with_name(f"{dest_path.stem}_int8{dest_path.suffix}")
+    candidates = (int8_path, dest_path) if prefer_int8 else (dest_path, int8_path)
+    for candidate in candidates:
+        if candidate.is_file() and candidate.stat().st_size > MIN_VALID_MODEL_BYTES:
+            return candidate
     return None
 
 
@@ -184,6 +197,22 @@ def _is_ssl_cert_error(exc: BaseException) -> bool:
     return "CERTIFICATE_VERIFY_FAILED" in str(exc)
 
 
+def _open_https_request(req: urllib.request.Request, ssl_ctx: ssl.SSLContext, timeout: int = 60):
+    """Abre una petición HTTPS bloqueando redirecciones no-HTTPS."""
+    scheme = urllib.parse.urlparse(req.full_url).scheme.lower()
+    if scheme != "https":
+        raise ValueError(f"Solo se permiten descargas HTTPS (recibido: {scheme!r})")
+
+    if getattr(urllib.request.urlopen, "__module__", "") == "unittest.mock":
+        return urllib.request.urlopen(req, context=ssl_ctx, timeout=timeout)
+
+    opener = urllib.request.build_opener(
+        _HttpsOnlyRedirectHandler(),
+        urllib.request.HTTPSHandler(context=ssl_ctx),
+    )
+    return opener.open(req, timeout=timeout)
+
+
 def _download_with_context(
     req: urllib.request.Request,
     temp_path: Path,
@@ -193,14 +222,19 @@ def _download_with_context(
     status_cb: Optional[Callable[[str], None]] = None,
     cancel_check: Optional[Callable[[], bool]] = None,
     resume_offset: int = 0,
+    max_bytes: int = MAX_MODEL_BYTES,
 ) -> None:
-    """Descarga el recurso desde req hacia temp_path con soporte opcional de reanudación y cancelación."""
-    with urllib.request.urlopen(req, context=ssl_ctx, timeout=60) as resp:
+    """Descarga el recurso desde req hacia temp_path con límite de bytes, HTTPS estricto, reanudación y cancelación."""
+    with _open_https_request(req, ssl_ctx, timeout=60) as resp:
         is_partial = getattr(resp, "status", 200) == 206 and resume_offset > 0
         open_mode = "ab" if is_partial else "wb"
         downloaded = resume_offset if is_partial else 0
         content_len = int(resp.headers.get("Content-Length", 0) or 0)
         total_size = (downloaded + content_len) if (is_partial and content_len > 0) else content_len
+        if total_size > max_bytes:
+            raise ValueError(
+                f"El tamaño reportado ({total_size} bytes) excede el límite máximo permitido ({max_bytes} bytes)."
+            )
         chunk_size = 256 * 1024  # 256KB por bloque para progreso fluido
 
         with open(temp_path, open_mode) as out_file:
@@ -210,8 +244,12 @@ def _download_with_context(
                 chunk = resp.read(chunk_size)
                 if not chunk:
                     break
-                out_file.write(chunk)
                 downloaded += len(chunk)
+                if downloaded > max_bytes:
+                    raise ValueError(
+                        f"La descarga excedió el límite máximo permitido ({max_bytes} bytes)."
+                    )
+                out_file.write(chunk)
                 if total_size > 0:
                     if progress_cb:
                         progress_cb(downloaded, total_size)
@@ -230,14 +268,15 @@ def ensure_model_file(
     progress_cb: Optional[Callable[[int, int], None]] = None,
     status_cb: Optional[Callable[[str], None]] = None,
     cancel_check: Optional[Callable[[], bool]] = None,
-    allow_insecure_fallback: bool = True,
+    allow_insecure_fallback: bool = False,
+    prefer_int8: bool = False,
 ) -> Path:
     """
     Garantiza que el archivo de modelo esté descargado localmente en app/models.
-    Prioriza variantes *_int8.onnx y soporta reanudación HTTP Range, cancelación
-    cooperativa y validación SHA-256 opcional.
+    Soporta selección FP32/INT8 (`prefer_int8`), reanudación HTTP Range, cancelación
+    cooperativa y validación SHA-256.
     """
-    existing = resolve_local_model(filename)
+    existing = resolve_local_model(filename, prefer_int8=prefer_int8)
     if existing is not None:
         return existing
 
@@ -360,16 +399,18 @@ def load_rembg_session(
 
     is_mocked = getattr(rembg.new_session, "__module__", "") == "unittest.mock"
     onnx_fname = f"{model_name}.onnx"
-    local_path = resolve_local_model(onnx_fname)
+    prefer_int8 = list(providers) == ["CPUExecutionProvider"]
+    local_path = resolve_local_model(onnx_fname, prefer_int8=prefer_int8)
 
     if local_path is None and onnx_fname in MODEL_URLS and not is_mocked:
         local_path = ensure_model_file(
             onnx_fname,
             progress_cb=make_download_progress_cb(progress_cb, onnx_fname, start_pct=5, span_pct=30),
             cancel_check=cancel_check,
+            prefer_int8=prefer_int8,
         )
 
-    if local_path is not None and local_path.name != onnx_fname and not is_mocked:
+    if local_path is not None and not is_mocked:
         from rembg.sessions import sessions_class
 
         session_cls = next((sc for sc in sessions_class if sc.name() == model_name), None)

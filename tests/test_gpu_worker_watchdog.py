@@ -108,8 +108,12 @@ class TestGPUWorkerWatchdog(unittest.TestCase):
     def test_worker_providers_cuda_linux(self, mock_ort):
         from app.core.gpu_worker import get_worker_gpu_providers
         providers = get_worker_gpu_providers()
-        self.assertIn('CUDAExecutionProvider', providers)
-        self.assertIn('CPUExecutionProvider', providers)
+        prov_names = [p[0] if isinstance(p, tuple) else p for p in providers]
+        self.assertIn('CUDAExecutionProvider', prov_names)
+        self.assertIn('CPUExecutionProvider', prov_names)
+        cuda_entry = next(p for p in providers if isinstance(p, tuple) and p[0] == 'CUDAExecutionProvider')
+        self.assertEqual(cuda_entry[1].get('arena_extend_strategy'), 'kSameAsRequested')
+        self.assertEqual(cuda_entry[1].get('cudnn_conv_algo_search'), 'HEURISTIC')
 
     @patch('onnxruntime.get_available_providers', return_value=['CUDAExecutionProvider', 'CPUExecutionProvider'])
     @patch('app.config.get_gpu_name', return_value='')
@@ -283,3 +287,152 @@ class TestGPUWorkerWatchdog(unittest.TestCase):
         sess_opts = get_optimized_session_options()
         self.assertIsNotNone(sess_opts)
         self.assertLessEqual(sess_opts.intra_op_num_threads, 4)
+
+    @patch('platform.system', return_value='Linux')
+    @patch('os.killpg', create=True)
+    @patch('os.getpgid', return_value=5000, create=True)
+    @patch('os.getpgrp', return_value=5000, create=True)
+    @patch('os.kill', create=True)
+    def test_kill_worker_linux_same_pgrp_does_not_call_killpg(
+        self, mock_os_kill, mock_getpgrp, mock_getpgid, mock_killpg, mock_platform
+    ):
+        alive = [True]
+        mock_os_kill.side_effect = lambda *a, **kw: alive.__setitem__(0, False)
+
+        proc = MagicMock()
+        proc.pid = 5000
+        proc.is_alive.side_effect = lambda: alive[0]
+        self.manager._process = proc
+
+        killed = self.manager.kill_worker()
+        self.assertTrue(killed)
+        mock_killpg.assert_not_called()
+        mock_os_kill.assert_called_once()
+
+    def test_kill_worker_closes_and_cancels_queues(self):
+        proc = MagicMock()
+        proc.is_alive.return_value = False
+        req_q = MagicMock()
+        resp_q = MagicMock()
+        self.manager._process = proc
+        self.manager._request_queue = req_q
+        self.manager._response_queue = resp_q
+
+        self.manager.kill_worker()
+        req_q.close.assert_called_once()
+        req_q.cancel_join_thread.assert_called_once()
+        resp_q.close.assert_called_once()
+        resp_q.cancel_join_thread.assert_called_once()
+        self.assertIsNone(self.manager._request_queue)
+        self.assertIsNone(self.manager._response_queue)
+
+    @patch('app.config.is_gpu_available', return_value=True)
+    def test_run_inference_validation_error_does_not_fallback_to_cpu(self, mock_gpu):
+        import queue as std_queue
+        from app.config import set_gpu_acceleration
+
+        set_gpu_acceleration(True)
+        mgr = GPUWorkerManager(register_atexit=False)
+        req_q = std_queue.Queue()
+        resp_q = std_queue.Queue()
+        proc = MagicMock()
+        proc.is_alive.return_value = True
+
+        def fake_ensure():
+            mgr._process = proc
+            mgr._request_queue = req_q
+            mgr._response_queue = resp_q
+
+        original_put = req_q.put
+
+        def intercept_put(item):
+            original_put(item)
+            resp_q.put({
+                "task_id": item["task_id"],
+                "status": "error",
+                "error_type": "validation",
+                "error": "MAX_ALLOWED_TILES exceeded",
+            })
+
+        req_q.put = intercept_put
+        mgr._ensure_worker = fake_ensure
+        fallback = MagicMock(return_value="cpu_should_not_run")
+        notifications = []
+        mgr.set_status_callback(notifications.append)
+
+        with self.assertRaises(ValueError):
+            mgr.run_inference("restore_image", {}, fallback, timeout_override=2.0)
+
+        fallback.assert_not_called()
+        self.assertEqual(notifications, [])
+
+    @patch('app.config.is_gpu_available', return_value=True)
+    def test_run_inference_releases_lock_during_wait_and_supports_cancel(self, mock_gpu):
+        import queue as std_queue
+        import threading
+        from app.config import set_gpu_acceleration
+
+        set_gpu_acceleration(True)
+        mgr = GPUWorkerManager(register_atexit=False)
+        req_q = std_queue.Queue()
+        resp_q = std_queue.Queue()
+        proc = MagicMock()
+        proc.is_alive.return_value = True
+        proc.terminate.side_effect = lambda: setattr(proc.is_alive, "return_value", False)
+
+        def fake_ensure():
+            mgr._process = proc
+            mgr._request_queue = req_q
+            mgr._response_queue = resp_q
+
+        mgr._ensure_worker = fake_ensure
+        cancel_flag = {"cancelled": False}
+        lock_acquired_from_other_thread = {"ok": False}
+
+        def ui_thread_check():
+            import time
+            time.sleep(0.15)
+            acquired = mgr._lock.acquire(timeout=0.5)
+            lock_acquired_from_other_thread["ok"] = acquired
+            if acquired:
+                mgr._lock.release()
+            cancel_flag["cancelled"] = True
+
+        t = threading.Thread(target=ui_thread_check)
+        t.start()
+
+        with self.assertRaises(InterruptedError):
+            mgr.run_inference(
+                "remove_background",
+                {},
+                lambda: "cpu",
+                timeout_override=5.0,
+                cancel_check=lambda: cancel_flag["cancelled"],
+            )
+
+        t.join(timeout=2.0)
+        self.assertTrue(lock_acquired_from_other_thread["ok"])
+
+    def test_gpu_worker_restore_reraises_value_error_and_resets_on_gpu_error(self):
+        from PIL import Image
+        from app.core.gpu_worker import PersistentGPUWorker
+
+        worker = PersistentGPUWorker(preferred_device_id=0)
+        fake_restorer = MagicMock()
+        fake_restorer._restore_image_impl.side_effect = ValueError("MAX_ALLOWED_TILES")
+        worker._restorer_instance = fake_restorer
+
+        img = Image.new("RGBA", (16, 16), (255, 0, 0, 255))
+        with self.assertRaises(ValueError):
+            worker.restore_image(img)
+
+        # Ahora simular fallo GPU runtime: debe resetear _restorer_instance a None y usar CPU
+        fake_restorer._restore_image_impl.side_effect = RuntimeError("DML device removed")
+        worker._restorer_instance = fake_restorer
+        with patch("app.core.restorer.ImageRestorer") as mock_restorer_cls:
+            mock_cpu_inst = MagicMock()
+            mock_cpu_inst._restore_image_impl.return_value = img
+            mock_restorer_cls.return_value = mock_cpu_inst
+            out = worker.restore_image(img)
+            self.assertIs(out, img)
+            self.assertIsNone(worker._restorer_instance)

@@ -27,7 +27,7 @@ def qimage_to_numpy(qimg: QImage) -> np.ndarray:
 
     # Extraer únicamente los 4 canales de cada píxel ignorando el padding de scanline
     rgba = buf[:, : width * 4].reshape((height, width, 4))
-    return np.ascontiguousarray(rgba.copy())
+    return np.array(rgba, dtype=np.uint8, copy=True, order="C")
 
 
 def qimage_to_pil(qimg: QImage) -> Image.Image:

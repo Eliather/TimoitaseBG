@@ -291,7 +291,7 @@ class BrushPanel(QWidget):
         s_layout.addWidget(self.btn_delete_selection)
 
         self.btn_inpaint_selection = QPushButton(tr("btn_inpaint_selection"))
-        self.btn_inpaint_selection.setObjectName("PrimaryBtn")
+        self.btn_inpaint_selection.setObjectName("secondaryActionButton")
         self.btn_inpaint_selection.setFixedHeight(34)
         self.btn_inpaint_selection.setCursor(Qt.CursorShape.PointingHandCursor)
         self.btn_inpaint_selection.setToolTip(tr("tip_inpaint_selection"))
@@ -429,9 +429,9 @@ class BrushPanel(QWidget):
         return slider, val_lbl, name_lbl
 
     def apply_theme(self, is_dark: bool):
-        fg_color = "#EAEAEA" if is_dark else "#292524"
-        accent_color = "#FF4F79"
-        dis_color = "#666666" if is_dark else "#A8A29E"
+        fg_color = "#F2F4F7" if is_dark else "#14171A"
+        accent_color = "#2E7CF6" if is_dark else "#1D63DC"
+        dis_color = "#5C6470" if is_dark else "#9BA3AE"
 
         for btn, icon_name in (
             (self.btn_tool_paint, "brush"),
@@ -447,7 +447,7 @@ class BrushPanel(QWidget):
 
         self.btn_delete_selection.setIcon(get_icon("trash", color="#FFFFFF", size=16))
         self.btn_delete_selection.setIconSize(QSize(16, 16))
-        self.btn_inpaint_selection.setIcon(get_icon("sparkles", color="#FFFFFF", size=16))
+        self.btn_inpaint_selection.setIcon(get_icon("sparkles", color=fg_color, active_color=accent_color, disabled_color=dis_color, size=16))
         self.btn_inpaint_selection.setIconSize(QSize(16, 16))
         self.btn_apply_edge_refine.setIcon(get_icon("sliders", color="#FFFFFF", size=15))
         self.btn_apply_edge_refine.setIconSize(QSize(15, 15))

@@ -134,6 +134,7 @@
   "swatch_white": "Белый (#FFFFFF)",
   "swatch_black": "Черный (#000000)",
   "swatch_gray": "Серый (#E2E8F0)",
+  "swatch_last_color": "Последний сохранённый цвет ({hex})",
   "swatch_custom": "Выбрать цвет...",
   "color_white": "Белый (#FFFFFF)",
   "color_black": "Черный (#000000)",

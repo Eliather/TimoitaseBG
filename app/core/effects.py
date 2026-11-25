@@ -18,10 +18,10 @@ def apply_sticker_outline(
     expand_canvas: bool = True,
 ) -> Image.Image:
     """Agrega un borde tipo sticker alrededor de los píxeles opacos de una imagen RGBA."""
-    rgba = pil_img.convert("RGBA")
-    width_px = int(max(0, width_px))
+    rgba = pil_img if pil_img.mode == "RGBA" else pil_img.convert("RGBA")
+    width_px = int(max(0, min(200, width_px)))
     if width_px == 0:
-        return rgba
+        return rgba.copy()
 
     pad = width_px + 2 if expand_canvas else 0
     if pad > 0:
@@ -31,8 +31,7 @@ def apply_sticker_outline(
     else:
         work = rgba
 
-    arr = np.array(work, dtype=np.uint8)
-    alpha = arr[:, :, 3]
+    alpha = np.array(work.getchannel("A"), dtype=np.uint8)
     if int(alpha.max()) == 0:
         return work
 
@@ -43,13 +42,8 @@ def apply_sticker_outline(
     softened = cv2.GaussianBlur(dilated, (3, 3), 0)
     outline_alpha = np.maximum(alpha, softened)
 
-    outline_arr = np.zeros_like(arr)
-    outline_arr[:, :, 0] = int(color_rgb[0])
-    outline_arr[:, :, 1] = int(color_rgb[1])
-    outline_arr[:, :, 2] = int(color_rgb[2])
-    outline_arr[:, :, 3] = outline_alpha
-
-    outline_img = Image.fromarray(outline_arr, mode="RGBA")
+    outline_img = Image.new("RGBA", work.size, (int(color_rgb[0]), int(color_rgb[1]), int(color_rgb[2]), 0))
+    outline_img.putalpha(Image.fromarray(outline_alpha, mode="L"))
     return Image.alpha_composite(outline_img, work)
 
 
@@ -63,11 +57,11 @@ def apply_drop_shadow(
     expand_canvas: bool = True,
 ) -> Image.Image:
     """Proyecta una sombra paralela suave debajo de la silueta alfa del sujeto."""
-    rgba = pil_img.convert("RGBA")
-    blur_radius = int(max(0, blur_radius))
+    rgba = pil_img if pil_img.mode == "RGBA" else pil_img.convert("RGBA")
+    blur_radius = int(max(0, min(200, blur_radius)))
     opacity = float(max(0.0, min(1.0, opacity)))
     if opacity <= 0.0:
-        return rgba
+        return rgba.copy()
 
     pad_blur = blur_radius * 2 + 4
     if expand_canvas:
@@ -84,7 +78,7 @@ def apply_drop_shadow(
     fg_canvas = Image.new("RGBA", (new_w, new_h), (0, 0, 0, 0))
     fg_canvas.paste(rgba, (pad_left, pad_top))
 
-    fg_alpha = np.array(rgba, dtype=np.uint8)[:, :, 3]
+    fg_alpha = np.array(rgba.getchannel("A"), dtype=np.uint8)
     shadow_alpha = np.zeros((new_h, new_w), dtype=np.uint8)
     sx0 = pad_left + int(offset_x)
     sy0 = pad_top + int(offset_y)
@@ -105,13 +99,8 @@ def apply_drop_shadow(
         shadow_alpha = cv2.GaussianBlur(shadow_alpha, (k, k), 0)
 
     shadow_alpha = np.clip(shadow_alpha.astype(np.float32) * opacity, 0, 255).astype(np.uint8)
-    shadow_arr = np.zeros((new_h, new_w, 4), dtype=np.uint8)
-    shadow_arr[:, :, 0] = int(color_rgb[0])
-    shadow_arr[:, :, 1] = int(color_rgb[1])
-    shadow_arr[:, :, 2] = int(color_rgb[2])
-    shadow_arr[:, :, 3] = shadow_alpha
-
-    shadow_img = Image.fromarray(shadow_arr, mode="RGBA")
+    shadow_img = Image.new("RGBA", (new_w, new_h), (int(color_rgb[0]), int(color_rgb[1]), int(color_rgb[2]), 0))
+    shadow_img.putalpha(Image.fromarray(shadow_alpha, mode="L"))
     return Image.alpha_composite(shadow_img, fg_canvas)
 
 
@@ -191,7 +180,10 @@ def compose_background_mode(
         # Rellenar fondo base por si la referencia tuviera alfa parcial
         backdrop = Image.new("RGBA", fg.size, (18, 22, 30, 255))
         backdrop = Image.alpha_composite(backdrop, src)
-        blurred = backdrop.convert("RGB").filter(ImageFilter.GaussianBlur(radius=max(1, int(blur_radius))))
+        safe_radius = max(1, min(200, int(blur_radius)))
+        ksize = safe_radius * 2 + 1
+        blurred_arr = cv2.GaussianBlur(np.asarray(backdrop.convert("RGB"), dtype=np.uint8), (ksize, ksize), 0)
+        blurred = Image.fromarray(blurred_arr, mode="RGB")
         composed = Image.alpha_composite(blurred.convert("RGBA"), fg)
     elif mode == "image" and bg_image is not None:
         fitted_bg = ImageOps.fit(bg_image.convert("RGBA"), fg.size, method=Image.Resampling.LANCZOS)

@@ -1,9 +1,80 @@
 """
 TimoitaseBG - Gestión de estado e historial de imágenes (Undo / Redo / Reset).
 """
-from typing import Optional, List, Tuple
+from dataclasses import dataclass
+from typing import Iterator, List, Optional, Tuple
 from PIL import Image
 from app.config import MAX_HISTORY_STATES
+
+# Tipos de operación estructurados para evitar acoplamiento a textos traducidos
+OP_ORIGINAL = "original"
+OP_BG_REMOVAL = "bg_removal"
+OP_MANUAL_EDIT = "manual_edit"
+OP_CROP = "crop"
+OP_UPSCALE = "upscale"
+OP_ENHANCE = "enhance"
+OP_RESET = "reset"
+OP_OTHER = "other"
+
+DEFAULT_SEQUENCE_MAX_HISTORY = 5
+
+
+@dataclass(frozen=True)
+class HistoryEntryMeta:
+    """Metadatos estructurados y caché ligera por entrada del historial."""
+
+    has_transparency: bool
+    op_type: str = OP_OTHER
+    is_bg_removal: bool = False
+    is_upscale: bool = False
+
+
+def _image_has_transparency(img: Optional[Image.Image]) -> bool:
+    """Comprueba si una imagen PIL RGBA contiene al menos un píxel transparente."""
+    if img is None or img.mode != "RGBA":
+        return False
+    extrema = img.getextrema()
+    return extrema[3][0] < 255
+
+
+def _infer_op_metadata(
+    description: str,
+    op_type: Optional[str] = None,
+    is_bg_removal: Optional[bool] = None,
+    is_upscale: Optional[bool] = None,
+) -> Tuple[str, bool, bool]:
+    """Resuelve tipo de operación y flags estructurados manteniendo compatibilidad con descripciones."""
+    desc = description or ""
+    if op_type is not None:
+        resolved_type = op_type
+    elif "Quitar fondo" in desc or "sin fondo" in desc or desc.startswith("Aislar "):
+        resolved_type = OP_BG_REMOVAL
+    elif "Edición Manual" in desc:
+        resolved_type = OP_MANUAL_EDIT
+    elif "Recorte" in desc:
+        resolved_type = OP_CROP
+    elif "Escalado" in desc:
+        resolved_type = OP_UPSCALE
+    elif "Mejora de nitidez" in desc:
+        resolved_type = OP_ENHANCE
+    elif "Recuperado original" in desc:
+        resolved_type = OP_RESET
+    elif desc == "Original":
+        resolved_type = OP_ORIGINAL
+    else:
+        resolved_type = OP_OTHER
+
+    resolved_bg_rm = (
+        bool(is_bg_removal)
+        if is_bg_removal is not None
+        else resolved_type in (OP_BG_REMOVAL, OP_MANUAL_EDIT, OP_CROP)
+    )
+    resolved_upscale = (
+        bool(is_upscale)
+        if is_upscale is not None
+        else resolved_type in (OP_UPSCALE, OP_ENHANCE)
+    )
+    return resolved_type, resolved_bg_rm, resolved_upscale
 
 
 class ImageState:
@@ -13,12 +84,14 @@ class ImageState:
     """
 
     def __init__(self, max_history: int = MAX_HISTORY_STATES):
-        self.max_history = max_history
+        self.max_history = max(1, int(max_history))
         self._original_image: Optional[Image.Image] = None
+        self._original_has_transparency: bool = False
         # Guarda tuplas: (current_image, brush_reference_image)
         self._history: List[Tuple[Image.Image, Image.Image]] = []
         self._current_index: int = -1
         self._descriptions: List[str] = []
+        self._metadata: List[HistoryEntryMeta] = []
 
     @property
     def has_image(self) -> bool:
@@ -37,6 +110,12 @@ class ImageState:
             return None
         return self._history[self._current_index][0].copy()
 
+    def peek_current_image(self) -> Optional[Image.Image]:
+        """Retorna una referencia de solo lectura al estado actual sin clonar la imagen."""
+        if not self.has_image:
+            return None
+        return self._history[self._current_index][0]
+
     @property
     def current_brush_reference(self) -> Optional[Image.Image]:
         """Imagen original transformada correspondiente al estado actual (para el pincel)."""
@@ -52,38 +131,58 @@ class ImageState:
         return ""
 
     @property
+    def current_metadata(self) -> Optional[HistoryEntryMeta]:
+        """Metadatos estructurados del estado actual."""
+        if 0 <= self._current_index < len(self._metadata):
+            return self._metadata[self._current_index]
+        return None
+
+    @property
+    def current_op_type(self) -> str:
+        """Tipo de operación estructurado del estado actual."""
+        meta = self.current_metadata
+        return meta.op_type if meta is not None else ""
+
+    @property
     def has_transparency(self) -> bool:
-        """Indica si la imagen actual posee canal alfa con al menos un píxel transparente."""
+        """Indica si la imagen actual posee canal alfa con al menos un píxel transparente (cacheado)."""
         if not self.has_image:
             return False
-        curr = self._history[self._current_index][0]
-        if curr.mode == "RGBA":
-            extrema = curr.getextrema()
-            return extrema[3][0] < 255
-        return False
+        if self._current_index < len(self._metadata):
+            return self._metadata[self._current_index].has_transparency
+        return _image_has_transparency(self._history[self._current_index][0])
 
     @property
     def has_background_been_removed(self) -> bool:
         """Indica si el historial actual incluye alguna operación destructiva de fondo o borrador manual."""
         if not self.has_image:
             return False
-        for desc in self._descriptions[:self._current_index + 1]:
-            if "Quitar fondo" in desc or "Edición Manual" in desc or "Recorte" in desc:
+        return any(m.is_bg_removal for m in self._metadata[: self._current_index + 1])
+
+    def has_previous_transparent_state(self) -> bool:
+        """
+        Comprueba si existe algún estado previo con transparencia en el historial o en el original
+        SIN clonar (`.copy()`) ninguna imagen ni recalcular `getextrema()`.
+        """
+        if not self.has_image:
+            return False
+        for meta in reversed(self._metadata[: self._current_index]):
+            if meta.has_transparency:
                 return True
-        return False
+        return self._original_has_transparency
 
     def get_last_transparent_state(self) -> Optional[Image.Image]:
         """
         Busca en el historial hacia atrás el estado más reciente que posea canal alfa con transparencia.
         Permite restaurar la transparencia tras haber aplicado un color de fondo sólido.
         """
-        for img, _ in reversed(self._history[: self._current_index]):
-            if img.mode == "RGBA":
-                if img.getextrema()[3][0] < 255:
-                    return img.copy()
-        if self._original_image and self._original_image.mode == "RGBA":
-            if self._original_image.getextrema()[3][0] < 255:
-                return self._original_image.copy()
+        if not self.has_image:
+            return None
+        for idx in range(self._current_index - 1, -1, -1):
+            if self._metadata[idx].has_transparency:
+                return self._history[idx][0].copy()
+        if self._original_image is not None and self._original_has_transparency:
+            return self._original_image.copy()
         return None
 
     def load_new_image(self, image: Image.Image) -> Image.Image:
@@ -97,13 +196,32 @@ class ImageState:
         else:
             converted = image.copy()
 
+        orig_has_alpha = _image_has_transparency(converted)
         self._original_image = converted
+        self._original_has_transparency = orig_has_alpha
         self._history = [(converted, converted)]
         self._descriptions = ["Original"]
+        self._metadata = [
+            HistoryEntryMeta(
+                has_transparency=orig_has_alpha,
+                op_type=OP_ORIGINAL,
+                is_bg_removal=False,
+                is_upscale=False,
+            )
+        ]
         self._current_index = 0
         return self.current_image
 
-    def push_state(self, image: Image.Image, description: str = "Modificación", brush_reference: Optional[Image.Image] = None) -> Image.Image:
+    def push_state(
+        self,
+        image: Image.Image,
+        description: str = "Modificación",
+        brush_reference: Optional[Image.Image] = None,
+        *,
+        op_type: Optional[str] = None,
+        is_bg_removal: Optional[bool] = None,
+        is_upscale: Optional[bool] = None,
+    ) -> Image.Image:
         """
         Registra una nueva modificación sobre la imagen.
         Descarta cualquier estado posterior si nos encontrábamos en un punto de deshacer.
@@ -115,23 +233,46 @@ class ImageState:
         current_brush_ref = self._history[self._current_index][1]
         if brush_reference is None:
             new_brush = current_brush_ref
-        elif brush_reference is current_brush_ref:
-            new_brush = current_brush_ref
+        elif brush_reference is current_brush_ref or brush_reference is self._original_image:
+            new_brush = brush_reference
         else:
             new_brush = brush_reference.copy()
 
         # Truncar historial si estábamos en medio de un undo
         self._history = self._history[: self._current_index + 1]
         self._descriptions = self._descriptions[: self._current_index + 1]
+        self._metadata = self._metadata[: self._current_index + 1]
 
-        new_frame = image.copy()
+        if image is self._original_image:
+            new_frame = self._original_image
+            has_alpha = self._original_has_transparency
+        else:
+            new_frame = image.copy()
+            has_alpha = _image_has_transparency(new_frame)
+
+        resolved_type, resolved_bg_rm, resolved_upscale = _infer_op_metadata(
+            description,
+            op_type=op_type,
+            is_bg_removal=is_bg_removal,
+            is_upscale=is_upscale,
+        )
+
         self._history.append((new_frame, new_brush))
         self._descriptions.append(description)
+        self._metadata.append(
+            HistoryEntryMeta(
+                has_transparency=has_alpha,
+                op_type=resolved_type,
+                is_bg_removal=resolved_bg_rm,
+                is_upscale=resolved_upscale,
+            )
+        )
 
         # Si excede el tamaño máximo, podar los estados más antiguos (sin tocar original)
         if len(self._history) > self.max_history:
             self._history.pop(0)
             self._descriptions.pop(0)
+            self._metadata.pop(0)
 
         self._current_index = len(self._history) - 1
         return self.current_image
@@ -153,11 +294,19 @@ class ImageState:
     def reset_to_original(self) -> Optional[Image.Image]:
         """
         Restaura la imagen original tal como fue cargada.
-        La agrega como un nuevo estado para que esta acción también sea reversible.
+        La agrega como un nuevo estado para que esta acción también sea reversible
+        sin realizar copias redundantes de `_original_image`.
         """
         if not self.can_reset():
             return None
-        return self.push_state(self._original_image.copy(), description="Recuperado original", brush_reference=self._original_image.copy())
+        return self.push_state(
+            self._original_image,
+            description="Recuperado original",
+            brush_reference=self._original_image,
+            op_type=OP_RESET,
+            is_bg_removal=False,
+            is_upscale=False,
+        )
 
     def can_undo(self) -> bool:
         """Retorna True si hay al menos un estado previo accesible."""
@@ -188,10 +337,12 @@ class SequenceSession:
         loop: int = 0,
         fps: Optional[float] = None,
         is_video: bool = False,
+        max_history: int = DEFAULT_SEQUENCE_MAX_HISTORY,
     ):
+        self.max_history = max(1, int(max_history))
         self.states: List[ImageState] = []
         for frame in frames:
-            st = ImageState()
+            st = ImageState(max_history=self.max_history)
             st.load_new_image(frame)
             self.states.append(st)
         self.durations = durations or [80] * len(frames)
@@ -238,7 +389,7 @@ class SequenceSession:
             return [], [], float(self.target_fps or 24.0)
         s = max(0, min(total - 1, int(self.trim_start)))
         e = max(s, min(total - 1, int(self.trim_end)))
-        frames = [st.current_image for st in self.states[s : e + 1] if st.current_image is not None]
+        frames = [st.current_image for st in self.states[s : e + 1] if st.has_image]
         fps_out = float(self.target_fps if self.target_fps > 0 else self.fps)
         if abs(fps_out - float(self.fps)) < 1e-2 and len(self.durations) == total:
             durations = list(self.durations[s : e + 1])
@@ -247,7 +398,16 @@ class SequenceSession:
             durations = [frame_ms] * len(frames)
         return frames, durations, fps_out
 
+    def iter_current_frames_readonly(self) -> Iterator[Image.Image]:
+        """Itera sobre los fotogramas actuales en modo solo lectura sin clonar (.copy())."""
+        for st in self.states:
+            img = st.peek_current_image()
+            if img is not None:
+                yield img
+
+    def get_all_current_frames_readonly(self) -> List[Image.Image]:
+        """Retorna referencias de solo lectura a todos los fotogramas actuales sin clonar."""
+        return list(self.iter_current_frames_readonly())
+
     def get_all_current_frames(self) -> List[Image.Image]:
-        return [st.current_image for st in self.states if st.current_image is not None]
-
-
+        return [st.current_image for st in self.states if st.has_image]

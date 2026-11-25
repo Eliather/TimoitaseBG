@@ -24,11 +24,18 @@ from app.config import (
     update_u2net_env,
 )
 
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s [%(levelname)s] [GPUWorker:%(process)d] %(message)s",
-)
 logger = logging.getLogger("TimoitaseBG.GPUWorker")
+
+
+def _has_dml_provider(providers) -> bool:
+    """Retorna True si la lista de proveedores incluye DmlExecutionProvider."""
+    if not providers:
+        return False
+    for p in providers:
+        name = p[0] if isinstance(p, tuple) else p
+        if name == "DmlExecutionProvider":
+            return True
+    return False
 
 
 def get_worker_gpu_providers(preferred_device_id: Optional[int] = None):
@@ -42,9 +49,15 @@ def get_worker_gpu_providers(preferred_device_id: Optional[int] = None):
         avail = ort.get_available_providers()
         selected = []
 
-        # 1. Soporte NVIDIA CUDA (Linux / Windows / Jetson)
+        # 1. Soporte NVIDIA CUDA (Linux / Windows / Jetson) con opciones seguras de VRAM y cuDNN
         if "CUDAExecutionProvider" in avail:
-            selected.append("CUDAExecutionProvider")
+            selected.append((
+                "CUDAExecutionProvider",
+                {
+                    "arena_extend_strategy": "kSameAsRequested",
+                    "cudnn_conv_algo_search": "HEURISTIC",
+                },
+            ))
 
         # 2. Soporte AMD ROCm (Principalmente Linux)
         if "ROCMExecutionProvider" in avail:
@@ -125,12 +138,16 @@ class PersistentGPUWorker:
         return self.get_inspyrenet_session(providers=providers)
 
     def _create_ort_session_with_fallback(self, model_path, eff_providers, model_label: str):
-        """Crea sesión ONNX Runtime haciendo fallback limpio QNN -> DirectML -> CPU."""
+        """
+        Crea sesión ONNX Runtime haciendo fallback limpio QNN -> DirectML -> CPU.
+        Retorna tupla (session, used_cpu_fallback) para evitar envenenar la caché GPU con sesiones CPU.
+        """
         import onnxruntime as ort
 
-        sess_options = get_optimized_session_options() or ort.SessionOptions()
+        use_dml = _has_dml_provider(eff_providers)
+        sess_options = get_optimized_session_options(use_dml=use_dml) or ort.SessionOptions()
         try:
-            return ort.InferenceSession(str(model_path), sess_options, providers=eff_providers)
+            return ort.InferenceSession(str(model_path), sess_options, providers=eff_providers), False
         except Exception as e:
             logger.warning(
                 "Fallo al cargar %s con proveedores GPU/CoreML/QNN (%s): %s. "
@@ -142,11 +159,13 @@ class PersistentGPUWorker:
             if any(p == "QNNExecutionProvider" for p in eff_providers) and "DmlExecutionProvider" in ort.get_available_providers():
                 try:
                     dml_provs = [("DmlExecutionProvider", {"device_id": self.device_id or 0}), "CPUExecutionProvider"]
+                    dml_opts = get_optimized_session_options(use_dml=True) or ort.SessionOptions()
                     logger.info("Reintentando %s con DirectML tras fallo en QNN...", model_label)
-                    return ort.InferenceSession(str(model_path), sess_options, providers=dml_provs)
+                    return ort.InferenceSession(str(model_path), dml_opts, providers=dml_provs), False
                 except Exception as dml_err:
                     logger.warning("Fallback DirectML para %s falló (%s). Usando CPU...", model_label, dml_err)
-            return ort.InferenceSession(str(model_path), sess_options, providers=["CPUExecutionProvider"])
+            cpu_opts = get_optimized_session_options(use_dml=False) or ort.SessionOptions()
+            return ort.InferenceSession(str(model_path), cpu_opts, providers=["CPUExecutionProvider"]), True
 
     def get_inspyrenet_session(
         self,
@@ -157,7 +176,16 @@ class PersistentGPUWorker:
         """Obtiene o inicializa una sesión ONNX para InSPyReNet en GPU Worker."""
         if force_cpu:
             self._cached_sessions.pop("inspyrenet", None)
-            providers = ["CPUExecutionProvider"]
+            from app.core.model_fetcher import ensure_model_file, make_download_progress_cb
+
+            model_path = ensure_model_file(
+                "inspyrenet.onnx",
+                progress_cb=make_download_progress_cb(progress_cb, "inspyrenet.onnx", start_pct=5, span_pct=30),
+            )
+            sess, _ = self._create_ort_session_with_fallback(
+                model_path, ["CPUExecutionProvider"], "sesión inspyrenet (CPU)"
+            )
+            return sess
 
         if "inspyrenet" not in self._cached_sessions:
             if self._cached_sessions or self._restorer_instance is not None:
@@ -177,9 +205,12 @@ class PersistentGPUWorker:
             if progress_cb:
                 progress_cb(38, "Cargando modelo InSPyReNet en memoria...")
             logger.info(f"Cargando sesión inspyrenet con providers: {eff_providers}...")
-            self._cached_sessions["inspyrenet"] = self._create_ort_session_with_fallback(
+            sess, used_cpu_fallback = self._create_ort_session_with_fallback(
                 model_path, eff_providers, "sesión inspyrenet"
             )
+            if used_cpu_fallback:
+                return sess
+            self._cached_sessions["inspyrenet"] = sess
         return self._cached_sessions["inspyrenet"]
 
     def remove_background(
@@ -213,12 +244,13 @@ class PersistentGPUWorker:
             import rembg
             from app.core.model_fetcher import load_rembg_session
             logger.info(f"[GPUWorker:{os.getpid()}] Ejecutando {model_name} en GPU con providers: {eff_providers}...")
+            transient_session = None
             if model_name not in self._cached_sessions:
                 if progress_cb:
                     progress_cb(38, f"Cargando modelo {model_name} en memoria...")
                 if self._cached_sessions or self._restorer_instance is not None:
                     self._clear_rembg_sessions(preserve_clothing_session=True)
-                sess_opts = get_optimized_session_options()
+                sess_opts = get_optimized_session_options(use_dml=_has_dml_provider(eff_providers))
                 try:
                     self._cached_sessions[model_name] = load_rembg_session(
                         model_name,
@@ -229,32 +261,35 @@ class PersistentGPUWorker:
                 except Exception as e:
                     logger.warning(
                         f"Fallo al cargar sesión rembg '{model_name}' con proveedores GPU/CoreML/QNN: {e}. "
-                        f"Conmutando a CPUExecutionProvider..."
+                        f"Conmutando a CPUExecutionProvider sin envenenar caché GPU..."
                     )
-                    self._cached_sessions[model_name] = load_rembg_session(
+                    transient_session = load_rembg_session(
                         model_name,
                         providers=["CPUExecutionProvider"],
-                        sess_opts=sess_opts,
+                        sess_opts=get_optimized_session_options(use_dml=False),
                         progress_cb=progress_cb,
                     )
 
-            session = self._cached_sessions[model_name]
+            session = transient_session if transient_session is not None else self._cached_sessions[model_name]
             if progress_cb:
                 progress_cb(50, f"Ejecutando inferencia con {model_name}...")
             try:
                 out = rembg.remove(input_img, session=session)
+            except ValueError:
+                raise
             except Exception as run_err:
                 logger.warning(
                     f"Fallo en inferencia rembg '{model_name}' con acelerador ({run_err}). "
                     f"Reintentando en CPUExecutionProvider..."
                 )
-                session = load_rembg_session(
+                self._cached_sessions.pop(model_name, None)
+                gc.collect()
+                cpu_session = load_rembg_session(
                     model_name,
                     providers=["CPUExecutionProvider"],
-                    sess_opts=get_optimized_session_options(),
+                    sess_opts=get_optimized_session_options(use_dml=False),
                 )
-                self._cached_sessions[model_name] = session
-                out = rembg.remove(input_img, session=session)
+                out = rembg.remove(input_img, session=cpu_session)
             final_alpha = np.array(out.getchannel("A"), dtype=np.uint8)
             if progress_cb:
                 progress_cb(80, "Máscara principal generada...")
@@ -277,15 +312,19 @@ class PersistentGPUWorker:
                 progress_cb(55, "Ejecutando red neuronal InSPyReNet (Swin-B)...")
             try:
                 out = session.run(None, {input_name: tensor})[0]
+            except ValueError:
+                raise
             except Exception as run_err:
                 logger.warning(
                     f"Fallo durante la inferencia de InSPyReNet ({run_err}). "
                     f"Reintentando ejecución en CPUExecutionProvider..."
                 )
+                self._cached_sessions.pop("inspyrenet", None)
+                gc.collect()
                 if progress_cb:
                     progress_cb(60, "Conmutando inferencia InSPyReNet a CPU...")
-                session = self.get_inspyrenet_session(force_cpu=True, progress_cb=progress_cb)
-                out = session.run(None, {input_name: tensor})[0]
+                cpu_session = self.get_inspyrenet_session(force_cpu=True, progress_cb=progress_cb)
+                out = cpu_session.run(None, {input_name: tensor})[0]
             if progress_cb:
                 progress_cb(78, "Refinando bordes subpíxel...")
             raw_mask = _postprocess_inspyrenet_mask(out, orig_size)
@@ -297,7 +336,7 @@ class PersistentGPUWorker:
 
             human_sess_key = "u2net_human_seg"
             if human_sess_key not in self._cached_sessions:
-                sess_opts = get_optimized_session_options()
+                sess_opts = get_optimized_session_options(use_dml=_has_dml_provider(eff_providers))
                 try:
                     self._cached_sessions[human_sess_key] = load_rembg_session(
                         human_sess_key, providers=eff_providers, sess_opts=sess_opts
@@ -308,10 +347,10 @@ class PersistentGPUWorker:
                         "Conmutando a CPUExecutionProvider...",
                         e,
                     )
-                    self._cached_sessions[human_sess_key] = load_rembg_session(
+                    return load_rembg_session(
                         human_sess_key,
                         providers=["CPUExecutionProvider"],
-                        sess_opts=sess_opts,
+                        sess_opts=get_optimized_session_options(use_dml=False),
                     )
             return self._cached_sessions[human_sess_key]
 
@@ -363,9 +402,23 @@ class PersistentGPUWorker:
             if progress_cb:
                 progress_cb(18, "Cargando modelo Real-ESRGAN en memoria...")
             logger.info(f"Worker: Inicializando Real-ESRGAN con providers: {eff_providers}...")
-            self._restorer_instance._session = self._create_ort_session_with_fallback(
+            restorer_sess, used_cpu_fallback = self._create_ort_session_with_fallback(
                 model_path, eff_providers, "Real-ESRGAN"
             )
+            if used_cpu_fallback:
+                transient_restorer = ImageRestorer()
+                transient_restorer._session = restorer_sess
+                self._restorer_instance = None
+                return transient_restorer._restore_image_impl(
+                    image,
+                    scale_mode=scale_mode,
+                    use_tiling=use_tiling,
+                    tile_size=tile_size,
+                    tile_pad=tile_pad,
+                    force_cpu=True,
+                    progress_cb=progress_cb,
+                )
+            self._restorer_instance._session = restorer_sess
 
         try:
             return self._restorer_instance._restore_image_impl(
@@ -377,13 +430,18 @@ class PersistentGPUWorker:
                 force_cpu=False,
                 progress_cb=progress_cb,
             )
+        except ValueError:
+            # Errores de validación (p. ej. MAX_ALLOWED_TILES) no son fallos de GPU: propagar directamente
+            raise
         except Exception as restorer_err:
             logger.warning(
                 f"Fallo en ejecución de Real-ESRGAN con acelerador hardware ({restorer_err}). "
-                f"Conmutando automáticamente a CPUExecutionProvider..."
+                f"Liberando instancia GPU y conmutando automáticamente a CPUExecutionProvider..."
             )
-            self._restorer_instance._session = None
-            return self._restorer_instance._restore_image_impl(
+            self._restorer_instance = None
+            gc.collect()
+            cpu_restorer = ImageRestorer()
+            return cpu_restorer._restore_image_impl(
                 image,
                 scale_mode=scale_mode,
                 use_tiling=use_tiling,
@@ -400,6 +458,17 @@ def gpu_worker_process_loop(request_queue, response_queue, preferred_device_id: 
     Lee peticiones desde request_queue, ejecuta la tarea en GPU y retorna el resultado
     en response_queue.
     """
+    logging.basicConfig(
+        level=logging.INFO,
+        format="%(asctime)s [%(levelname)s] [GPUWorker:%(process)d] %(message)s",
+    )
+
+    if os.name != "nt" and hasattr(os, "setpgrp"):
+        try:
+            os.setpgrp()
+        except OSError:
+            pass
+
     # Sincronización explícita de U2NET_HOME y certificados SSL en el subproceso 'spawn'
     update_u2net_env(MODELS_DIR)
     configure_ssl_certificates()
@@ -493,12 +562,23 @@ def gpu_worker_process_loop(request_queue, response_queue, preferred_device_id: 
                 "error": f"Comando desconocido: {command}",
             })
 
+        except ValueError as ve:
+            logger.warning(f"Error de validación en GPU Worker: {ve}")
+            response_queue.put({
+                "task_id": task_id if "task_id" in locals() else "",
+                "status": "error",
+                "error_type": "validation",
+                "error": str(ve),
+            })
         except Exception as e:
             logger.error(f"Error procesando tarea en GPU Worker: {e}")
+            worker._restorer_instance = None
+            gc.collect()
             tb = traceback.format_exc()
             response_queue.put({
                 "task_id": task_id if "task_id" in locals() else "",
                 "status": "error",
+                "error_type": "gpu_runtime",
                 "error": str(e),
                 "traceback": tb,
             })

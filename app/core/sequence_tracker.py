@@ -113,7 +113,7 @@ def track_subject_across_sequence(
         seed_bool = np.asarray(seed_mask) > 0
         seed_bbox = _mask_to_bbox(seed_bool) or (0, 0, seed_img.width, seed_img.height)
     else:
-        dets = detector.detect(seed_img, conf_threshold=0.25)
+        dets = detector.detect_subjects(seed_img, conf_threshold=0.25)
         if not dets:
             return results
         seed_subject = max(dets, key=lambda d: d.confidence)
@@ -155,7 +155,7 @@ def track_subject_across_sequence(
             curr_prob: Optional[np.ndarray] = None
             dets: List[DetectedSubject] = []
             try:
-                dets = detector.detect(frm, conf_threshold=0.25)
+                dets = detector.detect_subjects(frm, conf_threshold=0.25)
             except Exception as exc:
                 logger.warning(f"Detección YOLO falló en fotograma {idx}: {exc}")
 

@@ -188,7 +188,7 @@ class EffectsPanel(QWidget):
         self.btn_toggle_crop.toggled.connect(self._on_crop_toggled)
 
         self.btn_apply_crop = QPushButton(tr("btn_apply_crop"))
-        self.btn_apply_crop.setObjectName("ActionBtn")
+        self.btn_apply_crop.setObjectName("secondaryActionButton")
         self.btn_apply_crop.setFixedHeight(34)
         self.btn_apply_crop.setEnabled(False)
         self.btn_apply_crop.clicked.connect(self.cropApplyRequested.emit)
@@ -329,8 +329,9 @@ class EffectsPanel(QWidget):
 
     def apply_theme(self, is_dark: bool):
         self._is_dark_theme = is_dark
-        icon_color = "#CBD5E1" if is_dark else "#475569"
-        self.btn_rotate_90.setIcon(get_icon("rotate-cw", color=icon_color, size=15))
+        icon_color = "#F2F4F7" if is_dark else "#14171A"
+        accent_color = "#2E7CF6" if is_dark else "#1D63DC"
+        self.btn_rotate_90.setIcon(get_icon("rotate-cw", color=icon_color, active_color=accent_color, size=15))
 
     def retranslate_ui(self):
         self._lbl_fx_hdr.setText(tr("header_effects_studio"))

@@ -148,11 +148,17 @@ def paste_from_clipboard(window: Any) -> None:
     if mime_data.hasUrls():
         urls = mime_data.urls()
         if urls:
-            local_path = Path(urls[0].toLocalFile())
-            valid_extensions = _IMAGE_EXTENSIONS | set(VIDEO_EXTENSIONS)
-            if local_path.is_file() and local_path.suffix.lower() in valid_extensions:
-                window.open_image_file(str(local_path))
-                return
+            url = urls[0]
+            if url.isLocalFile() and not url.host():
+                raw_path = url.toLocalFile()
+                if raw_path and not str(raw_path).startswith(("\\\\", "//")):
+                    local_path = Path(raw_path)
+                    valid_extensions = _IMAGE_EXTENSIONS | set(VIDEO_EXTENSIONS)
+                    if local_path.is_file() and local_path.suffix.lower() in valid_extensions:
+                        window.open_image_file(str(local_path))
+                        return
+            else:
+                logger.warning("URL remota o ruta UNC rechazada al pegar desde portapapeles.")
 
     window._set_status("status_no_clipboard")
 

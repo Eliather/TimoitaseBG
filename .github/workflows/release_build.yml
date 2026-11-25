@@ -13,8 +13,12 @@ on:
       - master
   workflow_dispatch:
 
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ !startsWith(github.ref, 'refs/tags/v') }}
+
 permissions:
-  contents: write
+  contents: read
 
 jobs:
   test:
@@ -53,11 +57,12 @@ jobs:
         timeout-minutes: 10
         env:
           QT_QPA_PLATFORM: offscreen
-        run: pytest tests/ -k "not copy_to_clipboard" -v -s --tb=short -o faulthandler_timeout=60
+        run: pytest tests/ -v --tb=short -o faulthandler_timeout=60
 
   build:
     name: Build ${{ matrix.platform_name }} (${{ matrix.arch }})
     needs: test
+    if: github.event_name != 'pull_request'
     runs-on: ${{ matrix.os }}
     timeout-minutes: 45
     strategy:
@@ -66,37 +71,35 @@ jobs:
         include:
           - os: windows-latest
             platform_name: Windows
-            arch: x64
-            artifact_file: TimoitaseBG-Windows-x64.msix
-            target_type: msix
-
-          - os: windows-latest
-            platform_name: Windows ARM64
-            arch: arm64
-            artifact_file: TimoitaseBG-Windows-arm64.msix
-            target_type: msix
+            arch: x64-arm64
+            artifact_name: TimoitaseBG-Windows
+            target_type: windows
 
           - os: macos-15
             platform_name: macOS 15 Apple Silicon
             arch: arm64
+            artifact_name: TimoitaseBG-macOS-arm64
             artifact_file: TimoitaseBG-macOS-arm64.dmg
             target_type: dmg
 
           - os: macos-15-intel
             platform_name: macOS 15 Intel
             arch: x64
+            artifact_name: TimoitaseBG-macOS-x64
             artifact_file: TimoitaseBG-macOS-x64.dmg
             target_type: dmg
 
           - os: ubuntu-22.04
             platform_name: Linux
             arch: x64
+            artifact_name: TimoitaseBG-Linux-x64
             artifact_file: TimoitaseBG-Linux-x64.AppImage
             target_type: appimage
 
           - os: ubuntu-24.04-arm
             platform_name: Linux ARM64
             arch: arm64
+            artifact_name: TimoitaseBG-Linux-arm64
             artifact_file: TimoitaseBG-Linux-arm64.AppImage
             target_type: appimage
 
@@ -146,48 +149,92 @@ jobs:
           python -m pip install --prefer-binary --only-binary=llvmlite,numba -r requirements.txt
           python -m pip install --prefer-binary pyinstaller
 
+      - name: Ensure Clean ONNX Runtime DirectML on Windows
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          python -m pip uninstall -y onnxruntime
+          python -m pip install --prefer-binary --force-reinstall --no-deps onnxruntime-directml
+
       - name: Run PyInstaller Build
         run: |
           python -m scripts.package_release icons
           pyinstaller --noconfirm --clean build.spec
 
-      - name: Package Windows Application (.msix)
-        if: matrix.target_type == 'msix'
+      - name: Package Windows Installers (.exe + x64/arm64 .msix)
+        if: matrix.target_type == 'windows'
         shell: pwsh
         run: |
-          python -m scripts.package_release msix ${{ matrix.arch }}
+          New-Item -ItemType Directory -Force -Path "release-out" | Out-Null
 
+          # 1. Instalador tradicional Windows (.exe) mediante Inno Setup
+          python -m scripts.package_release inno
+          if ($LASTEXITCODE -ne 0) { throw "prepare_inno_script falló con código $LASTEXITCODE" }
+
+          $iscc = "C:\Program Files (x86)\Inno Setup 6\ISCC.exe"
+          if (-not (Test-Path $iscc)) {
+            $cmd = Get-Command iscc -ErrorAction SilentlyContinue
+            if ($cmd) {
+              $iscc = $cmd.Source
+            } else {
+              choco install innosetup -y
+              if (-not (Test-Path $iscc)) {
+                $cmd = Get-Command iscc -ErrorAction SilentlyContinue
+                if ($cmd) { $iscc = $cmd.Source }
+              }
+            }
+          }
+          if (-not (Test-Path $iscc)) { throw "No se encontró ISCC.exe de Inno Setup" }
+          Write-Host "Usando Inno Setup: $iscc"
+          & $iscc "build/TimoitaseBG.iss"
+          if ($LASTEXITCODE -ne 0) { throw "ISCC falló con código $LASTEXITCODE" }
+
+          # 2. Paquetes Windows MSIX (x64 y arm64) desde el mismo build PyInstaller
           $makeappxItem = Get-ChildItem "C:\Program Files (x86)\Windows Kits\10\bin\*\x64\makeappx.exe" -ErrorAction SilentlyContinue | Sort-Object FullName -Descending | Select-Object -First 1
           $signtoolItem = Get-ChildItem "C:\Program Files (x86)\Windows Kits\10\bin\*\x64\signtool.exe" -ErrorAction SilentlyContinue | Sort-Object FullName -Descending | Select-Object -First 1
           if (-not $makeappxItem) { throw "No se encontró makeappx.exe en Windows SDK" }
           $makeappx = $makeappxItem.FullName
-          $signtool = $signtoolItem.FullName
+          $signtool = if ($signtoolItem) { $signtoolItem.FullName } else { $null }
           Write-Host "Usando MakeAppx: $makeappx"
-
-          & $makeappx pack /d "build/msix_stage" /p "${{ matrix.artifact_file }}" /nv /o
-          if ($LASTEXITCODE -ne 0) { throw "makeappx falló con código $LASTEXITCODE" }
 
           if ($signtool) {
             $cert = New-SelfSignedCertificate -Type Custom -Subject "CN=Eliather" -KeyUsage DigitalSignature -FriendlyName "TimoitaseBG Certificate" -CertStoreLocation "Cert:\CurrentUser\My" -TextExtension @("2.5.29.37={text}1.3.6.1.5.5.7.3.3", "2.5.29.19={text}")
             $pwd = ConvertTo-SecureString -String "TimoitaseBG2026" -Force -AsPlainText
             Export-PfxCertificate -Cert "Cert:\CurrentUser\My\$($cert.Thumbprint)" -FilePath "build/TimoitaseBG.pfx" -Password $pwd | Out-Null
-            & $signtool sign /fd SHA256 /a /f "build/TimoitaseBG.pfx" /p "TimoitaseBG2026" "${{ matrix.artifact_file }}"
           }
+
+          foreach ($msixArch in @("x64", "arm64")) {
+            python -m scripts.package_release msix $msixArch
+            if ($LASTEXITCODE -ne 0) { throw "prepare_msix_stage ($msixArch) falló con código $LASTEXITCODE" }
+
+            $msixOut = "release-out/TimoitaseBG-Windows-$msixArch.msix"
+            & $makeappx pack /d "build/msix_stage" /p $msixOut /nv /o
+            if ($LASTEXITCODE -ne 0) { throw "makeappx ($msixArch) falló con código $LASTEXITCODE" }
+
+            if ($signtool) {
+              & $signtool sign /fd SHA256 /a /f "build/TimoitaseBG.pfx" /p "TimoitaseBG2026" $msixOut
+              if ($LASTEXITCODE -ne 0) { throw "signtool ($msixArch) falló con código $LASTEXITCODE" }
+            }
+          }
+
+          Get-ChildItem "release-out"
 
       - name: Package macOS Application (.app to .dmg)
         if: matrix.target_type == 'dmg'
         run: |
+          mkdir -p release-out
           # Firma Ad-Hoc obligatoria para Apple Silicon (M1-M5) e Intel en macOS 15:
           # Evita que el kernel de macOS termine el proceso con 'Code Signature Invalid'
           # al cargar librerías dinámicas dylib/so de onnxruntime y PySide6
           codesign --force --deep --sign - "dist/TimoitaseBG.app"
 
           # Crear DMG nativo con hdiutil para arranque y montaje limpio
-          hdiutil create -volname "TimoitaseBG" -srcfolder "dist/TimoitaseBG.app" -ov -format UDZO "${{ matrix.artifact_file }}"
+          hdiutil create -volname "TimoitaseBG" -srcfolder "dist/TimoitaseBG.app" -ov -format UDZO "release-out/${{ matrix.artifact_file }}"
 
       - name: Package Linux Application (.AppImage)
         if: matrix.target_type == 'appimage'
         run: |
+          mkdir -p release-out
           python -m scripts.package_release appimage
 
           if [ "${{ matrix.arch }}" = "arm64" ]; then
@@ -198,14 +245,14 @@ jobs:
 
           wget -q "https://github.com/AppImage/appimagetool/releases/download/continuous/appimagetool-${TOOL_ARCH}.AppImage" -O appimagetool
           chmod +x appimagetool
-          ARCH=${TOOL_ARCH} ./appimagetool --appimage-extract-and-run "build/TimoitaseBG.AppDir" "${{ matrix.artifact_file }}"
-          chmod +x "${{ matrix.artifact_file }}"
+          ARCH=${TOOL_ARCH} ./appimagetool --appimage-extract-and-run "build/TimoitaseBG.AppDir" "release-out/${{ matrix.artifact_file }}"
+          chmod +x "release-out/${{ matrix.artifact_file }}"
 
-      - name: Upload Build Artifact
+      - name: Upload Build Artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: ${{ matrix.artifact_file }}
-          path: ${{ matrix.artifact_file }}
+          name: ${{ matrix.artifact_name }}
+          path: release-out/*
           if-no-files-found: error
 
   release:

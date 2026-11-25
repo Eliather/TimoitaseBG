@@ -1,6 +1,7 @@
 """
 Panel de procesamiento masivo por lotes (Batch) con pipelines encadenados y presets.
 """
+import logging
 from PySide6.QtCore import QSettings, QSize, Signal
 from PySide6.QtWidgets import (
     QCheckBox,
@@ -13,11 +14,13 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from app.config import BG_REMOVER_MODELS
+from app.config import APP_AUTHOR, APP_NAME, BG_REMOVER_MODELS
 from app.core.batch_pipeline import BatchPipelineConfig
 from app.i18n import tr
 from app.ui.icons import get_icon
 from app.ui.widgets.toggles import create_section_header
+
+logger = logging.getLogger("TimoitaseBG.BatchPanel")
 
 
 class BatchPanel(QWidget):
@@ -189,17 +192,17 @@ class BatchPanel(QWidget):
 
     def _save_pipeline_prefs(self):
         try:
-            s = QSettings("Eliather", "TimoitaseBG")
+            s = QSettings(APP_AUTHOR, APP_NAME)
             s.setValue("batch/upscale", self.combo_batch_upscale.currentData() or "none")
             s.setValue("batch/autocrop", self.chk_batch_autocrop.isChecked())
             s.setValue("batch/sticker", self.chk_batch_sticker.isChecked())
             s.setValue("batch/aspect", self.combo_batch_aspect.currentData() or "original")
-        except Exception:
-            pass
+        except Exception as exc:
+            logger.debug("No se pudieron guardar preferencias de lote: %s", exc)
 
     def _load_saved_pipeline(self):
         try:
-            s = QSettings("Eliather", "TimoitaseBG")
+            s = QSettings(APP_AUTHOR, APP_NAME)
             up = s.value("batch/upscale", "none")
             ac = s.value("batch/autocrop", False, type=bool)
             st = s.value("batch/sticker", False, type=bool)
@@ -212,8 +215,8 @@ class BatchPanel(QWidget):
             idx_a = self.combo_batch_aspect.findData(asp)
             if idx_a >= 0:
                 self.combo_batch_aspect.setCurrentIndex(idx_a)
-        except Exception:
-            pass
+        except Exception as exc:
+            logger.debug("No se pudieron cargar preferencias de lote: %s", exc)
 
     def get_pipeline_config(self) -> BatchPipelineConfig:
         """Devuelve la configuración encadenada actual del panel Batch."""
@@ -255,8 +258,8 @@ class BatchPanel(QWidget):
         )
 
     def apply_theme(self, is_dark: bool):
-        fg_color = "#EAEAEA" if is_dark else "#292524"
-        accent_color = "#FF4F79"
+        fg_color = "#F2F4F7" if is_dark else "#14171A"
+        accent_color = "#2E7CF6" if is_dark else "#1D63DC"
 
         self.btn_batch_input.setIcon(get_icon("folder-open", color=fg_color, active_color=accent_color, size=16))
         self.btn_batch_input.setIconSize(QSize(16, 16))

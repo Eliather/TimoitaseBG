@@ -7,16 +7,27 @@ transparente a CPUExecutionProvider.
 import atexit
 import logging
 import multiprocessing
+import os
 import queue
 import threading
 import time
 import uuid
+from pathlib import Path
 from typing import Any, Callable, Dict, Optional
 
 import app.config as config
 from app.core.gpu_worker import gpu_worker_process_loop
 
 logger = logging.getLogger("TimoitaseBG.GPUManager")
+
+
+def _resolve_taskkill_binary() -> str:
+    """Resuelve taskkill.exe bajo %SystemRoot%\\System32 para evitar CWD binary planting."""
+    sys_root = os.environ.get("SystemRoot") or os.environ.get("WINDIR") or r"C:\Windows"
+    candidate = Path(sys_root) / "System32" / "taskkill.exe"
+    if candidate.is_file():
+        return str(candidate)
+    return "taskkill.exe"
 
 
 class GPUWorkerManager:
@@ -29,6 +40,7 @@ class GPUWorkerManager:
         self._request_queue: Optional[multiprocessing.Queue] = None
         self._response_queue: Optional[multiprocessing.Queue] = None
         self._lock = threading.RLock()
+        self._inference_lock = threading.Lock()
         self._shutdown_thread: Optional[threading.Thread] = None
         self._status_callback: Optional[Callable[[str], None]] = None
         self._last_status_message: str = ""
@@ -109,6 +121,21 @@ class GPUWorkerManager:
                 self._process.start()
                 logger.info(f"GPU Worker iniciado exitosamente con PID {self._process.pid} (device_id={preferred_device_id}).")
 
+    def _close_queues(self):
+        """Cierra y desacopla las colas multiprocessing para evitar fugas de descriptores y bloqueos al salir."""
+        for attr in ("_request_queue", "_response_queue"):
+            q = getattr(self, attr, None)
+            if q is not None:
+                try:
+                    q.close()
+                except Exception:
+                    pass
+                try:
+                    q.cancel_join_thread()
+                except Exception:
+                    pass
+                setattr(self, attr, None)
+
     def _cleanup_process(self):
         """Limpia los recursos del proceso worker y sus colas."""
         if self._process is not None:
@@ -117,8 +144,7 @@ class GPUWorkerManager:
             else:
                 self._process = None
 
-        self._request_queue = None
-        self._response_queue = None
+        self._close_queues()
 
     def kill_worker(self) -> bool:
         """
@@ -159,24 +185,31 @@ class GPUWorkerManager:
                     )
                     try:
                         import subprocess
+                        taskkill_bin = _resolve_taskkill_binary()
+                        flags = getattr(subprocess, "CREATE_NO_WINDOW", 0)
                         subprocess.run(
-                            ["taskkill", "/F", "/T", "/PID", str(pid)],
+                            [taskkill_bin, "/F", "/T", "/PID", str(pid)],
                             stdout=subprocess.DEVNULL,
                             stderr=subprocess.DEVNULL,
                             timeout=3.0,
+                            creationflags=flags,
                         )
                     except Exception as tk_err:
                         logger.warning(f"Error ejecutando taskkill: {tk_err}")
                 else:
-                    # En Linux / macOS: matar grupo de procesos o PID por seguridad
+                    # En Linux / macOS: matar grupo de procesos solo si está aislado de nuestro pgrp
                     logger.warning(
                         f"GPU Worker (PID {pid}) continúa activo tras kill(). Enviando SIGKILL al proceso o grupo de procesos..."
                     )
-                    import os, signal
+                    import signal
                     sig = getattr(signal, "SIGKILL", signal.SIGTERM)
                     try:
-                        if hasattr(os, "killpg") and hasattr(os, "getpgid"):
-                            os.killpg(os.getpgid(pid), sig)
+                        if hasattr(os, "killpg") and hasattr(os, "getpgid") and hasattr(os, "getpgrp"):
+                            pgid = os.getpgid(pid)
+                            if pgid != os.getpgrp():
+                                os.killpg(pgid, sig)
+                            else:
+                                os.kill(pid, sig)
                         else:
                             os.kill(pid, sig)
                     except Exception:
@@ -197,16 +230,14 @@ class GPUWorkerManager:
                 f"NO se marca el proceso como limpio."
             )
             self._has_orphaned_worker = True
-            self._request_queue = None
-            self._response_queue = None
+            self._close_queues()
             self._notify("GPU no respondió y el proceso no pudo cerrarse — se recomienda reiniciar la aplicación")
             return False
         else:
             logger.info(f"GPU Worker (PID {pid}) terminado y confirmado cerrado.")
             self._has_orphaned_worker = False
             self._process = None
-            self._request_queue = None
-            self._response_queue = None
+            self._close_queues()
             return True
 
     def shutdown(self, blocking: bool = True):
@@ -261,7 +292,7 @@ class GPUWorkerManager:
             model_name = payload.get("model_name", "")
             if payload.get("enable_clothing_protection", False) and model_name not in ("u2net_human_seg", "isnet-anime"):
                 base_timeout += 15.0
-            if model_name in ("inspyrenet", "birefnet-general", "birefnet-portrait", "ensemble"):
+            if model_name in ("inspyrenet", "birefnet-general"):
                 # Modelos Swin/Transformer de alta resolución (1024x1024) requieren compilación de operadores DML
                 base_timeout += 40.0
         elif command == "restore_image":
@@ -283,12 +314,16 @@ class GPUWorkerManager:
         cpu_fallback_fn: Callable[[], Any],
         timeout_override: Optional[float] = None,
         progress_cb: Optional[Callable[[int, str], None]] = None,
+        cancel_check: Optional[Callable[[], bool]] = None,
+        max_total_timeout: Optional[float] = None,
     ) -> Any:
         """
         Ejecuta la inferencia en el proceso persistente de GPU bajo supervisión de watchdog.
         Si la GPU está deshabilitada (ej. FORCE_CPU_ONLY=True), ejecuta directamente en CPU.
         Si la GPU no responde antes del timeout o falla, mata el subproceso, levanta uno limpio
         para la siguiente petición, reintenta automáticamente en CPU y notifica a la barra de estado.
+        Libera `self._lock` durante la espera en `response_queue` para no bloquear llamadas UI
+        (`shutdown(blocking=False)` / `set_gpu_enabled(False)`).
         """
         if self._has_orphaned_worker:
             logger.warning(
@@ -302,10 +337,10 @@ class GPUWorkerManager:
             logger.info(f"GPU inactiva (FORCE_CPU_ONLY={config.FORCE_CPU_ONLY}). Ejecutando {command} en CPU.")
             return cpu_fallback_fn()
 
-        with self._lock:
-            self._ensure_worker()
+        with self._inference_lock:
             task_id = uuid.uuid4().hex
-            timeout = timeout_override or self._calculate_timeout(command, payload)
+            timeout = float(timeout_override or self._calculate_timeout(command, payload))
+            global_timeout = float(max_total_timeout) if max_total_timeout is not None else max(timeout * 4.0, 300.0)
 
             req = {
                 "task_id": task_id,
@@ -313,25 +348,39 @@ class GPUWorkerManager:
                 "payload": payload,
             }
 
-            try:
-                self._request_queue.put(req)
-            except Exception as e:
-                logger.warning(f"Fallo al enviar petición a la cola GPU: {e}. Cayendo a CPU...")
-                self.kill_worker()
-                self._notify("GPU no respondió, se procesó con CPU")
-                return cpu_fallback_fn()
+            with self._lock:
+                self._ensure_worker()
+                req_queue = self._request_queue
+                resp_queue = self._response_queue
+                worker_proc = self._process
 
-            # Esperar respuesta con verificación periódica del estado del proceso y recepción de progreso en vivo
-            t0 = time.time()
+                try:
+                    req_queue.put(req)
+                except Exception as e:
+                    logger.warning(f"Fallo al enviar petición a la cola GPU: {e}. Cayendo a CPU...")
+                    self.kill_worker()
+                    self._notify("GPU no respondió, se procesó con CPU")
+                    return cpu_fallback_fn()
+
+            # Esperar respuesta SIN mantener self._lock para no congelar el hilo UI
+            t_start = time.time()
+            t_last_activity = t_start
             received_resp = None
 
-            while time.time() - t0 < timeout:
+            while (time.time() - t_last_activity < timeout) and (time.time() - t_start < global_timeout):
+                if cancel_check is not None and cancel_check():
+                    logger.info(f"Inferencia GPU '{command}' cancelada por solicitud del usuario.")
+                    with self._lock:
+                        if self._process is worker_proc:
+                            self.kill_worker()
+                    raise InterruptedError("Inferencia cancelada por el usuario")
+
                 try:
-                    resp = self._response_queue.get(timeout=0.5)
+                    resp = resp_queue.get(timeout=0.5)
                     if resp.get("task_id") == task_id:
                         if resp.get("status") == "progress":
-                            # Latido de avance (ej. descarga de modelo o bloque de tiling): reiniciar ventana de inactividad
-                            t0 = time.time()
+                            # Latido de avance: reinicia ventana de inactividad (acotada por global_timeout)
+                            t_last_activity = time.time()
                             if progress_cb is not None:
                                 try:
                                     pct = int(resp.get("percent", 0))
@@ -345,31 +394,41 @@ class GPUWorkerManager:
                     else:
                         logger.warning(f"Mensaje descartado de tarea anterior: {resp.get('task_id')}")
                 except queue.Empty:
-                    # Verificar si el proceso worker murió repentinamente
-                    if not self._process.is_alive():
+                    if worker_proc is None or not worker_proc.is_alive():
                         logger.warning(
-                            f"El proceso GPU Worker terminó inesperadamente (exitcode={self._process.exitcode})."
+                            f"El proceso GPU Worker terminó inesperadamente "
+                            f"(exitcode={getattr(worker_proc, 'exitcode', None)})."
                         )
-                        self.kill_worker()
+                        with self._lock:
+                            if self._process is worker_proc:
+                                self.kill_worker()
                         self._notify("GPU no respondió, se procesó con CPU")
                         return cpu_fallback_fn()
+                except (EOFError, OSError, ValueError):
+                    # La cola fue cerrada externamente (p. ej. shutdown o desactivación de GPU)
+                    logger.info(f"Cola GPU cerrada durante '{command}'. Conmutando a CPU...")
+                    return cpu_fallback_fn()
 
-            # Caso 1: Timeout agotado sin respuesta
+            # Caso 1: Timeout agotado sin respuesta (inactividad o límite global)
             if received_resp is None:
-                elapsed = time.time() - t0
+                elapsed = time.time() - t_start
                 logger.warning(
-                    f"Watchdog: GPU Worker no respondió tras {elapsed:.1f}s (timeout={timeout}s). "
-                    f"Matando proceso colgado..."
+                    f"Watchdog: GPU Worker no respondió tras {elapsed:.1f}s "
+                    f"(timeout={timeout}s, global_timeout={global_timeout}s). Matando proceso colgado..."
                 )
-                killed_ok = self.kill_worker()
+                with self._lock:
+                    killed_ok = self.kill_worker() if self._process is worker_proc else True
                 if killed_ok:
                     self._notify("GPU no respondió, se procesó con CPU")
                 logger.info(f"Reintentando {command} automáticamente con CPUExecutionProvider...")
                 return cpu_fallback_fn()
 
-            # Caso 2: Respuesta con error interno de GPU (ej. OOM o fallo de driver)
+            # Caso 2: Respuesta con error
             if received_resp.get("status") != "ok":
                 err_msg = received_resp.get("error", "Error desconocido")
+                if received_resp.get("error_type") == "validation":
+                    logger.warning(f"Error de validación en GPU Worker (sin fallback CPU): {err_msg}")
+                    raise ValueError(err_msg)
                 logger.warning(f"GPU Worker devolvió error: {err_msg}. Conmutando a CPU...")
                 self._notify("GPU con error, se procesó con CPU")
                 return cpu_fallback_fn()

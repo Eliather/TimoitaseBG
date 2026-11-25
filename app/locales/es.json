@@ -134,6 +134,7 @@
   "swatch_white": "Fondo Blanco (#FFFFFF)",
   "swatch_black": "Fondo Negro (#000000)",
   "swatch_gray": "Fondo Gris (#E2E8F0)",
+  "swatch_last_color": "Último color guardado ({hex})",
   "swatch_custom": "Elegir color personalizado...",
   "color_white": "Blanco (#FFFFFF)",
   "color_black": "Negro (#000000)",

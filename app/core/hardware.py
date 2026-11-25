@@ -3,10 +3,11 @@ TimoitaseBG - Detección de hardware, aceleración por GPU/NPU y opciones de ses
 """
 import logging
 import os
+import re
 import sys
 import threading
 from pathlib import Path
-from typing import Optional
+from typing import Any, Dict, List, Optional
 
 logger = logging.getLogger("TimoitaseBG.Hardware")
 
@@ -96,12 +97,183 @@ def is_arm_architecture() -> bool:
     return mach in ("arm64", "aarch64", "armv8l", "armv7l", "arm") or mach.startswith("arm")
 
 
+def _resolve_windows_system_binary(relative_path: str, fallback: str) -> str:
+    """Resuelve un binario del sistema Windows bajo %SystemRoot% para evitar CWD binary planting."""
+    sys_root = os.environ.get("SystemRoot") or os.environ.get("WINDIR") or r"C:\Windows"
+    candidate = Path(sys_root) / relative_path
+    if candidate.is_file():
+        return str(candidate)
+    return fallback
+
+
+def _is_dedicated_gpu_name(name_lower: str) -> bool:
+    """Determina si el nombre de adaptador corresponde a una GPU dedicada."""
+    if re.search(r"\barc(?:\(tm\)|™)?\s+[ab]", name_lower):
+        return True
+    if any(
+        k in name_lower
+        for k in (
+            "nvidia",
+            "geforce",
+            "rtx",
+            "gtx",
+            "quadro",
+            "titan",
+            "radeon rx",
+            "radeon pro",
+            "pro w",
+            "discrete",
+        )
+    ):
+        return True
+    if re.search(r"\b(?:rx\s*\d|xt|xtx)\b", name_lower):
+        return True
+    return False
+
+
+def _is_integrated_gpu_name(name_lower: str) -> bool:
+    """Determina si el nombre de adaptador corresponde a gráficos integrados."""
+    if _is_dedicated_gpu_name(name_lower):
+        return False
+    return any(
+        k in name_lower
+        for k in (
+            "intel",
+            "uhd",
+            "iris",
+            "hd graphics",
+            "radeon(tm) graphics",
+            "radeon graphics",
+            "vega",
+            "apu",
+            "adreno",
+        )
+    )
+
+
+def _enumerate_dxgi_adapters() -> List[Dict[str, Any]]:
+    """
+    Enumera adaptadores físicos de video en Windows usando DXGI (`dxgi.dll`:
+    `CreateDXGIFactory1` + `IDXGIFactory1::EnumAdapters1` + `IDXGIAdapter1::GetDesc1`).
+    Excluye adaptadores por software (`DXGI_ADAPTER_FLAG_SOFTWARE`) y pantallas virtuales.
+    Cada entrada contiene el índice DXGI exacto que DirectML utiliza como `device_id`.
+    """
+    if sys.platform != "win32":
+        return []
+
+    adapters: List[Dict[str, Any]] = []
+    factory_ptr = None
+    try:
+        import ctypes
+        from ctypes import POINTER, Structure, byref, c_int32, c_long, c_size_t, c_ubyte, c_uint16, c_uint32, c_void_p, c_wchar
+
+        class GUID(Structure):
+            _fields_ = [
+                ("Data1", c_uint32),
+                ("Data2", c_uint16),
+                ("Data3", c_uint16),
+                ("Data4", c_ubyte * 8),
+            ]
+
+        class LUID(Structure):
+            _fields_ = [
+                ("LowPart", c_uint32),
+                ("HighPart", c_int32),
+            ]
+
+        class DXGI_ADAPTER_DESC1(Structure):
+            _fields_ = [
+                ("Description", c_wchar * 128),
+                ("VendorId", c_uint32),
+                ("DeviceId", c_uint32),
+                ("SubSysId", c_uint32),
+                ("Revision", c_uint32),
+                ("DedicatedVideoMemory", c_size_t),
+                ("DedicatedSystemMemory", c_size_t),
+                ("SharedSystemMemory", c_size_t),
+                ("AdapterLuid", LUID),
+                ("Flags", c_uint32),
+            ]
+
+        DXGI_ADAPTER_FLAG_SOFTWARE = 2
+        IID_IDXGIFactory1 = GUID(
+            0x770AAE78,
+            0xF26F,
+            0x4DBA,
+            (c_ubyte * 8)(0xA8, 0x29, 0x25, 0x3C, 0x83, 0xD1, 0xB3, 0x87),
+        )
+
+        dxgi = ctypes.WinDLL("dxgi.dll")
+        create_factory = dxgi.CreateDXGIFactory1
+        create_factory.argtypes = [POINTER(GUID), POINTER(c_void_p)]
+        create_factory.restype = c_long
+
+        factory_void = c_void_p()
+        hr = create_factory(byref(IID_IDXGIFactory1), byref(factory_void))
+        if hr < 0 or not factory_void.value:
+            return []
+        factory_ptr = factory_void.value
+
+        vtable_factory = ctypes.cast(ctypes.c_void_p.from_address(factory_ptr), POINTER(c_void_p))
+        release_proto = ctypes.WINFUNCTYPE(c_uint32, c_void_p)
+        enum_adapters1_proto = ctypes.WINFUNCTYPE(c_long, c_void_p, c_uint32, POINTER(c_void_p))
+        get_desc1_proto = ctypes.WINFUNCTYPE(c_long, c_void_p, POINTER(DXGI_ADAPTER_DESC1))
+
+        enum_adapters1 = enum_adapters1_proto(vtable_factory[12])
+        factory_release = release_proto(vtable_factory[2])
+
+        idx = 0
+        while True:
+            adapter_void = c_void_p()
+            hr = enum_adapters1(factory_ptr, idx, byref(adapter_void))
+            if hr < 0 or not adapter_void.value:
+                break
+            adapter_ptr = adapter_void.value
+            try:
+                vtable_adapter = ctypes.cast(ctypes.c_void_p.from_address(adapter_ptr), POINTER(c_void_p))
+                get_desc1 = get_desc1_proto(vtable_adapter[10])
+                desc = DXGI_ADAPTER_DESC1()
+                if get_desc1(adapter_ptr, byref(desc)) >= 0:
+                    flags = int(desc.Flags)
+                    name = (desc.Description or "").strip()
+                    name_lower = name.lower()
+                    is_software = bool(flags & DXGI_ADAPTER_FLAG_SOFTWARE)
+                    is_virtual = any(vk in name_lower for vk in _VIRTUAL_DISPLAY_KEYWORDS)
+                    if name and not is_software and not is_virtual:
+                        adapters.append(
+                            {
+                                "index": idx,
+                                "name": name,
+                                "dedicated_vram": int(desc.DedicatedVideoMemory),
+                                "flags": flags,
+                            }
+                        )
+            finally:
+                try:
+                    vtable_adapter = ctypes.cast(ctypes.c_void_p.from_address(adapter_ptr), POINTER(c_void_p))
+                    adapter_release = release_proto(vtable_adapter[2])
+                    adapter_release(adapter_ptr)
+                except Exception:
+                    pass
+            idx += 1
+    except Exception as e:
+        logger.debug(f"Enumeración DXGI no disponible, usando respaldo: {e}")
+    finally:
+        if factory_ptr is not None:
+            try:
+                factory_release(factory_ptr)
+            except Exception:
+                pass
+
+    return adapters
+
+
 def _query_windows_gpus_fast() -> list:
     """
     Obtiene la lista de adaptadores físicos de video en Windows de forma instantánea (<1 ms)
     leyendo la clase de registro Display ({4d36e968-e325-11ce-bfc1-08002be10318}),
     filtrando pantallas virtuales (Parsec, RDP, Microsoft Basic, etc.).
-    Usa PowerShell (con CREATE_NO_WINDOW) únicamente como respaldo si el registro no devuelve datos.
+    Usa PowerShell (con ruta absoluta y CREATE_NO_WINDOW) únicamente como respaldo si el registro no devuelve datos.
     """
     adapters = []
     if sys.platform != "win32":
@@ -117,8 +289,11 @@ def _query_windows_gpus_fast() -> list:
                 try:
                     subkey_name = winreg.EnumKey(class_key, idx)
                     idx += 1
-                    if not subkey_name.isdigit():
-                        continue
+                except OSError:
+                    break
+                if not subkey_name.isdigit():
+                    continue
+                try:
                     with winreg.OpenKey(class_key, subkey_name) as subkey:
                         desc, _ = winreg.QueryValueEx(subkey, "DriverDesc")
                         if desc and isinstance(desc, str):
@@ -128,7 +303,7 @@ def _query_windows_gpus_fast() -> list:
                                 if desc_clean not in adapters:
                                     adapters.append(desc_clean)
                 except OSError:
-                    break
+                    continue
     except Exception:
         pass
 
@@ -138,10 +313,14 @@ def _query_windows_gpus_fast() -> list:
     try:
         import subprocess
 
+        ps_exe = _resolve_windows_system_binary(
+            r"System32\WindowsPowerShell\v1.0\powershell.exe",
+            "powershell.exe",
+        )
         cmd = "Get-CimInstance Win32_VideoController | Select-Object -ExpandProperty Name"
         flags = getattr(subprocess, "CREATE_NO_WINDOW", 0)
         out = subprocess.check_output(
-            ["powershell", "-NoProfile", "-Command", cmd],
+            [ps_exe, "-NoProfile", "-Command", cmd],
             stderr=subprocess.DEVNULL,
             timeout=3,
             creationflags=flags,
@@ -206,13 +385,14 @@ def get_gpu_name() -> str:
         except Exception:
             pass
 
-    # 2. En Windows: consultar primero el registro instantáneo antes de lanzar subprocesos externos
+    # 2. En Windows: consultar primero DXGI / registro instantáneo antes de lanzar subprocesos externos
     if sys.platform == "win32":
-        win_gpus = _query_windows_gpus_fast()
+        dxgi_adapters = _enumerate_dxgi_adapters()
+        win_gpus = [a["name"] for a in dxgi_adapters] if dxgi_adapters else _query_windows_gpus_fast()
         for name in win_gpus:
             name_lower = name.lower()
-            is_igpu = any(k in name_lower for k in ("intel", "uhd", "iris", "radeon(tm) graphics", "radeon graphics", "vega", "adreno"))
-            is_dgpu = any(k in name_lower for k in ("nvidia", "geforce", "rtx", "gtx", "radeon rx", "radeon pro", "arc a")) or (
+            is_igpu = _is_integrated_gpu_name(name_lower)
+            is_dgpu = _is_dedicated_gpu_name(name_lower) or (
                 any(k in name_lower for k in ("radeon", "amd")) and not is_igpu
             )
             if is_dgpu and not is_igpu:
@@ -247,10 +427,16 @@ def get_gpu_name() -> str:
                 ["rocm-smi", "--showproductname"],
                 stderr=subprocess.DEVNULL,
                 timeout=3,
-            ).decode().strip()
+            ).decode(errors="ignore").strip()
             for line in out.splitlines():
-                if any(k in line.lower() for k in ("card", "series", "radeon", "amd")):
-                    return _store_cached_gpu_name(line.split(":")[-1].strip())
+                line_clean = line.strip()
+                line_lower = line_clean.lower()
+                if not line_clean or line_clean.startswith("=") or "vendor" in line_lower:
+                    continue
+                if any(k in line_lower for k in ("card series", "card model", "product name")):
+                    val = line_clean.rsplit(":", 1)[-1].strip()
+                    if val and val.lower() not in ("n/a", "unknown") and not val.lower().startswith("0x"):
+                        return _store_cached_gpu_name(val)
         except Exception:
             pass
 
@@ -283,12 +469,23 @@ def get_gpu_name() -> str:
                 ["lspci"],
                 stderr=subprocess.DEVNULL,
                 timeout=3,
-            ).decode().strip()
+            ).decode(errors="ignore").strip()
+            lspci_candidates: List[str] = []
             for line in out.splitlines():
                 line_lower = line.lower()
                 if any(term in line_lower for term in ("vga", "3d controller", "display controller")):
                     if any(k in line_lower for k in ("nvidia", "geforce", "rtx", "gtx", "radeon", "amd", "intel", "arc", "adreno", "qualcomm")):
-                        return _store_cached_gpu_name(line.split(":")[-1].strip())
+                        # Formato: "01:00.0 VGA compatible controller: Vendor Device [Name] (rev a1)"
+                        parts = line.split(": ", 1)
+                        desc = parts[1].strip() if len(parts) > 1 else line.split(":")[-1].strip()
+                        if desc:
+                            lspci_candidates.append(desc)
+            for desc in lspci_candidates:
+                desc_lower = desc.lower()
+                if _is_dedicated_gpu_name(desc_lower) and not _is_integrated_gpu_name(desc_lower):
+                    return _store_cached_gpu_name(desc)
+            if lspci_candidates:
+                return _store_cached_gpu_name(lspci_candidates[0])
         except Exception:
             pass
 
@@ -348,8 +545,26 @@ def is_integrated_gpu() -> bool:
         "hd graphics",
         "adreno",
     )
-    dedicated_keywords = ("rx ", "xt", "geforce", "rtx", "gtx", "arc a", "discrete", "pro w")
-    if any(k in name for k in integrated_keywords) and not any(d in name for d in dedicated_keywords):
+    dedicated_keywords = (
+        "rx ",
+        "geforce",
+        "rtx",
+        "rtx a",
+        "gtx",
+        "quadro",
+        "titan",
+        "arc a",
+        "arc b",
+        "radeon pro",
+        "discrete",
+        "pro w",
+    )
+    has_dedicated = (
+        any(d in name for d in dedicated_keywords)
+        or bool(re.search(r"\b(?:xt|xtx)\b", name))
+        or bool(re.search(r"\barc(?:\(tm\)|™)?\s+[ab]", name))
+    )
+    if any(k in name for k in integrated_keywords) and not has_dedicated:
         return True
     return False
 
@@ -358,8 +573,8 @@ def get_best_dml_device_id() -> int:
     """
     En portátiles o PCs con GPU dual (APU AMD/Intel integrada + GPU dedicada NVIDIA/AMD),
     DirectML suele asignar device_id=0 a la integrada y device_id=1 a la dedicada.
-    Detecta automáticamente el device_id correspondiente a la GPU dedicada
-    filtrando adaptadores virtuales. Si solo hay una GPU física (dedicada o integrada), retorna 0.
+    Enumera primero los adaptadores reales de DXGI (`dxgi.dll`) para obtener el `device_id`
+    exacto que usa DirectML, con respaldo por Registro/PowerShell si DXGI no está disponible.
     En Linux/macOS retorna 0 de inmediato al no utilizar DirectML.
     """
     global _best_dml_device_id
@@ -375,6 +590,42 @@ def get_best_dml_device_id() -> int:
             return _best_dml_device_id
 
         try:
+            dxgi_adapters = _enumerate_dxgi_adapters()
+            if dxgi_adapters:
+                if len(dxgi_adapters) == 1:
+                    _best_dml_device_id = int(dxgi_adapters[0]["index"])
+                    return _best_dml_device_id
+
+                dedicated_candidates = []
+                for adapter in dxgi_adapters:
+                    name_lower = adapter["name"].lower()
+                    is_igpu = _is_integrated_gpu_name(name_lower)
+                    is_dgpu = _is_dedicated_gpu_name(name_lower) or (
+                        any(k in name_lower for k in ("radeon", "amd")) and not is_igpu
+                    )
+                    if is_dgpu and not is_igpu:
+                        dedicated_candidates.append(adapter)
+
+                if dedicated_candidates:
+                    best = max(dedicated_candidates, key=lambda a: (a["dedicated_vram"], -a["index"]))
+                    logger.info(
+                        "GPU dedicada DXGI detectada: '%s' (VRAM=%d MB, DirectML device_id=%d)",
+                        best["name"],
+                        best["dedicated_vram"] // (1024 * 1024),
+                        best["index"],
+                    )
+                    _best_dml_device_id = int(best["index"])
+                    return _best_dml_device_id
+
+                best = max(dxgi_adapters, key=lambda a: (a["dedicated_vram"], -a["index"]))
+                logger.info(
+                    "Adaptador DXGI seleccionado: '%s' (DirectML device_id=%d)",
+                    best["name"],
+                    best["index"],
+                )
+                _best_dml_device_id = int(best["index"])
+                return _best_dml_device_id
+
             names = _query_windows_gpus_fast()
             if len(names) <= 1:
                 _best_dml_device_id = 0
@@ -382,8 +633,8 @@ def get_best_dml_device_id() -> int:
 
             for idx, name in enumerate(names):
                 name_lower = name.lower()
-                is_igpu = any(k in name_lower for k in ("intel", "uhd", "iris", "radeon(tm) graphics", "radeon graphics", "vega", "adreno"))
-                is_dgpu = any(k in name_lower for k in ("nvidia", "geforce", "rtx", "gtx", "radeon rx", "radeon pro", "arc a")) or (
+                is_igpu = _is_integrated_gpu_name(name_lower)
+                is_dgpu = _is_dedicated_gpu_name(name_lower) or (
                     any(k in name_lower for k in ("radeon", "amd")) and not is_igpu
                 )
                 if is_dgpu and not is_igpu:
@@ -524,11 +775,13 @@ def get_inference_providers():
         return ["CPUExecutionProvider"]
 
 
-def get_optimized_session_options():
+def get_optimized_session_options(use_dml: bool = False):
     """
     Retorna SessionOptions de ONNX Runtime optimizado para alto rendimiento
     sin saturar la CPU ni congelar la interfaz de usuario.
     Limita intra_op_num_threads para reservar núcleos al hilo principal y al sistema operativo.
+    Cuando `use_dml=True`, desactiva `enable_mem_pattern` y fuerza `ORT_SEQUENTIAL` según
+    requisitos oficiales de DirectML para evitar corrupción de memoria y deadlocks D3D12.
     En procesadores ARM (big.LITTLE), desactiva el spinning para evitar sobrecalentamiento y drenaje de batería.
     """
     try:
@@ -540,6 +793,10 @@ def get_optimized_session_options():
         threads = max(1, min(4, cpu_count // 2 if cpu_count > 2 else cpu_count))
         sess_options.intra_op_num_threads = threads
         sess_options.inter_op_num_threads = 1
+
+        if use_dml:
+            sess_options.enable_mem_pattern = False
+            sess_options.execution_mode = ort.ExecutionMode.ORT_SEQUENTIAL
 
         if is_arm_architecture():
             try:

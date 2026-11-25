@@ -1,5 +1,5 @@
 """
-Barra inferior de estado, progreso determinista, cancelación y selector de hardware.
+Barra inferior serena de estado, progreso determinista, cancelación y enlace de apoyo.
 """
 from PySide6.QtCore import Qt, QSize, Signal
 from PySide6.QtWidgets import (
@@ -16,7 +16,7 @@ from app.ui.icons import get_icon
 
 
 class StatusBar(QFrame):
-    """Barra de estado modular con soporte de cancelación cooperativa e i18n en vivo."""
+    """Barra de estado serena con soporte de cancelación cooperativa e i18n en vivo."""
 
     shortcutsRequested = Signal()
     cancelRequested = Signal()
@@ -26,11 +26,11 @@ class StatusBar(QFrame):
     def __init__(self, size_grip_target=None, parent=None):
         super().__init__(parent)
         self.setObjectName("BottomBar")
-        self.setFixedHeight(44)
+        self.setFixedHeight(38)
         self._current_status_i18n = ("status_ready", {})
 
         layout = QHBoxLayout(self)
-        layout.setContentsMargins(16, 0, 16, 0)
+        layout.setContentsMargins(16, 0, 12, 0)
         layout.setSpacing(10)
 
         # Atajos rápidos
@@ -70,18 +70,16 @@ class StatusBar(QFrame):
         self.btn_cancel.setVisible(False)
         layout.addWidget(self.btn_cancel, alignment=Qt.AlignmentFlag.AlignVCenter)
 
-        # Badge clickable de dispositivo GPU/CPU
-        self.lbl_device = QPushButton("CPU")
+        # Indicador de dispositivo oculto por retrocompatibilidad (unificado en ToolSidebar)
+        self.lbl_device = QPushButton("CPU", self)
         self.lbl_device.setObjectName("deviceBadgeCpu")
-        self.lbl_device.setCursor(Qt.CursorShape.PointingHandCursor)
         self.lbl_device.setToolTip(tr("tooltip_device"))
         self.lbl_device.clicked.connect(self.deviceToggleRequested.emit)
-        layout.addWidget(self.lbl_device, alignment=Qt.AlignmentFlag.AlignVCenter)
+        self.lbl_device.hide()
 
-        # Botón Ko-fi
+        # Enlace discreto Ko-fi
         self.btn_kofi = QPushButton(tr("btn_kofi"))
-        self.btn_kofi.setObjectName("PrimaryBtn")
-        self.btn_kofi.setStyleSheet("padding: 5px 14px; border-radius: 14px; font-size: 12px;")
+        self.btn_kofi.setObjectName("kofiButton")
         self.btn_kofi.setCursor(Qt.CursorShape.PointingHandCursor)
         self.btn_kofi.setToolTip(tr("tooltip_kofi"))
         self.btn_kofi.clicked.connect(self.kofiRequested.emit)
@@ -109,7 +107,7 @@ class StatusBar(QFrame):
         self.btn_cancel.setEnabled(busy)
 
     def set_device_badge(self, text: str, state: str) -> None:
-        """Actualiza el badge de hardware ('gpu', 'cpu' o 'blocked')."""
+        """Mantiene compatibilidad de API actualizando el estado oculto y tooltip."""
         name_map = {
             "gpu": "deviceBadgeGpu",
             "cpu": "deviceBadgeCpu",
@@ -117,18 +115,21 @@ class StatusBar(QFrame):
         }
         self.lbl_device.setText(text)
         self.lbl_device.setObjectName(name_map.get(state, "deviceBadgeCpu"))
-        self.lbl_device.style().unpolish(self.lbl_device)
-        self.lbl_device.style().polish(self.lbl_device)
+        self.lbl_device.setToolTip(f"{tr('tooltip_device')} ({text})")
+
+    def set_gpu_info(self, text: str, state: str = "cpu") -> None:
+        """Alias compatible para actualizaciones de hardware sin duplicar píldora en barra inferior."""
+        self.set_device_badge(text, state)
 
     def apply_theme(self, is_dark: bool) -> None:
-        fg_color = "#EAEAEA" if is_dark else "#292524"
-        accent_color = "#FF4F79"
-        self.btn_kofi.setIcon(get_icon("coffee", color="#FFFFFF", size=16))
-        self.btn_kofi.setIconSize(QSize(16, 16))
+        fg_color = "#9BA3AE" if is_dark else "#555E6B"
+        accent_color = "#2E7CF6" if is_dark else "#1D63DC"
+        self.btn_kofi.setIcon(get_icon("coffee", color=fg_color, active_color=accent_color, size=14))
+        self.btn_kofi.setIconSize(QSize(14, 14))
         self.btn_shortcuts.setIcon(
-            get_icon("keyboard", color=fg_color, active_color=accent_color, size=15)
+            get_icon("keyboard", color=fg_color, active_color=accent_color, size=14)
         )
-        self.btn_shortcuts.setIconSize(QSize(15, 15))
+        self.btn_shortcuts.setIconSize(QSize(14, 14))
 
     def retranslate_ui(self) -> None:
         if self._current_status_i18n:

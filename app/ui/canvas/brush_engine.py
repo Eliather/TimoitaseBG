@@ -17,6 +17,7 @@ class BrushEngine:
 
     def __init__(self):
         self._scratch_buf: Optional[QImage] = None
+        self._patch_buf: Optional[QImage] = None
 
     def _get_scratch_buffer(self, w: int, h: int) -> QImage:
         """Retorna un buffer ARGB32_Premultiplied de al menos (w, h), evitando reasignaciones por cuadro."""
@@ -30,8 +31,21 @@ class BrushEngine:
             self._scratch_buf = QImage(alloc_w, alloc_h, QImage.Format.Format_ARGB32_Premultiplied)
         return self._scratch_buf
 
+    def _get_patch_buffer(self, w: int, h: int) -> QImage:
+        """Retorna un buffer reutilizable para recortes del pincel restaurador."""
+        if (
+            self._patch_buf is None
+            or self._patch_buf.width() < w
+            or self._patch_buf.height() < h
+        ):
+            alloc_w = max(w, 128)
+            alloc_h = max(h, 128)
+            self._patch_buf = QImage(alloc_w, alloc_h, QImage.Format.Format_ARGB32_Premultiplied)
+        return self._patch_buf
+
     def clear_cache(self):
         self._scratch_buf = None
+        self._patch_buf = None
 
     def draw_stroke(
         self,
@@ -89,14 +103,15 @@ class BrushEngine:
                 painter_img.end()
                 return False
             painter_img.setCompositionMode(QPainter.CompositionMode.CompositionMode_SourceOver)
-            patch = original_qimage.copy(QRect(int(min_x), int(min_y), w, h))
-            if not patch.hasAlphaChannel():
-                patch = patch.convertToFormat(QImage.Format.Format_RGBA8888)
+            patch = self._get_patch_buffer(w, h)
             patch_p = QPainter(patch)
+            patch_p.setCompositionMode(QPainter.CompositionMode.CompositionMode_Source)
+            patch_p.fillRect(0, 0, w, h, Qt.GlobalColor.transparent)
+            patch_p.drawImage(QRect(0, 0, w, h), original_qimage, QRect(int(min_x), int(min_y), w, h))
             patch_p.setCompositionMode(QPainter.CompositionMode.CompositionMode_DestinationIn)
             patch_p.drawImage(QRect(0, 0, w, h), mask_img, mask_rect)
             patch_p.end()
-            painter_img.drawImage(min_x, min_y, patch)
+            painter_img.drawImage(QRect(min_x, min_y, w, h), patch, QRect(0, 0, w, h))
 
         painter_img.end()
         return True
@@ -240,15 +255,15 @@ class BrushEngine:
         t_off_x = roi_x1 - min_x
 
         try:
-            temp_np = qimage_to_numpy(temp_img.copy(0, 0, w, h))
             patch_h, patch_w = sel_patch.shape
-            clipped_alpha = np.zeros((h, w), dtype=np.uint8)
-            region = temp_np[t_off_y : t_off_y + patch_h, t_off_x : t_off_x + patch_w, 3].astype(np.uint16)
-            clipped_alpha[t_off_y : t_off_y + patch_h, t_off_x : t_off_x + patch_w] = (
-                region * sel_patch.astype(np.uint16) // 255
-            ).astype(np.uint8)
-            temp_np[:, :, 3] = clipped_alpha
-            return numpy_to_qimage(temp_np)
+            sel_buf = np.zeros((h, w), dtype=np.uint8)
+            sel_buf[t_off_y : t_off_y + patch_h, t_off_x : t_off_x + patch_w] = sel_patch
+            sel_qimg = QImage(sel_buf.data, w, h, w, QImage.Format.Format_Alpha8)
+            clip_p = QPainter(temp_img)
+            clip_p.setCompositionMode(QPainter.CompositionMode.CompositionMode_DestinationIn)
+            clip_p.drawImage(0, 0, sel_qimg)
+            clip_p.end()
+            return temp_img
         except Exception as e:
             logger.warning("Error clipping brush to selection: %s", e)
             return temp_img

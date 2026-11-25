@@ -1,6 +1,7 @@
 """
 TimoitaseBG - Motor de eliminación de fondos y orquestación de sesiones ONNX / rembg.
 """
+import gc
 import logging
 import threading
 from typing import Any, Callable, Dict, Optional
@@ -81,12 +82,34 @@ class BackgroundRemover:
         self._sessions: Dict[str, Any] = {}
         self._lock = threading.Lock()
 
+    def unload_sessions(self) -> None:
+        """Libera todas las sesiones ONNX/rembg en caché para desocupar RAM y VRAM."""
+        with self._lock:
+            self._sessions.clear()
+        gc.collect()
+
+    def _evict_other_cpu_sessions_locked(self, keep_key: str) -> None:
+        """Evicta sesiones CPU primarias previas al cambiar de modelo para evitar acumulación >1.6 GB."""
+        to_remove = [
+            key
+            for key in list(self._sessions.keys())
+            if key != keep_key
+            and key != "rembg_cpu_u2net_human_seg"
+            and (key == "inspyrenet_cpu" or key.startswith("rembg_cpu_"))
+        ]
+        if to_remove:
+            for key in to_remove:
+                self._sessions.pop(key, None)
+            gc.collect()
+
     def get_inspyrenet_session(self, force_cpu: bool = False, progress_cb=None):
         """Obtiene o inicializa una sesión ONNX para el modelo InSPyReNet (Swin-B 1024x1024)."""
         cache_key = "inspyrenet_cpu" if force_cpu else "inspyrenet"
         if cache_key not in self._sessions:
             with self._lock:
                 if cache_key not in self._sessions:
+                    if force_cpu:
+                        self._evict_other_cpu_sessions_locked(cache_key)
                     from app.core.model_fetcher import ensure_model_file, make_download_progress_cb
 
                     if progress_cb:
@@ -95,6 +118,7 @@ class BackgroundRemover:
                     model_path = ensure_model_file(
                         "inspyrenet.onnx",
                         progress_cb=make_download_progress_cb(progress_cb, "inspyrenet.onnx", start_pct=5, span_pct=30),
+                        prefer_int8=force_cpu,
                     )
                     import onnxruntime as ort
                     providers = ["CPUExecutionProvider"] if force_cpu else get_inference_providers()
@@ -109,7 +133,22 @@ class BackgroundRemover:
         return self._sessions[cache_key]
 
     def get_session(self, model_name: str = "inspyrenet", force_cpu: bool = False):
-        """Compatibilidad con get_session: redirige a la sesión correspondiente."""
+        """Obtiene o inicializa la sesión correspondiente al modelo indicado."""
+        if model_name in ("isnet-anime", "birefnet-general", "u2net_human_seg"):
+            if force_cpu:
+                return self._get_rembg_cpu_session(model_name)
+            cache_key = f"rembg_{model_name}"
+            if cache_key not in self._sessions:
+                with self._lock:
+                    if cache_key not in self._sessions:
+                        from app.core.model_fetcher import load_rembg_session
+
+                        self._sessions[cache_key] = load_rembg_session(
+                            model_name,
+                            providers=get_inference_providers(),
+                            sess_opts=get_optimized_session_options(),
+                        )
+            return self._sessions[cache_key]
         return self.get_inspyrenet_session(force_cpu=force_cpu)
 
     def _predict_inspyrenet(self, session, input_img: Image.Image) -> np.ndarray:
@@ -130,6 +169,8 @@ class BackgroundRemover:
         if cache_key not in self._sessions:
             with self._lock:
                 if cache_key not in self._sessions:
+                    if model_name != "u2net_human_seg":
+                        self._evict_other_cpu_sessions_locked(cache_key)
                     from app.core.model_fetcher import load_rembg_session
 
                     if progress_cb:

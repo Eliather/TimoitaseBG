@@ -134,6 +134,7 @@
   "swatch_white": "白色 (#FFFFFF)",
   "swatch_black": "黑色 (#000000)",
   "swatch_gray": "灰色 (#E2E8F0)",
+  "swatch_last_color": "上次保存的颜色 ({hex})",
   "swatch_custom": "自定义颜色...",
   "color_white": "白色 (#FFFFFF)",
   "color_black": "黑色 (#000000)",

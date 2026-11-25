@@ -21,6 +21,40 @@ def _close_images(images: List[Image.Image]) -> None:
             logger.debug("Error cerrando frame PIL temporal: %s", e)
 
 
+def _call_with_optional_kwargs(
+    fn: Callable[..., Any],
+    *args: Any,
+    optional_kwargs: Optional[dict[str, Any]] = None,
+    **kwargs: Any,
+) -> Any:
+    """Invoca `fn` inyectando kwargs opcionales (ej. `progress_cb`, `cancel_check`) solo si la firma los acepta."""
+    call_kwargs = dict(kwargs)
+    if optional_kwargs:
+        try:
+            sig = inspect.signature(fn)
+            has_var_kw = any(p.kind == inspect.Parameter.VAR_KEYWORD for p in sig.parameters.values())
+            for key, value in optional_kwargs.items():
+                if key not in call_kwargs and (key in sig.parameters or has_var_kw):
+                    call_kwargs[key] = value
+        except Exception as e:
+            logger.debug("Inspección de firma omitida para %s: %s", getattr(fn, "__name__", fn), e)
+    return fn(*args, **call_kwargs)
+
+
+def _gpu_supports_cancel_check() -> bool:
+    """Verifica dinámicamente si `GPUWorkerManager.run_inference` acepta `cancel_check`."""
+    try:
+        from app.core.gpu_manager import GPUWorkerManager
+
+        sig = inspect.signature(GPUWorkerManager.run_inference)
+        return "cancel_check" in sig.parameters or any(
+            p.kind == inspect.Parameter.VAR_KEYWORD for p in sig.parameters.values()
+        )
+    except Exception as e:
+        logger.debug("No se pudo inspeccionar GPUWorkerManager.run_inference: %s", e)
+        return False
+
+
 class _WorkerMixin:
     """Utilidades compartidas de prioridad, progreso y manejo uniforme de excepciones."""
 
@@ -82,22 +116,21 @@ class WorkerThread(_WorkerMixin, QThread):
             self.startedProcessing.emit(f"Iniciando {self.description}")
             self._emit_progress(5, f"Iniciando {self.description}...")
 
-            call_kwargs = dict(self.kwargs)
-            try:
-                sig = inspect.signature(self.task_fn)
-                has_var_kw = any(p.kind == inspect.Parameter.VAR_KEYWORD for p in sig.parameters.values())
-                if "progress_cb" not in call_kwargs and ("progress_cb" in sig.parameters or has_var_kw):
-                    call_kwargs["progress_cb"] = self._emit_progress
-                if "cancel_check" not in call_kwargs and ("cancel_check" in sig.parameters or has_var_kw):
-                    call_kwargs["cancel_check"] = self.isInterruptionRequested
-            except Exception as e:
-                logger.debug("Inspección de firma omitida en WorkerThread: %s", e)
+            optional_kw: dict[str, Any] = {
+                "progress_cb": self._emit_progress,
+                "cancel_check": self.isInterruptionRequested,
+            }
 
             if self.isInterruptionRequested():
                 self.cancelled.emit()
                 return
 
-            result = self.task_fn(*self.args, **call_kwargs)
+            result = _call_with_optional_kwargs(
+                self.task_fn,
+                *self.args,
+                optional_kwargs=optional_kw,
+                **self.kwargs,
+            )
             if self.isInterruptionRequested():
                 self.cancelled.emit()
                 return
@@ -177,8 +210,10 @@ class BatchWorkerThread(_WorkerMixin, QThread):
                     if self.isInterruptionRequested():
                         return False
                     processed_frames.append(
-                        remover.remove_background(
+                        _call_with_optional_kwargs(
+                            remover.remove_background,
                             fr,
+                            optional_kwargs={"cancel_check": self.isInterruptionRequested},
                             model_name=self.model_name,
                             enable_clothing_protection=self.enable_clothing_protection,
                         )
@@ -210,8 +245,10 @@ class BatchWorkerThread(_WorkerMixin, QThread):
                     remover=remover,
                 )
             else:
-                res = remover.remove_background(
+                res = _call_with_optional_kwargs(
+                    remover.remove_background,
                     img,
+                    optional_kwargs={"cancel_check": self.isInterruptionRequested},
                     model_name=self.model_name,
                     enable_clothing_protection=self.enable_clothing_protection,
                 )
@@ -352,42 +389,30 @@ class GifWorkerThread(_WorkerMixin, QThread):
 
     def run(self) -> None:
         def _exec() -> None:
-            import numpy as np
-            from app.core.bg_remover import get_bg_remover
+            from app.core.video_processor import process_video_frames
 
-            remover = get_bg_remover()
-            prev_alpha: Optional[np.ndarray] = None
-
-            def _step(idx: int, total: int, frame: Image.Image) -> Image.Image:
-                nonlocal prev_alpha
+            def _on_progress(cur: int, total: int) -> None:
                 self.progressText.emit(
-                    f"⏳ Quitando fondo al {self.media_label} ({idx + 1}/{total} fotogramas) con {self.model_name}..."
+                    f"⏳ Quitando fondo al {self.media_label} ({cur}/{total} fotogramas) con {self.model_name}..."
                 )
-                self.progress.emit(idx + 1, total)
+                self.progress.emit(cur, total)
 
-                out_rgba = remover.remove_background(
-                    frame,
-                    model_name=self.model_name,
-                    enable_clothing_protection=self.enable_clothing_protection,
-                )
-                if self.temporal_smoothing > 0.0:
-                    arr = np.array(out_rgba.convert("RGBA"), dtype=np.uint8)
-                    curr_alpha = arr[:, :, 3].astype(np.float32)
-                    if prev_alpha is not None and prev_alpha.shape == curr_alpha.shape:
-                        blend_mask = np.abs(curr_alpha - prev_alpha) < 45.0
-                        w = self.temporal_smoothing
-                        curr_alpha = np.where(blend_mask, (1.0 - w) * curr_alpha + w * prev_alpha, curr_alpha)
-                        arr[:, :, 3] = np.clip(np.round(curr_alpha), 0, 255).astype(np.uint8)
-                        out_rgba = Image.fromarray(arr, mode="RGBA")
-                    prev_alpha = curr_alpha
-                return out_rgba
-
-            processed = self._run_sequence_frames(self.frames, _step)
-            if processed is not None:
-                self.finishedGif.emit(
-                    processed,
-                    f"GIF sin fondo ({len(self.frames)} frames • {self.model_name})",
-                )
+            processed = process_video_frames(
+                frames=self.frames,
+                model_name=self.model_name,
+                preserve_clothing=self.enable_clothing_protection,
+                temporal_smoothing=self.temporal_smoothing,
+                progress_callback=_on_progress,
+                cancel_check=self.isInterruptionRequested,
+            )
+            if self.isInterruptionRequested():
+                _close_images(processed)
+                self.cancelled.emit()
+                return
+            self.finishedGif.emit(
+                processed,
+                f"GIF sin fondo ({len(self.frames)} frames • {self.model_name})",
+            )
 
         self._run_guarded(_exec)
 
@@ -425,7 +450,13 @@ class SequenceRestoreWorker(_WorkerMixin, QThread):
             def _step(idx: int, total: int, frame: Image.Image) -> Image.Image:
                 self.progressText.emit(f"⏳ {self.description} {self.media_label} ({idx + 1}/{total})...")
                 self.progress.emit(idx + 1, total)
-                return restorer.restore_image(frame, scale_mode=self.scale_mode, use_tiling=self.use_tiling)
+                return _call_with_optional_kwargs(
+                    restorer.restore_image,
+                    frame,
+                    optional_kwargs={"cancel_check": self.isInterruptionRequested},
+                    scale_mode=self.scale_mode,
+                    use_tiling=self.use_tiling,
+                )
 
             processed = self._run_sequence_frames(self.frames, _step)
             if processed is not None:
@@ -438,6 +469,7 @@ class SaveSequenceWorker(_WorkerMixin, QThread):
     """QThread para exportar secuencias animadas o video sin congelar la interfaz."""
 
     saved = Signal(object)  # Path
+    cancelled = Signal()
     failed = Signal(str)
 
     def __init__(self, save_fn: Callable[[], Any]):
@@ -445,7 +477,20 @@ class SaveSequenceWorker(_WorkerMixin, QThread):
         self._save_fn = save_fn
 
     def run(self) -> None:
-        self._run_guarded(lambda: self.saved.emit(self._save_fn()))
+        def _exec() -> None:
+            if self.isInterruptionRequested():
+                self.cancelled.emit()
+                return
+            out = _call_with_optional_kwargs(
+                self._save_fn,
+                optional_kwargs={"cancel_check": self.isInterruptionRequested},
+            )
+            if self.isInterruptionRequested():
+                self.cancelled.emit()
+                return
+            self.saved.emit(out)
+
+        self._run_guarded(_exec)
 
 
 class ModelActionWorker(_WorkerMixin, QThread):
@@ -464,8 +509,11 @@ class ModelActionWorker(_WorkerMixin, QThread):
 
     def run(self) -> None:
         def _exec() -> None:
-            from app.config import MODELS_DIR
-            from app.core.model_fetcher import ensure_model_file, verify_local_model_sha256
+            from app.core.model_fetcher import (
+                _resolve_safe_model_path,
+                ensure_model_file,
+                verify_local_model_sha256,
+            )
 
             if self.action == "download":
                 def _prog(dl: int, tot: int) -> None:
@@ -484,7 +532,7 @@ class ModelActionWorker(_WorkerMixin, QThread):
 
                 self.progressPercent.emit(15)
                 self.progressText.emit(self.filename)
-                src = MODELS_DIR / self.filename
+                src = _resolve_safe_model_path(self.filename)
                 if not src.is_file():
                     raise FileNotFoundError(self.filename)
                 if not quantize_model(src):

@@ -54,16 +54,18 @@ class SelectionTool:
 
         h, w = mask.shape
         overlay = np.zeros((h, w, 4), dtype=np.uint8)
-        overlay[..., 1] = 120
-        overlay[..., 2] = 255
-        overlay[..., 3] = (mask.astype(np.uint16) * 45 // 255).astype(np.uint8)
+        overlay[..., 0] = 46
+        overlay[..., 1] = 124
+        overlay[..., 2] = 246
+        overlay[..., 3] = (mask.astype(np.uint16) * 48 // 255).astype(np.uint8)
         self.overlay_qimage = numpy_to_qimage(overlay)
 
         binary = (mask > 127).astype(np.uint8)
         contours, _ = cv2.findContours(binary, cv2.RETR_LIST, cv2.CHAIN_APPROX_SIMPLE)
         path = QPainterPath()
         for cnt in contours:
-            pts = cnt.reshape(-1, 2)
+            approx = cv2.approxPolyDP(cnt, 0.75, True)
+            pts = approx.reshape(-1, 2)
             if len(pts) == 0:
                 continue
             path.moveTo(float(pts[0][0]) + 0.5, float(pts[0][1]) + 0.5)
@@ -148,7 +150,7 @@ class SelectionTool:
         if self.active_mask is None or qimage is None or qimage.isNull():
             return None, False
 
-        img_np = np.array(qimage_to_pil(qimage).convert("RGBA"))
+        img_np = qimage_to_numpy(qimage)
         if self.active_mask.shape != img_np.shape[:2]:
             return None, True
 
@@ -156,7 +158,7 @@ class SelectionTool:
         if np.array_equal(new_np[..., 3], img_np[..., 3]):
             return None, False
 
-        return pil_to_qimage(Image.fromarray(new_np, "RGBA")), False
+        return numpy_to_qimage(new_np), False
 
     def add_sam_refinement_point(
         self,
@@ -202,11 +204,11 @@ class SelectionTool:
         """Rellena la selección activa con inpainting OpenCV sobre el QImage actual."""
         if self.active_mask is None or qimage is None or qimage.isNull():
             return None
-        img_np = np.array(qimage_to_pil(qimage).convert("RGBA"))
+        img_np = qimage_to_numpy(qimage)
         if self.active_mask.shape != img_np.shape[:2]:
             return None
         new_np = sel_ops.inpaint_selected_region(img_np, self.active_mask, radius=radius)
-        return pil_to_qimage(Image.fromarray(new_np, "RGBA"))
+        return numpy_to_qimage(new_np)
 
     def draw_sam_points(self, painter: QPainter, img_rect: QRectF, zoom_factor: float) -> None:
         """Dibuja los pines de refinamiento MobileSAM (+ verde / - rojo)."""
