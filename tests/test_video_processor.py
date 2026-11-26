@@ -184,10 +184,11 @@ def test_find_ffmpeg_safe_excludes_cwd_on_windows(tmp_path: Path, monkeypatch):
     from app.core import video_processor as vp
 
     monkeypatch.setattr(vp.sys, "platform", "win32")
+    monkeypatch.setattr(vp.os, "pathsep", ";")
     monkeypatch.chdir(tmp_path)
     other_dir = tmp_path / "bin"
     other_dir.mkdir()
-    monkeypatch.setenv("PATH", f".;{tmp_path};{other_dir}")
+    monkeypatch.setenv("PATH", vp.os.pathsep.join([".", str(tmp_path), str(other_dir)]))
 
     captured_path = {}
 

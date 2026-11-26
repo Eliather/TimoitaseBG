@@ -13,8 +13,9 @@ class TestGPUWorkerWatchdog(unittest.TestCase):
         except Exception:
             pass
         self.manager._process = None
-        self.manager._request_queue = None
-        self.manager._response_queue = None
+        self.manager._close_queues()
+        from app.config import set_gpu_acceleration
+        set_gpu_acceleration(True)
 
     @patch('app.config.is_gpu_available', return_value=True)
     def test_singleton(self, mock_gpu):
@@ -48,8 +49,9 @@ class TestGPUWorkerWatchdog(unittest.TestCase):
     @patch('platform.system', return_value='Linux')
     @patch('os.killpg', create=True)
     @patch('os.getpgid', return_value=1234, create=True)
+    @patch('os.getpgrp', return_value=9999, create=True)
     @patch('os.kill', create=True)
-    def test_kill_worker_linux_sigkill(self, mock_os_kill, mock_getpgid, mock_killpg, mock_platform):
+    def test_kill_worker_linux_sigkill(self, mock_os_kill, mock_getpgrp, mock_getpgid, mock_killpg, mock_platform):
         alive = [True]
         def mock_kill_action(*args, **kwargs):
             alive[0] = False
@@ -65,7 +67,7 @@ class TestGPUWorkerWatchdog(unittest.TestCase):
         self.assertTrue(killed)
         proc.terminate.assert_called_once()
         proc.kill.assert_called_once()
-        self.assertTrue(mock_killpg.called or mock_os_kill.called)
+        mock_killpg.assert_called_once()
         self.assertIsNone(self.manager._process)
 
     def test_shutdown(self):

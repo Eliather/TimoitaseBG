@@ -115,36 +115,47 @@ def test_selection_delete_and_brush_clip_with_selection(qapp):
 
 def test_unc_paths_rejected_in_drop_zone_canvas_and_clipboard(qapp):
     """Rutas UNC (\\\\server\\share) y URLs con host deben rechazarse en DropZone, Canvas y Portapapeles."""
-    unc_url = QUrl.fromLocalFile(r"\\evil-server\share\leak.png")
-    mime = QMimeData()
-    mime.setUrls([unc_url])
+    import sys
 
-    ev = QDropEvent(
-        QPointF(10, 10),
-        Qt.DropAction.CopyAction,
-        mime,
-        Qt.MouseButton.LeftButton,
-        Qt.KeyboardModifier.NoModifier,
-    )
+    candidate_urls = [
+        QUrl("file://evil-server/share/leak.png"),
+        QUrl("smb://evil-server/share/leak.png"),
+    ]
+    if sys.platform == "win32":
+        candidate_urls.append(QUrl.fromLocalFile(r"\\evil-server\share\leak.png"))
 
     dz = DropZoneWidget()
     dz_files = []
     dz.fileDropped.connect(dz_files.append)
-    dz.dropEvent(ev)
-    assert dz_files == []
 
     canvas = CanvasWidget()
     cv_files = []
     canvas.fileDropped.connect(cv_files.append)
-    canvas.dropEvent(ev)
-    assert cv_files == []
 
-    fake_win = MagicMock()
-    fake_clip = MagicMock()
-    fake_clip.mimeData.return_value = mime
-    with patch("app.ui.media_actions.QGuiApplication.clipboard", return_value=fake_clip):
-        media_actions.paste_from_clipboard(fake_win)
-    fake_win.open_image_file.assert_not_called()
+    for unc_url in candidate_urls:
+        mime = QMimeData()
+        mime.setUrls([unc_url])
+
+        ev = QDropEvent(
+            QPointF(10, 10),
+            Qt.DropAction.CopyAction,
+            mime,
+            Qt.MouseButton.LeftButton,
+            Qt.KeyboardModifier.NoModifier,
+        )
+
+        dz.dropEvent(ev)
+        assert dz_files == []
+
+        canvas.dropEvent(ev)
+        assert cv_files == []
+
+        fake_win = MagicMock()
+        fake_clip = MagicMock()
+        fake_clip.mimeData.return_value = mime
+        with patch("app.ui.media_actions.QGuiApplication.clipboard", return_value=fake_clip):
+            media_actions.paste_from_clipboard(fake_win)
+        fake_win.open_image_file.assert_not_called()
 
 
 def test_bg_panel_last_custom_color_swatch_and_qsettings_persistence(qapp, tmp_path):
