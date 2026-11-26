@@ -6,11 +6,8 @@ Tests unitarios para:
 """
 import io
 from pathlib import Path
-import pytest
 from PIL import Image
-from PySide6.QtWidgets import QApplication
 from PySide6.QtGui import QGuiApplication
-from PySide6.QtCore import QMimeData
 
 from app.core.gif_processor import (
     is_animated_image,
@@ -20,11 +17,6 @@ from app.core.gif_processor import (
     save_animated_apng,
 )
 from app.ui.main_window import MainWindow
-
-
-@pytest.fixture(scope="module")
-def qapp():
-    return QApplication.instance() or QApplication([])
 
 
 def test_is_animated_image(tmp_path: Path):

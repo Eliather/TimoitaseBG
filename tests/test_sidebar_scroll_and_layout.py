@@ -1,18 +1,11 @@
 """
 Tests de layout del sidebar, scroll, cambio de tema global, DropZone limpio y limpieza de secuencia.
 """
-import pytest
 from PIL import Image
-from PySide6.QtWidgets import QApplication
 
 from app.core.image_state import SequenceSession
 from app.ui.main_window import MainWindow
 from app.ui.toolbar import ToolSidebar
-
-
-@pytest.fixture(scope="module")
-def qapp():
-    return QApplication.instance() or QApplication([])
 
 
 def test_sidebar_scroll_and_tab_switching(qapp):

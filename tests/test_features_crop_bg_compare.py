@@ -7,17 +7,11 @@ import pytest
 from PIL import Image
 from PySide6.QtCore import QMimeData, QPointF, QUrl, Qt
 from PySide6.QtGui import QDropEvent, QPainter, QPixmap
-from PySide6.QtWidgets import QApplication
 
 from app.ui import media_actions
 from app.ui.canvas_widget import CanvasWidget
 from app.ui.canvas.renderer import build_hidpi_checkerboard
 from app.ui.drop_zone import DropZoneWidget
-
-
-@pytest.fixture(scope="module")
-def qapp():
-    return QApplication.instance() or QApplication([])
 
 
 def test_set_comparison_mode_with_pil_image_and_paint(qapp):

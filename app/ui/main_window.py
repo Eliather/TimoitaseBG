@@ -2,6 +2,7 @@
 TimoitaseBG - Ventana principal de la aplicación.
 """
 import logging
+import weakref
 import webbrowser
 from pathlib import Path
 from typing import Any, Optional, Tuple
@@ -81,7 +82,18 @@ class MainWindow(QMainWindow):
         self.update_device_badge()
 
         self.gpuStatusNotified.connect(self._handle_gpu_status)
-        self._gpu().set_status_callback(lambda msg: self.gpuStatusNotified.emit(msg))
+        weak_self = weakref.ref(self)
+
+        def _on_gpu_status(msg: str) -> None:
+            win = weak_self()
+            if win is not None:
+                try:
+                    win.gpuStatusNotified.emit(msg)
+                except RuntimeError:
+                    pass
+
+        self._gpu_status_cb = _on_gpu_status
+        self._gpu().set_status_callback(_on_gpu_status)
 
         self._load_stylesheet(force=False)
 
@@ -1265,9 +1277,36 @@ class MainWindow(QMainWindow):
         self._set_status("status_subject_selected", name=subject.class_name.capitalize())
 
     def closeEvent(self, event: Any) -> None:
-        """Finaliza hilos activos de manera segura al cerrar la ventana."""
+        """Finaliza hilos, temporizadores y referencias Qt de manera segura al cerrar la ventana."""
+        try:
+            gpu = self._gpu()
+            if getattr(gpu, "_status_callback", None) is getattr(self, "_gpu_status_cb", None):
+                gpu.set_status_callback(None)
+        except Exception:
+            pass
+
         if hasattr(self, "gif_timer") and self.gif_timer.isActive():
             self.gif_timer.stop()
+
+        toast = getattr(self, "toast_banner", None)
+        if toast is not None and hasattr(toast, "_timer") and toast._timer.isActive():
+            toast._timer.stop()
+
+        canvas = getattr(self, "canvas", None)
+        if canvas is not None:
+            ants_timer = getattr(canvas, "_ants_timer", None)
+            if ants_timer is not None and ants_timer.isActive():
+                ants_timer.stop()
+            if hasattr(canvas, "release_qt_resources"):
+                canvas.release_qt_resources()
+
+        container = getattr(self, "canvas_container", None)
+        if container is not None:
+            try:
+                container.removeEventFilter(self)
+            except RuntimeError:
+                pass
+
         self.ai.shutdown_workers(timeout_ms=1000)
         try:
             super().closeEvent(event)

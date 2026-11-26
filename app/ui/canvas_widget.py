@@ -981,3 +981,27 @@ class CanvasWidget(QWidget):
 
     def _on_v_scrollbar_changed(self, value):
         self._apply_scrollbar_axis(False, value)
+
+    def release_qt_resources(self) -> None:
+        """Libera QPixmap/QImage cacheados y detiene temporizadores antes de destruir el widget."""
+        if hasattr(self, "_ants_timer") and self._ants_timer.isActive():
+            self._ants_timer.stop()
+        self._cached_pixmap = None
+        self._cached_pixmap_key = None
+        self._cached_before_pixmap = None
+        self._cached_before_key = None
+        self.checker_pixmap = QPixmap()
+        self.dot_grid_pixmap = QPixmap()
+        self._checker_dpr = 0.0
+        self.current_qimage = None
+        self.original_qimage = None
+        self.before_qimage = None
+        if hasattr(self, "_brush_engine"):
+            self._brush_engine.clear_cache()
+        if hasattr(self, "_selection_tool"):
+            self._selection_tool.overlay_qimage = None
+            self._selection_tool.contour_path = None
+
+    def closeEvent(self, event):
+        self.release_qt_resources()
+        super().closeEvent(event)

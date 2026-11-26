@@ -3,7 +3,7 @@ TimoitaseBG - Catálogo de iconos vectoriales Open Source (Lucide Icons, MIT Lic
 Proporciona QIcon y QPixmap nítidos a cualquier resolución y con coloreado dinámico según el tema.
 """
 from typing import Dict, Tuple, Optional
-from PySide6.QtCore import QByteArray, QSize, QRectF, Qt
+from PySide6.QtCore import QByteArray, QCoreApplication, QSize, QRectF, Qt
 from PySide6.QtGui import QIcon, QPixmap, QPainter, QColor
 from PySide6.QtSvg import QSvgRenderer
 
@@ -98,6 +98,24 @@ LUCIDE_SVG_PATHS = {
 
 _PIXMAP_CACHE: Dict[Tuple[str, int, str], QPixmap] = {}
 _RENDERER_CACHE: Dict[Tuple[str, str], QSvgRenderer] = {}
+_HOOKED_APP_ID: Optional[int] = None
+
+
+def clear_icon_cache() -> None:
+    """Libera las cachés globales de QPixmap y QSvgRenderer antes de destruir QApplication."""
+    _PIXMAP_CACHE.clear()
+    _RENDERER_CACHE.clear()
+
+
+def _ensure_cleanup_hook() -> None:
+    global _HOOKED_APP_ID
+    app = QCoreApplication.instance()
+    if app is not None and id(app) != _HOOKED_APP_ID:
+        _HOOKED_APP_ID = id(app)
+        try:
+            app.aboutToQuit.connect(clear_icon_cache)
+        except Exception:
+            pass
 
 
 def _get_renderer(name: str, color: str) -> Optional[QSvgRenderer]:
@@ -118,6 +136,7 @@ def _get_renderer(name: str, color: str) -> Optional[QSvgRenderer]:
     )
     renderer = QSvgRenderer(QByteArray(svg_str.encode("utf-8")))
     if renderer.isValid():
+        _ensure_cleanup_hook()
         _RENDERER_CACHE[key] = renderer
         return renderer
     return None
@@ -143,6 +162,7 @@ def get_pixmap(name: str, size: int = 20, color: str = "#FFFFFF") -> QPixmap:
     renderer.render(painter)
     painter.end()
 
+    _ensure_cleanup_hook()
     _PIXMAP_CACHE[cache_key] = pix
     return pix
 

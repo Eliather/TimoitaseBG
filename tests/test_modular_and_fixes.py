@@ -8,7 +8,6 @@ import pytest
 from PIL import Image
 from PySide6.QtCore import QMimeData, QPoint, QPointF, Qt
 from PySide6.QtGui import QDropEvent, QImage
-from PySide6.QtWidgets import QApplication
 
 from app.controllers.document_controller import DocumentController
 from app.core.image_state import SequenceSession
@@ -17,11 +16,6 @@ from app.core.sam_manager import SAMManager
 from app.core.workers import BatchWorkerThread
 from app.core.yolo_detector import DetectedSubject
 from app.ui.canvas_widget import CanvasWidget
-
-
-@pytest.fixture(scope="module")
-def qapp():
-    return QApplication.instance() or QApplication([])
 
 
 def test_rgb_canvas_manual_eraser_produces_transparency(qapp):

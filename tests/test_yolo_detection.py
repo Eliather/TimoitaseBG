@@ -3,7 +3,6 @@ from unittest.mock import MagicMock, patch
 import numpy as np
 import pytest
 from PIL import Image
-from PySide6.QtWidgets import QApplication
 
 from app.core.yolo_detector import (
     YOLODetector,
@@ -12,11 +11,6 @@ from app.core.yolo_detector import (
     COCO_CLASSES,
 )
 from app.ui.toolbar import ToolSidebar
-
-
-@pytest.fixture(scope="module")
-def qapp():
-    return QApplication.instance() or QApplication([])
 
 
 def test_yolo_detector_singleton():

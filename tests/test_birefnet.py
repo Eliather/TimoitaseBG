@@ -1,9 +1,7 @@
 """Tests unitarios para la integración de BiRefNet (Dichotomous Image Segmentation - MIT)."""
 from unittest.mock import MagicMock, patch
 import numpy as np
-import pytest
 from PIL import Image
-from PySide6.QtWidgets import QApplication
 
 from app.config import BG_REMOVER_MODELS
 from app.core.bg_remover import (
@@ -11,11 +9,6 @@ from app.core.bg_remover import (
     get_bg_remover,
 )
 from app.ui.toolbar import ToolSidebar
-
-
-@pytest.fixture(scope="module")
-def qapp():
-    return QApplication.instance() or QApplication([])
 
 
 def test_birefnet_in_config():

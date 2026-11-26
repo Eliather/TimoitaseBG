@@ -5,6 +5,7 @@ y gestión limpia del ciclo de vida de procesos y workers en TimoitaseBG.
 import unittest
 from unittest.mock import MagicMock, patch
 import os
+import pytest
 from PIL import Image
 import numpy as np
 
@@ -17,10 +18,13 @@ from app.core.sam_manager import SAMManager
 from app.core.yolo_detector import YOLODetector
 
 
-app = QApplication.instance() or QApplication([])
-
-
+@pytest.mark.usefixtures("qapp")
 class TestThreadAndResourceSafety(unittest.TestCase):
+
+    @classmethod
+    def setUpClass(cls):
+        super().setUpClass()
+        cls._app = QApplication.instance() or QApplication([])
 
     def test_optimized_session_options_limits_cpu_threads(self):
         """Verifica que ONNX Runtime no sature todos los núcleos de la CPU."""

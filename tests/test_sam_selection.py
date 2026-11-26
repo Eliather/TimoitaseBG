@@ -4,16 +4,10 @@ import numpy as np
 import pytest
 from PIL import Image
 from PySide6.QtCore import Qt, QPointF
-from PySide6.QtWidgets import QApplication
 
 from app.core.sam_manager import SAMManager, get_sam_manager
 from app.ui.toolbar import ToolSidebar
 from app.ui.canvas_widget import CanvasWidget
-
-
-@pytest.fixture(scope="module")
-def qapp():
-    return QApplication.instance() or QApplication([])
 
 
 def test_sam_manager_singleton():
